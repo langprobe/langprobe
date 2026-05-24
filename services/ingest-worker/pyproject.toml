@@ -1,0 +1,28 @@
+[project]
+name = "tracebility-ingest-worker"
+version = "0.0.0"
+description = "tracebility ingest worker: drains Redis stream, writes to ClickHouse."
+license = { text = "Apache-2.0" }
+requires-python = ">=3.11"
+dependencies = [
+    "redis>=5.0",
+    "clickhouse-connect>=0.7",
+    "orjson>=3.9",
+    "pydantic>=2.6",
+    "structlog>=24.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.4",
+    "pyright>=1.1",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["tracebility_worker"]
