@@ -12,6 +12,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from . import config
+from .middleware import install as install_middleware
 from .routers import api_keys, auth as auth_router, health, projects
 
 log = structlog.get_logger("tracebility.api.app")
@@ -60,6 +61,7 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    install_middleware(app)
     app.include_router(health.router)
     app.include_router(auth_router.router)
     app.include_router(projects.router)
