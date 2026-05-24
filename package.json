@@ -1,0 +1,23 @@
+{
+  "name": "tracebility",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Self-hosted LLM observability + eval-rigor + agent-replay platform.",
+  "license": "Apache-2.0",
+  "workspaces": [
+    "web",
+    "packages/sdk-typescript"
+  ],
+  "scripts": {
+    "dev": "pnpm --filter ./web dev",
+    "build": "pnpm --filter ./web build && pnpm --filter ./packages/sdk-typescript build",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test"
+  },
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  },
+  "packageManager": "pnpm@9.12.0"
+}

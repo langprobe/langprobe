@@ -1,0 +1,39 @@
+[project]
+name = "tracebility"
+version = "0.0.0"
+description = "Self-hosted LLM observability + eval-rigor + agent-replay platform."
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.11"
+authors = [{ name = "tracebility contributors" }]
+
+[tool.uv.workspace]
+members = [
+    "services/ingest-api",
+    "services/api",
+    "services/ingest-worker",
+    "services/eval-orchestrator",
+    "packages/sdk-python",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "A", "C4", "SIM", "RET", "PTH", "ERA"]
+ignore = ["E501"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.pyright]
+include = ["services", "packages/sdk-python"]
+pythonVersion = "3.11"
+typeCheckingMode = "standard"
+reportMissingImports = "error"
+
+[tool.pytest.ini_options]
+testpaths = ["services", "packages/sdk-python"]
+python_files = ["test_*.py"]
+addopts = "-ra"
