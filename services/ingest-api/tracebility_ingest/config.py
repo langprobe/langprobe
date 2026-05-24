@@ -21,6 +21,10 @@ class Settings:
     log_level: str = "INFO"
     bind_host: str = "0.0.0.0"
     bind_port: int = 7080
+    # PII redaction at ingest (Phase 8 stub). On by default — operators
+    # who need raw inputs for replay-as-production must opt out per project
+    # once policy work lands.
+    redact_pii: bool = True
 
 
 def load() -> Settings:
@@ -42,4 +46,6 @@ def load() -> Settings:
         log_level=os.environ.get("TRACEBILITY_LOG_LEVEL", "INFO"),
         bind_host=os.environ.get("TRACEBILITY_BIND_HOST", "0.0.0.0"),
         bind_port=int(os.environ.get("TRACEBILITY_BIND_PORT", "7080")),
+        redact_pii=os.environ.get("TRACEBILITY_REDACT_PII", "true").lower()
+        not in {"0", "false", "no", "off"},
     )

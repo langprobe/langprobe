@@ -14,9 +14,14 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Request, status
 
+import structlog
+
 from ..auth import AuthContext, require_ingest_key
 from ..enqueue import IngestEnqueue, serialize_batch
+from ..redactor import Redactor
 from ..schemas import IngestAck, IngestBatch
+
+log = structlog.get_logger("tracebility.ingest.runs")
 
 router = APIRouter(prefix="/v1", tags=["ingest"])
 
@@ -46,7 +51,16 @@ async def ingest_runs(
     ctx: AuthContext = Depends(require_ingest_key),
 ) -> IngestAck:
     enqueue: IngestEnqueue = request.app.state.enqueue
-    serialized = serialize_batch(_envelope(batch, ctx))
+    redactor: Redactor = request.app.state.redactor
+    envelope = _envelope(batch, ctx)
+    counts = redactor.redact_envelope(envelope)
+    if counts:
+        log.info(
+            "redacted",
+            project_id=envelope["project_id"],
+            counts=dict(counts),
+        )
+    serialized = serialize_batch(envelope)
     await enqueue.enqueue(serialized)
     return IngestAck(
         accepted_runs=len(batch.runs),

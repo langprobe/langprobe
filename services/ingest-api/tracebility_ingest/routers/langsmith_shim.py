@@ -18,11 +18,15 @@ from typing import Any
 from uuid import UUID
 
 import orjson
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from ..auth import AuthContext, require_ingest_key
 from ..enqueue import IngestEnqueue, serialize_batch
+from ..redactor import Redactor
 from ..schemas import IngestAck, IngestBatch, RunIngest, RunKind
+
+log = structlog.get_logger("tracebility.ingest.langsmith_shim")
 
 router = APIRouter(tags=["langsmith-shim"])
 
@@ -90,6 +94,14 @@ async def _enqueue_runs(request: Request, ctx: AuthContext, runs: list[RunIngest
         "payload": batch.model_dump(mode="json"),
     }
     enqueue: IngestEnqueue = request.app.state.enqueue
+    redactor: Redactor = request.app.state.redactor
+    counts = redactor.redact_envelope(envelope)
+    if counts:
+        log.info(
+            "redacted",
+            project_id=envelope["project_id"],
+            counts=dict(counts),
+        )
     await enqueue.enqueue(serialize_batch(envelope))
     return IngestAck(accepted_runs=len(runs), accepted_spans=0)
 

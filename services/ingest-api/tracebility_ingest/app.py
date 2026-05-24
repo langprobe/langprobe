@@ -19,6 +19,7 @@ from fastapi import FastAPI
 
 from . import config
 from .enqueue import IngestEnqueue
+from .redactor import redactor_from_env
 from .routers import health, langsmith_shim, runs
 
 log = structlog.get_logger("tracebility.ingest.app")
@@ -67,8 +68,13 @@ def create_app() -> FastAPI:
             redis_url=settings.redis_url,
             disk_buffer_path=settings.disk_buffer_path,
         )
+        app.state.redactor = redactor_from_env(settings.redact_pii)
         drain_task = asyncio.create_task(_drain_loop(app.state.enqueue))
-        log.info("ingest-api started", bind=f"{settings.bind_host}:{settings.bind_port}")
+        log.info(
+            "ingest-api started",
+            bind=f"{settings.bind_host}:{settings.bind_port}",
+            redact_pii=settings.redact_pii,
+        )
         try:
             yield
         finally:
