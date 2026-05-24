@@ -12,8 +12,16 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from . import config
+from .clickhouse_client import ClickHouseQuery
 from .middleware import install as install_middleware
-from .routers import api_keys, auth as auth_router, health, projects, setup as setup_router
+from .routers import (
+    api_keys,
+    auth as auth_router,
+    health,
+    projects,
+    runs_query,
+    setup as setup_router,
+)
 
 log = structlog.get_logger("tracebility.api.app")
 
@@ -42,10 +50,21 @@ def create_app() -> FastAPI:
             max_size=10,
             command_timeout=10,
         )
-        log.info("api started", bind=f"{settings.bind_host}:{settings.bind_port}")
+        app.state.clickhouse = (
+            ClickHouseQuery(settings.clickhouse_url)
+            if settings.clickhouse_url
+            else None
+        )
+        log.info(
+            "api started",
+            bind=f"{settings.bind_host}:{settings.bind_port}",
+            clickhouse=bool(settings.clickhouse_url),
+        )
         try:
             yield
         finally:
+            if app.state.clickhouse is not None:
+                app.state.clickhouse.close()
             await app.state.pg.close()
             log.info("api stopped")
 
@@ -67,6 +86,7 @@ def create_app() -> FastAPI:
     app.include_router(auth_router.router)
     app.include_router(projects.router)
     app.include_router(api_keys.router)
+    app.include_router(runs_query.router)
     return app
 
 

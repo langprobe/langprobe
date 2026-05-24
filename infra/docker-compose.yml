@@ -88,6 +88,7 @@ services:
     environment:
       TRACEBILITY_PG_DSN: postgres://tracebility:${POSTGRES_PASSWORD:-tracebility}@postgres:5432/tracebility
       TRACEBILITY_SESSION_SECRET: ${SESSION_SECRET:?must be set, generate with: openssl rand -hex 32}
+      TRACEBILITY_CLICKHOUSE_URL: http://tracebility:${CLICKHOUSE_PASSWORD:-tracebility}@clickhouse:8123/tracebility
       TRACEBILITY_BIND_HOST: 0.0.0.0
       TRACEBILITY_API_BIND_PORT: "7081"
       TRACEBILITY_CORS_ALLOW_ORIGIN: ${WEB_ORIGIN:-http://localhost:7090}
@@ -96,6 +97,7 @@ services:
       - "7081:7081"
     depends_on:
       postgres: { condition: service_healthy }
+      clickhouse: { condition: service_healthy }
     restart: unless-stopped
 
   ingest-worker:

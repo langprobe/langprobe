@@ -15,6 +15,7 @@ from dataclasses import dataclass
 class Settings:
     postgres_dsn: str
     session_secret: str
+    clickhouse_url: str | None = None
     session_cookie_name: str = "tracebility_session"
     session_max_age_seconds: int = 60 * 60 * 24 * 7
     bind_host: str = "0.0.0.0"
@@ -35,6 +36,7 @@ def load() -> Settings:
     return Settings(
         postgres_dsn=postgres_dsn,
         session_secret=session_secret,
+        clickhouse_url=os.environ.get("TRACEBILITY_CLICKHOUSE_URL"),
         session_cookie_name=os.environ.get(
             "TRACEBILITY_SESSION_COOKIE", "tracebility_session"
         ),
