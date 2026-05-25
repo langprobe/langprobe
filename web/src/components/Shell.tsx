@@ -3,9 +3,9 @@
  *   nav (240px) | main | inspector (360px)
  * 1px --rule dividers, no shadows. Skeletons are flat, not shimmer.
  *
- * Sample data is stubbed inline so the dashboard renders before the
- * api/ClickHouse plumbing lands. Replace these with /v1/runs queries
- * once the read-side service exists (Phase 11+).
+ * Active project + project list come from server props; the page
+ * resolves them once and threads them through here so the picker can
+ * render without an extra round-trip.
  */
 
 import {
@@ -19,6 +19,8 @@ import {
   Settings,
 } from "lucide-react";
 import type { ReactNode } from "react";
+import type { Project } from "@/lib/projects";
+import { ProjectSwitcher } from "./ProjectSwitcher";
 
 const NAV: { label: string; icon: ReactNode }[] = [
   { label: "Overview", icon: <Home size={16} strokeWidth={1.5} /> },
@@ -31,7 +33,17 @@ const NAV: { label: string; icon: ReactNode }[] = [
   { label: "Settings", icon: <Settings size={16} strokeWidth={1.5} /> },
 ];
 
-export function Shell({ children }: { children: ReactNode }) {
+export function Shell({
+  children,
+  active,
+  projects,
+  inspector,
+}: {
+  children: ReactNode;
+  active: Project | null;
+  projects: Project[];
+  inspector?: ReactNode;
+}) {
   return (
     <div
       style={{
@@ -41,7 +53,7 @@ export function Shell({ children }: { children: ReactNode }) {
         background: "var(--bg)",
       }}
     >
-      <NavPane />
+      <NavPane active={active} projects={projects} />
       <main
         style={{
           overflow: "auto",
@@ -51,12 +63,18 @@ export function Shell({ children }: { children: ReactNode }) {
       >
         {children}
       </main>
-      <InspectorPane />
+      <InspectorPane>{inspector}</InspectorPane>
     </div>
   );
 }
 
-function NavPane() {
+function NavPane({
+  active,
+  projects,
+}: {
+  active: Project | null;
+  projects: Project[];
+}) {
   return (
     <aside
       style={{
@@ -71,12 +89,14 @@ function NavPane() {
           padding: "4px 8px 14px",
           fontSize: 13,
           letterSpacing: "-0.005em",
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
         }}
       >
         <span style={{ color: "var(--accent)" }}>tracebility</span>
-        <span style={{ color: "var(--text-muted)", marginLeft: 6 }}>
-          / acme
-        </span>
+        <span style={{ color: "var(--text-muted)" }}>/</span>
+        <ProjectSwitcher active={active} projects={projects} />
       </div>
       {NAV.map((item, i) => (
         <button
@@ -103,7 +123,7 @@ function NavPane() {
   );
 }
 
-function InspectorPane() {
+function InspectorPane({ children }: { children?: ReactNode }) {
   return (
     <aside
       style={{
@@ -123,9 +143,11 @@ function InspectorPane() {
       >
         Inspector
       </div>
-      <div style={{ fontSize: 13, color: "var(--text-muted)" }}>
-        Select a run to inspect inputs, outputs, span tree, eval scores.
-      </div>
+      {children ?? (
+        <div style={{ fontSize: 13, color: "var(--text-muted)" }}>
+          Select a run to inspect inputs, outputs, span tree, eval scores.
+        </div>
+      )}
     </aside>
   );
 }

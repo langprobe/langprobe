@@ -119,8 +119,10 @@ services:
       dockerfile: web/Dockerfile
     environment:
       NODE_ENV: production
-      # Public origin the browser hits. Server-side requests can use api:7081 directly.
+      # Public origin the browser hits.
       NEXT_PUBLIC_API_BASE: ${API_BASE:-http://localhost:7081}
+      # Internal DNS the Next.js server uses for server-side fetch to /v1/*.
+      API_BASE_INTERNAL: http://api:7081
     ports:
       - "7090:7090"
     depends_on:

@@ -1,13 +1,11 @@
-"""Read-side runs list.
+"""Read-side runs list, detail, and span tree.
 
-Backs the web overview table. Filters: project_id (required, comes from
-the URL because we don't have an active-project picker yet), optional
-status, limit + offset cursor. Tenancy is enforced by re-checking the
-caller has any role in the workspace owning that project.
+Backs the web overview table and the run-detail page. Tenancy is
+enforced by re-checking the caller has any role in the workspace
+owning that project.
 
-Why a thin endpoint: we want the SDK quickstart loop to close as fast
-as possible. The web shell currently renders SAMPLE_RUNS fixtures —
-this is the swap-in. We deliberately don't paginate-by-time yet; offset
+Why thin endpoints: we want the SDK quickstart loop to close as fast
+as possible. We deliberately don't paginate-by-time yet on list; offset
 is fine until the dataset is large enough to make scans painful.
 
 Failure modes:
@@ -48,6 +46,58 @@ class RunListItem(BaseModel):
 
 class RunListResponse(BaseModel):
     items: list[RunListItem]
+
+
+class RunDetail(BaseModel):
+    run_id: UUID
+    project_id: UUID
+    parent_run_id: UUID | None
+    name: str
+    kind: str
+    status: str
+    start_time: datetime
+    end_time: datetime | None
+    latency_ms: float | None
+    inputs: str
+    outputs: str
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+    cost_usd: float
+    sdk: str
+    sdk_version: str
+    session_id: str | None
+    user_id: str | None
+    tags: list[str]
+    metadata: str
+    error_kind: str
+    error_message: str
+
+
+class SpanItem(BaseModel):
+    span_id: UUID
+    parent_span_id: UUID | None
+    name: str
+    kind: str
+    status: str
+    start_time: datetime
+    end_time: datetime | None
+    latency_ms: float | None
+    inputs: str
+    outputs: str
+    model: str
+    temperature: float | None
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+    cost_usd: float
+    error_kind: str
+    error_message: str
+    attributes: str
+
+
+class SpanListResponse(BaseModel):
+    items: list[SpanItem]
 
 
 @router.get("", response_model=RunListResponse)
@@ -111,11 +161,7 @@ async def list_runs(
             kind=row["kind"],
             status=row["status"],
             start_time=row["start_time"],
-            latency_ms=(
-                round(row["duration_ns"] / 1_000_000, 3)
-                if row.get("duration_ns") is not None
-                else None
-            ),
+            latency_ms=_latency_ms(row.get("duration_ns")),
             total_tokens=int(row["total_tokens"] or 0),
             cost_usd=float(row["cost_usd"] or 0),
             sdk=row["sdk"],
@@ -123,3 +169,164 @@ async def list_runs(
         for row in rows
     ]
     return RunListResponse(items=items)
+
+
+@router.get("/{run_id}", response_model=RunDetail)
+async def get_run(
+    request: Request,
+    run_id: UUID,
+    project_id: UUID = Query(...),
+    principal: Principal = Depends(require_user),
+) -> RunDetail:
+    pool: asyncpg.Pool = request.app.state.pg
+    await _assert_project_access(pool, project_id, principal)
+    ch = _require_clickhouse(request)
+
+    sql = """
+        select run_id, project_id, parent_run_id, name, kind, status,
+               start_time, end_time, duration_ns,
+               inputs, outputs,
+               prompt_tokens, completion_tokens, total_tokens, cost_usd,
+               sdk, sdk_version, session_id, user_id, tags, metadata,
+               error_kind, error_message
+        from run final
+        where project_id = {project_id:UUID}
+          and run_id = {run_id:UUID}
+        limit 1
+    """
+    params = {"project_id": str(project_id), "run_id": str(run_id)}
+    try:
+        rows = await ch.query(sql, parameters=params)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("run detail query failed", error=str(exc))
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE, "data plane unavailable"
+        ) from exc
+
+    if not rows:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "run not found")
+    row = rows[0]
+    return RunDetail(
+        run_id=row["run_id"],
+        project_id=row["project_id"],
+        parent_run_id=row.get("parent_run_id"),
+        name=row["name"],
+        kind=row["kind"],
+        status=row["status"],
+        start_time=row["start_time"],
+        end_time=row.get("end_time"),
+        latency_ms=_latency_ms(row.get("duration_ns")),
+        inputs=row.get("inputs") or "",
+        outputs=row.get("outputs") or "",
+        prompt_tokens=int(row.get("prompt_tokens") or 0),
+        completion_tokens=int(row.get("completion_tokens") or 0),
+        total_tokens=int(row.get("total_tokens") or 0),
+        cost_usd=float(row.get("cost_usd") or 0),
+        sdk=row.get("sdk") or "",
+        sdk_version=row.get("sdk_version") or "",
+        session_id=row.get("session_id"),
+        user_id=row.get("user_id"),
+        tags=list(row.get("tags") or []),
+        metadata=row.get("metadata") or "",
+        error_kind=row.get("error_kind") or "",
+        error_message=row.get("error_message") or "",
+    )
+
+
+@router.get("/{run_id}/spans", response_model=SpanListResponse)
+async def list_spans(
+    request: Request,
+    run_id: UUID,
+    project_id: UUID = Query(...),
+    principal: Principal = Depends(require_user),
+) -> SpanListResponse:
+    pool: asyncpg.Pool = request.app.state.pg
+    await _assert_project_access(pool, project_id, principal)
+    ch = _require_clickhouse(request)
+
+    sql = """
+        select span_id, parent_span_id, name, kind, status,
+               start_time, end_time, duration_ns,
+               inputs, outputs, model, temperature,
+               prompt_tokens, completion_tokens, total_tokens, cost_usd,
+               error_kind, error_message, attributes
+        from span final
+        where project_id = {project_id:UUID}
+          and run_id = {run_id:UUID}
+        order by start_time asc
+        limit 5000
+    """
+    params = {"project_id": str(project_id), "run_id": str(run_id)}
+    try:
+        rows = await ch.query(sql, parameters=params)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("span list query failed", error=str(exc))
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE, "data plane unavailable"
+        ) from exc
+
+    items = [
+        SpanItem(
+            span_id=row["span_id"],
+            parent_span_id=row.get("parent_span_id"),
+            name=row["name"],
+            kind=row["kind"],
+            status=row["status"],
+            start_time=row["start_time"],
+            end_time=row.get("end_time"),
+            latency_ms=_latency_ms(row.get("duration_ns")),
+            inputs=row.get("inputs") or "",
+            outputs=row.get("outputs") or "",
+            model=row.get("model") or "",
+            temperature=(
+                float(row["temperature"])
+                if row.get("temperature") is not None
+                else None
+            ),
+            prompt_tokens=int(row.get("prompt_tokens") or 0),
+            completion_tokens=int(row.get("completion_tokens") or 0),
+            total_tokens=int(row.get("total_tokens") or 0),
+            cost_usd=float(row.get("cost_usd") or 0),
+            error_kind=row.get("error_kind") or "",
+            error_message=row.get("error_message") or "",
+            attributes=row.get("attributes") or "",
+        )
+        for row in rows
+    ]
+    return SpanListResponse(items=items)
+
+
+async def _assert_project_access(
+    pool: asyncpg.Pool, project_id: UUID, principal: Principal
+) -> None:
+    workspace_id = await pool.fetchval(
+        "select workspace_id from project where id = $1 and deleted_at is null",
+        project_id,
+    )
+    if workspace_id is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "project not found")
+    await assert_workspace_role(
+        pool,
+        user_id=principal.user_id,
+        workspace_id=workspace_id,
+        allowed=("owner", "admin", "member", "viewer"),
+    )
+
+
+def _require_clickhouse(request: Request) -> ClickHouseQuery:
+    ch: ClickHouseQuery | None = getattr(request.app.state, "clickhouse", None)
+    if ch is None:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "clickhouse not configured (set TRACEBILITY_CLICKHOUSE_URL)",
+        )
+    return ch
+
+
+def _latency_ms(duration_ns: object) -> float | None:
+    if duration_ns is None:
+        return None
+    try:
+        return round(int(duration_ns) / 1_000_000, 3)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None

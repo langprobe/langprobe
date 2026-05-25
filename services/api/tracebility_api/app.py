@@ -18,6 +18,7 @@ from .routers import (
     api_keys,
     auth as auth_router,
     health,
+    metrics,
     projects,
     runs_query,
     setup as setup_router,
@@ -87,6 +88,7 @@ def create_app() -> FastAPI:
     app.include_router(projects.router)
     app.include_router(api_keys.router)
     app.include_router(runs_query.router)
+    app.include_router(metrics.router)
     return app
 
 
