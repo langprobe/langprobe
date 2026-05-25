@@ -7,7 +7,7 @@ requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.110",
     "uvicorn[standard]>=0.27",
-    "pydantic>=2.6",
+    "pydantic[email]>=2.6",
     "asyncpg>=0.29",
     "orjson>=3.9",
     "structlog>=24.1",

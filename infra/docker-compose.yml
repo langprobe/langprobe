@@ -10,7 +10,7 @@ name: tracebility
 
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:16
     environment:
       POSTGRES_DB: tracebility
       POSTGRES_USER: tracebility
@@ -43,7 +43,7 @@ services:
     ulimits:
       nofile: { soft: 262144, hard: 262144 }
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8123/ping"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8123/ping"]
       interval: 3s
       timeout: 3s
       retries: 30
@@ -87,7 +87,7 @@ services:
       dockerfile: services/api/Dockerfile
     environment:
       TRACEBILITY_PG_DSN: postgres://tracebility:${POSTGRES_PASSWORD:-tracebility}@postgres:5432/tracebility
-      TRACEBILITY_SESSION_SECRET: ${SESSION_SECRET:?must be set, generate with: openssl rand -hex 32}
+      TRACEBILITY_SESSION_SECRET: "${SESSION_SECRET:?must be set, generate with openssl rand -hex 32}"
       TRACEBILITY_CLICKHOUSE_URL: http://tracebility:${CLICKHOUSE_PASSWORD:-tracebility}@clickhouse:8123/tracebility
       TRACEBILITY_BIND_HOST: 0.0.0.0
       TRACEBILITY_API_BIND_PORT: "7081"
@@ -106,7 +106,7 @@ services:
       dockerfile: services/ingest-worker/Dockerfile
     environment:
       TRACEBILITY_REDIS_URL: redis://redis:6379/0
-      TRACEBILITY_CLICKHOUSE_URL: clickhouse://tracebility:${CLICKHOUSE_PASSWORD:-tracebility}@clickhouse:9000/tracebility
+      TRACEBILITY_CLICKHOUSE_URL: http://tracebility:${CLICKHOUSE_PASSWORD:-tracebility}@clickhouse:8123/tracebility
       TRACEBILITY_LOG_LEVEL: ${LOG_LEVEL:-INFO}
     depends_on:
       clickhouse: { condition: service_healthy }

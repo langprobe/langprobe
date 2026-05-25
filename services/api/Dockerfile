@@ -9,7 +9,8 @@ WORKDIR /app
 COPY services/api/pyproject.toml ./pyproject.toml
 COPY services/api/tracebility_api ./tracebility_api
 
-RUN pip install --no-cache-dir .
+RUN pip install --no-cache-dir . \
+ && pip install --no-cache-dir --force-reinstall --no-deps "uvicorn[standard]>=0.27"
 
 EXPOSE 7081
 CMD ["python", "-m", "tracebility_api"]
