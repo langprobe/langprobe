@@ -2,168 +2,203 @@
 
 ## Product Context
 - **What this is:** Self-hosted LLM observability + eval-rigor + agent-replay platform. A LangSmith replacement that doubles as the real debugger for agents.
-- **Who it's for:** Engineers running LLM products in their own VPC. Backend-leaning, eval-serious, allergic to SaaS polish-over-substance. The kind of engineer who'd already pay for Berkeley Mono.
-- **Space/industry:** LLM observability. Peers: LangSmith, Langfuse, Braintrust, Arize Phoenix, Helicone, W&B Weave, Galileo.
-- **Project type:** Hybrid — dense developer-tool web app (trace explorer, replay timeline, eval dashboards, prompt playground, dataset editor, admin) + marketing/docs site.
+- **Who it's for:** Engineers running LLM products in their own VPC. Backend-leaning, eval-serious, allergic to SaaS polish-over-substance.
 - **Memorable thing:** "This is the real debugger for agents." Every design decision serves that one sentence.
 
 ## Aesthetic Direction
-- **Direction:** Instrumented Brutalist. Exposed structure, no decorative flourish, the UI looks like a tool. Closest analogs: Chrome DevTools, Sentry's debugger panel, GDB time-travel debuggers, the React DevTools Profiler. Linear's restraint with more density.
-- **Decoration level:** Minimal. Typography, spacing, and structural lines do the work. No gradients. No icon-in-colored-circle. No hero illustration. The closest thing to "decoration" is a thin grid line, a span-bar, a code block.
-- **Mood:** Serious software for serious work. Dense, precise, instrumented. The aesthetic of a product engineers reach for when something is broken at 2am, not the aesthetic of a product they're pitched in a sales call.
-- **Reference sites:** Linear (restraint), Vercel docs (typography density), Sentry (debugger surfaces), Stripe docs (information density without polish-tax). Anti-references: every other product in the LLM-observability category.
+- **Direction:** Vercel/Geist-grade product surface. Calm, near-black, paper-warm light mode. Information density without ornament. Not "SaaS pastel," not "AI-tool gradient slop," not "shadcn template." Closest analogs: Vercel dashboard, Linear, GitHub Primer's quieter views.
+- **Decoration level:** None. Type, spacing, and 1px rules carry everything. No gradients. No icon-in-colored-circle. No mesh blobs. No glassmorphism.
+- **Mood:** Quiet, precise, builder-grade. The product looks like calm software, not a pitch deck.
+- **Reference:** `/Users/mia/Downloads/tracability.html` is the canonical mock. When in doubt, open that file and copy what it does.
 
 ## Typography
-- **Display (marketing only):** Fraunces — variable serif with optical-size variation. Editorial seriousness, not SaaS template.
-- **Product UI / labels / data / code:** Berkeley Mono (commercial license required, ~$40 personal / per-user). Fallback for OSS distribution and self-hosters who don't have the license: JetBrains Mono.
-- **Body prose (docs paragraphs, marketing body):** Inter Tight, with DM Sans as the secondary fallback. Body prose is where you don't need to fight; let the display + monospace UI carry the personality.
-- **Tabular data:** Berkeley Mono (or JetBrains Mono fallback) with `font-variant-numeric: tabular-nums slashed-zero`. Numbers align without thinking.
-- **Loading strategy:** Self-host all fonts. No Google Fonts CDN — this is a privacy-conscious self-hosted product, fonts must work air-gapped. Provide WOFF2 + variable-font subsetted to Latin range. Berkeley Mono served only when a license file is present at the configured path; absent license falls through to JetBrains Mono.
-- **Modular scale (4px base, ratio 1.2 minor third):**
+- **Sans (default UI + body):** Geist, served via `next/font/google`. Weights 400/500/600.
+- **Mono (data, code, kbd, badges, span ids):** Geist Mono. Always with `font-variant-numeric: tabular-nums slashed-zero` on numeric data.
+- **No alt fonts.** No Inter. No Space Grotesk. No Berkeley Mono. No Fraunces. No system-ui as the primary face. Geist + Geist Mono is the entire family.
+- **Type scale (CSS variables):**
 
 ```
-xs    11px / 0.6875rem — captions, span timestamps
-sm    13px / 0.8125rem — body small, secondary labels
-base  14px / 0.875rem  — UI default, table rows
-md    16px / 1rem      — body prose
-lg    19px / 1.1875rem — section headers
-xl    23px / 1.4375rem — page titles
-2xl   28px / 1.75rem   — marketing sub-display
-3xl   34px / 2.125rem  — marketing display
-4xl   48px / 3rem      — marketing hero (Fraunces only)
+--fs-12 12px  — captions, span timestamps, helper
+--fs-13 13px  — table rows, sidebar nav, secondary
+--fs-14 14px  — UI default, body, button text
+--fs-16 16px  — section titles, card titles
+--fs-20 20px  — page titles
+--fs-28 28px  — KPI numbers
+--fs-40 40px  — marketing display only
 ```
 
-- **Line heights:** UI/data 1.4, prose 1.6, headings 1.15.
-- **Letter spacing:** UI labels at -0.005em. Tabular numbers default. Display Fraunces at -0.02em.
+- **Line-height:** UI/data 1.4, prose 1.55, headings 1.2.
+- **Letter-spacing:** UI labels at -0.005em. KPI numbers and large mono numbers at -0.015em.
 
-## Color
-- **Approach:** Restrained, technical. One accent. Color is signal, not brand decoration.
-- **No blue. No purple.** That is the convergence trap. Refusing it is the wedge.
+## Color (light is default, dark is parity)
 
-### Light mode (marketing default)
+Tokens — copy these names verbatim into `globals.css`:
+
+### Light mode (default for both product and marketing)
 
 | Token | Value | Usage |
 |---|---|---|
-| `--bg` | `#FAF8F4` | App + page background. Warm off-white, paper. |
+| `--bg` | `#FCFCFC` | App + page background. Warm-white. |
 | `--surface` | `#FFFFFF` | Cards, popovers, modal surfaces. |
-| `--text` | `#0E0E0C` | Primary text. Near-black with slight warmth. |
-| `--text-muted` | `#6B6963` | Secondary labels, timestamps, helper text. |
-| `--rule` | `#E5E1D8` | Thin lines, grid, table borders, dividers. |
-| `--accent` | `#D9531E` | Amber-orange. Breakpoints, playhead, active state, the "this is what failed" highlight. |
-| `--accent-soft` | `#F5E0D2` | Accent backgrounds (selected row, focused span). |
-| `--pass` | `#2F7A3D` | Eval pass, healthy state. |
-| `--warn` | `#B5811A` | Warnings, sampled-eval ceilings, degraded mode. |
-| `--fail` | `#B43A2A` | Errors, dead-letter, judge unavailable. |
+| `--surface-2` | `#F7F7F5` | Striped row, sidebar bg, secondary surface. |
+| `--surface-3` | `#F0F0EE` | Active nav row, hover-press, code-block bg. |
+| `--hover` | `#F5F5F3` | Hover row / hover button. |
+| `--border` | `#ECECEA` | Default 1px rule. |
+| `--border-strong` | `#DDDDDB` | Stronger rule, focused-card border. |
+| `--border-focus` | `#0A0A0A` | Focus ring color. |
+| `--text` | `#0A0A0A` | Primary text. Near-black. |
+| `--text-2` | `#4B4B49` | Secondary labels. |
+| `--text-3` | `#8A8A86` | Tertiary, helper, timestamps. |
+| `--text-4` | `#B4B4AE` | Disabled / placeholder. |
+| `--accent` | `#0A0A0A` | Primary button bg, brand mark. |
+| `--accent-fg` | `#FFFFFF` | Foreground on accent. |
+| `--link` | `#2056E2` | Hyperlinks, primary action text. |
+| `--link-soft` | `#EEF2FE` | Link-tinted hover/selected backgrounds. |
+| `--info` | `#2056E2` | Info badge. |
+| `--info-soft` | `#EEF2FE` | Info badge bg. |
+| `--success` | `#1A7F4E` | Pass, healthy, OK. |
+| `--success-soft` | `#E7F4ED` | Success badge bg. |
+| `--warn` | `#B05F00` | Warning, sampled-eval ceiling. |
+| `--warn-soft` | `#FBF1E0` | Warn badge bg. |
+| `--danger` | `#C0382B` | Error, failed run, dead-letter. |
+| `--danger-soft` | `#FBEAE7` | Danger badge bg. |
 
-### Dark mode (product default)
+### Kind palette (span-kind badges in trace views)
 
 | Token | Value | Usage |
 |---|---|---|
-| `--bg` | `#0E0E0C` | App background. True charcoal, no blue tint. |
-| `--surface` | `#161613` | Panels, popovers. |
-| `--text` | `#F4F1EA` | Primary text. |
-| `--text-muted` | `#8B8980` | Secondary. |
-| `--rule` | `#2A2925` | Lines, grid. |
-| `--accent` | `#E96A2E` | Amber-orange, slightly lifted for dark. |
-| `--accent-soft` | `#3A1F12` | Accent backgrounds in dark. |
-| `--pass` | `#4FA45F` | |
-| `--warn` | `#D6A53A` | |
-| `--fail` | `#D9594A` | |
+| `--kind-llm` | `#2056E2` | LLM call. |
+| `--kind-llm-bg` | `#EEF2FE` | LLM badge bg. |
+| `--kind-tool` | `#6D5BBC` | Tool call. |
+| `--kind-tool-bg` | `#EFEBFB` | Tool badge bg. |
+| `--kind-retr` | `#167C73` | Retriever / vector lookup. |
+| `--kind-retr-bg` | `#E3F2EF` | Retr badge bg. |
+| `--kind-chain` | `#4B4B49` | Chain / wrapper / agent step. |
+| `--kind-chain-bg` | `#F0F0EE` | Chain badge bg. |
 
-### Mode rules
+### Dark mode (parity, reserved)
 
-- Product app boots dark by default. User toggle persists.
-- Marketing site boots light by default. Same toggle.
-- Dark mode is **redesigned**, not auto-inverted. Saturation reduced ~15%, contrast ratios re-checked at every surface.
-- Amber accent must always pass WCAG AA (4.5:1) on its background in both modes. Verified: D9531E on FAF8F4 = 4.6, E96A2E on 0E0E0C = 6.1.
+Dark mode is reserved. When authored it must be a deliberate redesign, not auto-inverted. Until shipped, the app stays light-mode-only.
+
+### Color rules
+- **Accent is `#0A0A0A`,** not amber, not blue, not purple. Primary buttons, the brand glyph, and hard-emphasis ink are this color.
+- **Links are `#2056E2`.** Anywhere a hyperlink can appear (in-app or marketing). No purple visited state — same color, slightly desaturated underline on hover only.
+- **No gradients.** Anywhere. Including the brand mark.
+- **Semantic colors are rare.** A row is not painted green for being healthy. Green only appears in the pass-pill and the eval-pass dot. Same for warn/danger.
+
+## Geometry
+- **Border radius:**
+```
+--r-1 4px   — inline pills, badges, tags
+--r-2 6px   — inputs, buttons, kbd
+--r-3 8px   — cards, panels, popovers
+--r-4 12px  — modals (top of scale)
+```
+No radius >12px outside of round status dots / avatars. Round avatars and status dots use `border-radius: 9999px`.
+
+- **Shadow:**
+```
+--shadow-1: 0 1px 2px rgba(0,0,0,0.04)            — flat lift (default card)
+--shadow-2: 0 4px 16px -2px rgba(0,0,0,0.06),
+            0 2px 4px rgba(0,0,0,0.04)             — popover
+--shadow-3: 0 12px 40px -8px rgba(0,0,0,0.12)     — modal
+```
+Shadows are subtle. The 1px `--border` rule is the primary container signal; shadow is only a hint.
 
 ## Spacing
 - **Base unit:** 4px.
-- **Density:** Compact. Debugger-tool density. Default row 28px, not 48px.
-
+- **Density:** Compact-but-breathable. Sidebar nav rows 30-32px, table rows 36-40px, KPI cards 16-20px padding.
 ```
-2xs   2px   — internal padding on dense badges
-xs    4px   — inline gaps, icon-to-text
-sm    8px   — between tightly related elements
-md    16px  — paragraph rhythm, card internal padding
-lg    24px  — section gap inside a panel
-xl    32px  — between panels
-2xl   48px  — page-level breaks
-3xl   64px  — marketing section breaks (only on marketing pages)
-```
-
-- **Default row height:** 28px (UI tables, trace span rows, list items).
-- **Default card padding:** 16px.
-- **Marketing density:** less compact than the app, but still tighter than category baseline. Marketing 2xl (48px) is the section break; SaaS-template peers tend to use 96-128px.
-
-## Layout
-
-- **Approach:** Grid-disciplined for the app, editorial-poster for marketing.
-- **App shape:** Three-pane debugger. Left nav (collapsible, 240px expanded / 56px collapsed). Main content (the trace tree, the replay timeline, the dashboard). Optional right inspector (320-480px, drag-resizable). All three panes use 1px `--rule` dividers, not box shadows.
-- **Marketing first viewport:** A single composition. Static screenshot of the replay timeline with the headline embedded as a tooltip on the playhead. Not a hero/subhero/CTA stack. The marketing IS the demo. One scroll reveals what the product does, not three scrolls of feature cards.
-- **Grid:** App content uses a 4px-baseline soft grid. Marketing uses a 12-column grid at 1280px max width with 24px gutters. No max-width on the app — densest screens fill all available pixels.
-- **Border radius (hierarchical, not uniform):**
-
-```
-sm    2px   — input fields, badges
-md    4px   — cards, panels, buttons
-lg    8px   — modals, popovers
-full  9999px — only on round status dots and avatars
+2xs   2px
+xs    4px
+sm    8px
+md    12px
+lg    16px
+xl    24px
+2xl   32px
+3xl   48px
 ```
 
-- **No bubbly border-radius.** Anything ≥12px outside of `full` reads as SaaS-toy.
+## Layout grids
+The app shell is one composition: `topbar topbar / sidebar main`.
+
+```
+App grid
++------------------ 48px topbar -------------------+
+| brand · crumbs                  search · kbd ⌘K  |
++----- 232px ----+--------- 1fr main --------------+
+|   sidebar      |    page content                 |
+|   project      |                                  |
+|   nav-section  |                                  |
+|   nav-item     |                                  |
+|   ...          |                                  |
+|   sidebar-foot |                                  |
++----------------+----------------------------------+
+```
+
+- **Topbar:** 48px tall, sticky, 1px `--border` bottom rule. White surface.
+- **Sidebar:** 232px wide, full-height, `--surface-2` background, 1px right rule.
+- **Trace shell (run-detail):** `360px 1fr 440px` — span-tree / timeline canvas / inspector. Each pane has its own scroll. 1px `--border` rules between, no shadow.
+- **Studio shell:** `1fr 380px` — graph pane / chat pane.
+- **Marketing:** 12-col grid at 1200px max, 24px gutters, single scroll first viewport.
+- **No max-width inside the app.** The shell consumes available width.
+
+## Components (canonical class names — use exactly these)
+
+`.btn` — base button. Variants `.btn-primary` (filled `--accent` / `--accent-fg`), `.btn-ghost` (transparent / `--text` / hover `--hover`), `.btn-danger` (filled `--danger` / white). Default: 32px tall, 12px padding, `--r-2`, 13/14px text.
+
+`.kbd` — inline keyboard hint. `--surface` bg, 1px `--border`, `--r-1`, 11px Geist Mono, 2px 6px padding.
+
+`.badge` — small status pill. 11/12px, monospace digits, `--r-1`, 2px 6px. Variants `.badge-success`, `.badge-warn`, `.badge-danger`, `.badge-info`, `.badge-neutral`.
+
+`.kind-badge` — span-kind tag. Same shape as `.badge` but uses `--kind-*` tokens. Variants `.kind-llm`, `.kind-tool`, `.kind-retr`, `.kind-chain`.
+
+`.card` — bordered container. `--surface` bg, 1px `--border`, `--r-3`, optional `--shadow-1`. Title row uses 14px Geist 500.
+
+`.kpi` — KPI tile. Card + 12px label `--text-3` uppercase + 28px Geist Mono number `--text` + 12px delta row.
+
+`.table` — data grid. 1px `--border` rule between rows, hover row `--hover`, monospace numeric columns, 36-40px row height, sticky header `--surface-2`.
+
+`.nav-section-label` — sidebar group header. 11px uppercase Geist 500, `--text-3`, 8px 12px padding.
+
+`.nav-item` — sidebar row. 13px Geist, 30px tall, 8px horizontal padding, 8px gap to icon. Active = `--surface-3` bg + `--text` color + 2px left bar in `--accent`. Hover = `--hover`.
+
+`.search-box` — topbar search. 32px tall, 1px `--border`, `--r-2`, `--surface-2` bg, leading icon, trailing `.kbd`. Focus = 1px `--border-focus` ring.
+
+`.crumbs` — breadcrumb row. 13px `--text-2`, ` / ` separator in `--text-4`, last segment `--text`.
 
 ## Motion
-- **Approach:** Minimal-functional. No entrance animations. No scroll-driven hero. No decorative motion.
-- **Easing:** `ease-out` for enter, `ease-in` for exit, `cubic-bezier(0.4, 0, 0.2, 1)` for move.
-- **Duration:**
-
-```
-instant 0ms       — tab switch, panel show/hide
-micro   80-120ms  — hover, focus ring, button press
-short   180ms     — replay-scrubber drag interpolation, dropdown open
-medium  240ms     — modal in/out (only because users expect it)
-```
-
-- **The one expressive motion:** the replay-timeline scrubber. Dragging the scrubber smoothly walks the trace tree highlight forward in real time. This is motion-as-feature because it IS the product. Everywhere else, motion is invisible scaffolding or absent.
-- **No parallax. No skeleton shimmer.** Skeletons are flat `--rule` rectangles. Loading is a 2px progress bar in the topmost rule line, not a spinner.
+- **Default duration:** 80-120ms for hover/focus, 180ms for state change. No motion >240ms except the replay scrubber.
+- **Easing:** `cubic-bezier(0.4, 0, 0.2, 1)` for move, `ease-out` for enter, `ease-in` for exit.
+- **No entrance animations** on page load. No scroll-driven hero. No skeleton shimmer (skeletons are flat `--surface-3` rectangles).
+- **Reduced motion:** respect `prefers-reduced-motion`. The replay scrubber falls back to step-by-step jump.
 
 ## Iconography
-- **Library:** Lucide (open license, monoline, fits the brutalist posture). All icons stroke 1.5px, no fills.
-- **Size scale:** 14px (inline), 16px (UI default), 20px (panel headers). Nothing larger.
-- **Color:** icons inherit `currentColor`. Never colored independently.
-- **Anti-pattern:** no icon-in-colored-circle. Ever.
+- **Library:** Lucide. Stroke 1.5px, no fills. Inherit `currentColor`. Never coloured independently.
+- **Sizes:** 14 inline, 16 UI default, 20 panel headers. Nothing larger.
+- **Anti-pattern:** never put an icon inside a colored circle.
 
-## Components (high-level posture)
-- **Buttons:** flat, 1px border in the same color as text or accent. No gradient. No shadow. Primary = filled accent on dark text. Secondary = ghost with 1px rule. Destructive = filled fail color. Pill rounding (radius full) only on filter chips.
-- **Inputs:** 1px rule border, 4px radius, focus ring is a 2px accent outline at -2px offset. No floating labels.
-- **Tables:** `tabular-nums` numbers, 28px row height, 1px rule between rows, hover state is `--accent-soft` with no transition.
-- **Status pills:** filled background in pass/warn/fail soft tone, monospace text, 11px size, 4px horizontal padding.
-- **Code blocks:** 13px Berkeley Mono, `--surface` background, 1px rule border, optional copy button at top-right (icon-only, no label).
-
-## Anti-patterns (never ship these)
-- Purple or violet gradients (the AI-tool slop signal).
-- 3-column feature grid with icons in colored circles.
-- Centered-everything marketing pages.
-- Bubble-radius on everything (>12px on cards, buttons, panels).
-- Inter as the primary display or body font.
-- Space Grotesk anywhere (the AI-mockup convergence signal).
-- system-ui as the display or body font.
-- Floating-button gradient CTAs.
+## Anti-patterns (forbidden)
+- Inter, Space Grotesk, system-ui, Berkeley Mono, Fraunces as primary or fallback faces.
+- Blue or purple as accent (`--accent` is `#0A0A0A`; blue only appears as the link color).
+- Gradients of any kind, including subtle text gradients on the brand.
+- Border radius >12px outside of full-round status dots / avatars.
+- Icons in colored circles.
+- 3-column SaaS-template feature grids with hero+subhero+CTA stack on marketing.
+- Skeleton shimmer animations.
 - Decorative blur blobs, mesh gradients, glassmorphism.
-- "Built for AI teams" / "Designed for engineers" copy patterns.
-- Skeleton shimmer animations (use flat skeletons).
-- Centered hero with subhero with feature-grid (the SaaS template).
+- Centered-everything marketing pages.
+- "Designed for AI teams" / "Built for modern engineers" boilerplate copy patterns.
 
 ## Accessibility minimums
-- All text-on-background combinations pass WCAG AA. Body text targets AAA where it doesn't compromise the aesthetic.
-- Focus rings always visible: 2px accent outline at -2px offset. Never `outline: none` without a replacement.
-- Hit targets minimum 28px on touch, 24px on pointer (matches our row height).
-- Trace tree, replay timeline, and eval tables must be fully keyboard-navigable. Arrow keys + Enter + Escape are first-class.
-- Color is never the only signal. Pass/warn/fail also use icon glyphs.
-- Reduced motion: respect `prefers-reduced-motion`. The replay scrubber falls back to step-by-step jump, not interpolated walk.
+- All text/bg combinations pass WCAG AA.
+- Focus is always visible. 1px `--border-focus` ring, never `outline: none` without a replacement.
+- Hit targets ≥32px in the app (matches button height), ≥24px in dense tables.
+- Trace tree, replay timeline, and eval tables are fully keyboard-navigable. Arrow + Enter + Escape are first-class.
+- Color is never the only signal — every status uses an icon or text alongside the color.
 
 ## Decisions Log
 | Date | Decision | Rationale |
 |------|----------|-----------|
-| 2026-05-25 | Initial design system created | Created by /design-consultation. Visual research across 6 category competitors revealed convergence on blue/purple SaaS-template aesthetic. Memorable thing locked as "the real debugger for agents." Direction: instrumented brutalist with Berkeley Mono UI and amber-orange accent. Three deliberate risks documented (monospace-default UI, no blue/purple, marketing-equals-product aesthetic). |
+| 2026-05-25 | v1 instrumented-brutalist (Berkeley Mono + amber). | Original direction. |
+| 2026-05-27 | v2 — adopt Vercel/Geist mock as new source of truth. | User chose "mock wins, replace DESIGN.md." Geist + Geist Mono, near-black `#0A0A0A` accent, light-mode default, blue `#2056E2` links, full token set extracted from `/Users/mia/Downloads/tracability.html`. Berkeley Mono / amber-orange retired. |

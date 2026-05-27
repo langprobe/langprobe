@@ -10,16 +10,18 @@ Registries: `/Users/mia/.gstack/projects/tracability/ceo-plans/2026-05-25-regist
 
 Always read `DESIGN.md` before making any visual or UI decisions. All font choices, colors, spacing, border radii, motion rules, and aesthetic direction are defined there. Do not deviate without explicit user approval.
 
-The memorable thing is "this is the real debugger for agents." Every UI choice serves that. When in doubt: look at Chrome DevTools, Sentry's debugger panel, or Linear, not LangSmith or Braintrust.
+The memorable thing is "this is the real debugger for agents." Every UI choice serves that. The canonical visual reference is `/Users/mia/Downloads/tracability.html`. When in doubt: open that file and copy what it does. For aesthetic peers, look at the Vercel dashboard, Linear, or GitHub Primer's quieter views, not LangSmith or Braintrust.
 
 In QA, code review, or design review modes: flag any code that doesn't match `DESIGN.md`. Specifically watch for:
-- Inter, Space Grotesk, or system-ui as primary fonts (use Berkeley Mono for UI / Fraunces for marketing display).
-- Blue or purple as primary accent (only amber-orange `#D9531E` light / `#E96A2E` dark).
+- Any font other than Geist + Geist Mono (no Inter, Space Grotesk, system-ui, Berkeley Mono, or Fraunces).
+- Any accent color other than near-black `#0A0A0A`. Blue only appears as the link color `#2056E2`. No purple. No amber. No gradients on the brand.
 - Gradients of any kind.
-- Border radius >12px outside of round status dots / avatars.
+- Border radius >12px outside of round status dots / avatars (token scale stops at `--r-4 12px`).
 - Icons in colored circles, decorative blur blobs, glassmorphism.
-- 3-column SaaS-template feature grids.
-- Skeleton shimmer animations.
+- 3-column SaaS-template feature grids with hero+subhero+CTA stacks on marketing.
+- Skeleton shimmer animations (skeletons must be flat `--surface-3` rectangles).
+- `data-theme="dark"` defaults — the app is light-mode-only until dark mode is deliberately authored.
+- CSS variables that don't match the canonical token set (`--bg #FCFCFC`, `--accent #0A0A0A`, `--link #2056E2`, etc.). The full set is in `DESIGN.md`.
 
 ## Skill routing
 

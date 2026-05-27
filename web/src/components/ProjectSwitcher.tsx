@@ -21,9 +21,7 @@ export function ProjectSwitcher({
 
   if (projects.length === 0) {
     return (
-      <span style={{ color: "var(--text-muted)", fontSize: 13 }}>
-        no projects
-      </span>
+      <span style={{ color: "var(--text-3)", fontSize: 13 }}>no projects</span>
     );
   }
 
@@ -46,12 +44,12 @@ export function ProjectSwitcher({
       style={{
         font: "inherit",
         color: "var(--text)",
-        background: "transparent",
-        border: "1px solid var(--rule)",
-        borderRadius: 4,
-        padding: "2px 6px",
+        background: "var(--surface)",
+        border: "1px solid var(--border)",
+        borderRadius: "var(--r-2)",
+        padding: "4px 8px",
         fontSize: 13,
-        maxWidth: 160,
+        maxWidth: "100%",
       }}
     >
       {projects.map((p) => (

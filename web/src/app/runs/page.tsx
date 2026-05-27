@@ -4,15 +4,11 @@ import { apiGet } from "@/lib/api";
 import { resolveActiveProject, type Project } from "@/lib/projects";
 
 /**
- * Overview dashboard.
+ * Traces — full runs list.
  *
- * Server-rendered: resolves active project from /v1/projects + cookie pin,
- * forwards the session cookie to /v1/runs + /v1/metrics in parallel.
- * Pre-setup or pre-login renders an empty state pointing at getting-started —
- * no fake data, ever (DESIGN.md "Be a tool, not a toy.").
- *
- * Visual direction: mock-as-truth (DESIGN.md v2). KPI grid at top, recent-runs
- * table below, both inside a 24px gutter on var(--bg).
+ * Server-rendered list of recent runs for the active project. Mirrors the
+ * shape used on Overview but without the KPI grid; this is the
+ * "production debugger surface area" view (DESIGN.md mock).
  */
 
 type Status = "ok" | "error" | "running" | string;
@@ -33,53 +29,35 @@ interface RunListResponse {
   items: Run[];
 }
 
-interface MetricsResponse {
-  window_seconds: number;
-  runs: number;
-  p50_ms: number | null;
-  p95_ms: number | null;
-  p99_ms: number | null;
-  error_count: number;
-  error_rate: number;
-  total_tokens: number;
-  total_cost_usd: number;
-}
+const DEFAULT_LIMIT = 200;
 
-const WINDOW_SECONDS = 3600;
-
-export default async function OverviewPage() {
+export default async function TracesPage() {
   const { active, all, reason } = await resolveActiveProject();
+
   if (!active) {
     return (
       <Shell active={null} projects={all}>
         <PageInterior>
-          <PageHeader title="Overview" subtitle="last 1h" />
+          <PageHeader title="Traces" subtitle="all runs" />
           <UnconfiguredState reason={reason} />
         </PageInterior>
       </Shell>
     );
   }
 
-  const [runsRes, metricsRes] = await Promise.all([
-    apiGet<RunListResponse>(
-      `/v1/runs?project_id=${encodeURIComponent(active.id)}&limit=100`,
-    ),
-    apiGet<MetricsResponse>(
-      `/v1/metrics?project_id=${encodeURIComponent(active.id)}&window_seconds=${WINDOW_SECONDS}`,
-    ),
-  ]);
-
+  const runsRes = await apiGet<RunListResponse>(
+    `/v1/runs?project_id=${encodeURIComponent(active.id)}&limit=${DEFAULT_LIMIT}`,
+  );
   const runs = runsRes.data?.items ?? [];
-  const runsError = runsRes.error;
-  const metrics = metricsRes.data;
-  const metricsError = metricsRes.error;
 
   return (
     <Shell active={active} projects={all}>
       <PageInterior>
-        <PageHeader title="Overview" subtitle={`last 1h · ${active.slug}`} />
-        <KpiGrid metrics={metrics} error={metricsError} />
-        <RunsCard runs={runs} reason={runsError} project={active} />
+        <PageHeader
+          title="Traces"
+          subtitle={`${active.slug} · last ${DEFAULT_LIMIT}`}
+        />
+        <RunsCard runs={runs} reason={runsRes.error} project={active} />
       </PageInterior>
     </Shell>
   );
@@ -128,104 +106,7 @@ function PageHeader({
           </span>
         ) : null}
       </div>
-      <div style={{ display: "flex", gap: 8 }}>
-        <button className="btn btn-sm btn-ghost" type="button">
-          1h
-        </button>
-        <button className="btn btn-sm btn-ghost" type="button">
-          24h
-        </button>
-        <button className="btn btn-sm btn-ghost" type="button">
-          7d
-        </button>
-        <button className="btn btn-sm btn-primary" type="button">
-          New run
-        </button>
-      </div>
     </header>
-  );
-}
-
-function KpiGrid({
-  metrics,
-  error,
-}: {
-  metrics: MetricsResponse | null | undefined;
-  error: string | null;
-}) {
-  const tiles: {
-    label: string;
-    value: string;
-    delta?: string;
-    tone?: "up" | "down";
-  }[] = metrics
-    ? [
-        { label: "Runs", value: fmtInt(metrics.runs) },
-        { label: "p50", value: fmtMs(metrics.p50_ms) },
-        { label: "p95", value: fmtMs(metrics.p95_ms) },
-        { label: "p99", value: fmtMs(metrics.p99_ms) },
-        {
-          label: "Error rate",
-          value:
-            metrics.runs > 0
-              ? `${(metrics.error_rate * 100).toFixed(1)}%`
-              : "—",
-          tone: metrics.error_rate >= 0.05 ? "down" : undefined,
-        },
-        { label: "Cost", value: fmtCostTotal(metrics.total_cost_usd) },
-      ]
-    : [
-        { label: "Runs", value: "—" },
-        { label: "p50", value: "—" },
-        { label: "p95", value: "—" },
-        { label: "p99", value: "—" },
-        { label: "Error rate", value: "—" },
-        { label: "Cost", value: "—" },
-      ];
-
-  return (
-    <div>
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(6, 1fr)",
-          gap: 12,
-        }}
-      >
-        {tiles.map((t) => (
-          <div key={t.label} className="kpi">
-            <span className="kpi-label">{t.label}</span>
-            <span className="kpi-value">{t.value}</span>
-            <span
-              className={`kpi-delta${
-                t.tone === "up"
-                  ? " kpi-delta-up"
-                  : t.tone === "down"
-                    ? " kpi-delta-down"
-                    : ""
-              }`}
-            >
-              {t.delta ?? "last 1h"}
-            </span>
-          </div>
-        ))}
-      </div>
-      {error ? (
-        <div
-          style={{
-            marginTop: 12,
-            padding: "8px 12px",
-            color: "var(--danger)",
-            fontSize: 12,
-            background: "var(--danger-soft)",
-            border: "1px solid var(--border)",
-            borderRadius: "var(--r-2)",
-          }}
-        >
-          metrics unavailable: {error}
-        </div>
-      ) : null}
-    </div>
   );
 }
 
@@ -242,12 +123,11 @@ function RunsCard({
     <section className="card" style={{ overflow: "hidden" }}>
       <div className="card-head">
         <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-          <h2>Recent runs</h2>
-          <span className="card-sub">last 100</span>
+          <h2>All runs</h2>
+          <span className="card-sub">
+            {runs.length} {runs.length === 1 ? "run" : "runs"}
+          </span>
         </div>
-        <Link href="/runs" className="btn btn-sm btn-ghost">
-          View all →
-        </Link>
       </div>
       {runs.length === 0 ? (
         <EmptyRunsState reason={reason} project={project} />
@@ -261,6 +141,7 @@ function RunsCard({
                 <th>Kind</th>
                 <th>Status</th>
                 <th style={{ textAlign: "right" }}>Latency</th>
+                <th style={{ textAlign: "right" }}>Tokens</th>
                 <th style={{ textAlign: "right" }}>Cost</th>
                 <th style={{ textAlign: "right" }}>Started</th>
               </tr>
@@ -282,6 +163,11 @@ function RunsCard({
                   </td>
                   <td className="num" style={{ textAlign: "right" }}>
                     {fmtLatency(r.latency_ms)}
+                  </td>
+                  <td className="num" style={{ textAlign: "right" }}>
+                    {r.total_tokens
+                      ? r.total_tokens.toLocaleString("en-US")
+                      : "—"}
                   </td>
                   <td className="num" style={{ textAlign: "right" }}>
                     {fmtCost(r.cost_usd)}
@@ -357,7 +243,7 @@ function EmptyRunsState({
 }
 
 function KindBadge({ kind }: { kind: string }) {
-  const k = kind.toLowerCase();
+  const k = (kind || "").toLowerCase();
   const cls =
     k === "llm"
       ? "kind-llm"
@@ -366,7 +252,7 @@ function KindBadge({ kind }: { kind: string }) {
         : k === "retriever" || k === "retr"
           ? "kind-retr"
           : "kind-chain";
-  return <span className={`kind-badge ${cls}`}>{kind}</span>;
+  return <span className={`kind-badge ${cls}`}>{kind || "chain"}</span>;
 }
 
 function StatusPill({ status }: { status: Status }) {
@@ -396,25 +282,9 @@ function fmtLatency(ms: number | null): string {
   return `${(ms / 1000).toFixed(2)} s`;
 }
 
-function fmtMs(ms: number | null): string {
-  if (ms === null) return "—";
-  if (ms < 1000) return `${Math.round(ms)} ms`;
-  return `${(ms / 1000).toFixed(2)} s`;
-}
-
-function fmtInt(n: number): string {
-  return n.toLocaleString("en-US");
-}
-
 function fmtCost(usd: number): string {
   if (!usd) return "—";
   return `$${usd.toFixed(4)}`;
-}
-
-function fmtCostTotal(usd: number): string {
-  if (!usd) return "$0.00";
-  if (usd < 1) return `$${usd.toFixed(4)}`;
-  return `$${usd.toFixed(2)}`;
 }
 
 function fmtTime(iso: string): string {
