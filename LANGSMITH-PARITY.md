@@ -39,7 +39,7 @@ Generated 2026-06-03 after the first sidebar pass (8 LangSmith-equivalent surfac
 | Feature | Status | Notes |
 |---|---|---|
 | Threads (multi-turn sessions) | ✅ | `/v1/threads` + `/v1/threads/{session_id}`; list + detail UI (loop #2) |
-| Monitoring dashboards | 🟡 | roadmap page; `/v1/metrics` backend exists |
+| Monitoring dashboards | ✅ | `/v1/metrics/timeseries` + `/v1/metrics/by-model`; SVG charts UI (loop #3) |
 | Alerts | 🟡 | roadmap page; no rules engine |
 | Saved filters / views | ❌ | not designed |
 | Bulk actions on runs | ❌ | not designed |
@@ -117,10 +117,20 @@ table linking to `web/src/app/threads/[session_id]/page.tsx` (turn-by-turn
 detail with KPI strip — turns, errors, tokens, cost, duration). Single-turn
 runs (empty `session_id`) are intentionally excluded; they remain on `/runs`.
 
-## Loop iteration #3 — plan (next)
+## Loop iteration #3 — done
 
-1. **Monitoring dashboards** (charts over the existing `/v1/metrics` endpoint)
-2. **Datasets CRUD** (postgres tables exist; build list/create/row pages)
+✅ **Monitoring dashboards** — `services/api/tracebility_api/routers/metrics.py`
+adds `GET /v1/metrics/timeseries` (per-bucket runs, errors, latency p50/p95/p99,
+tokens, cost — bucket size adapts to window) and `GET /v1/metrics/by-model`
+(LLM-span breakdown by `model` with calls, errors, p95, tokens, cost).
+`web/src/app/monitoring/page.tsx` rewritten from RoadmapSurface to a real
+dashboard with KPI strip, four inline-SVG charts (latency, throughput,
+errors, cost) and the by-model table. Window picker: 1h / 6h / 24h / 7d.
+No client-side JS, no chart library — keeps the page light and on-brand.
+
+## Loop iteration #4 — plan (next)
+
+1. **Datasets CRUD** (postgres tables exist; build list/create/row pages)
 3. **Prompts CRUD** (postgres tables exist; build list/version/diff pages)
 4. **Evals runner v1** (single-judge; writes to existing `eval_score` table)
 5. **Feedback public-key endpoint** (write-only, scoped key)
