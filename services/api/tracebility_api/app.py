@@ -23,6 +23,7 @@ from .routers import (
     projects,
     runs_query,
     setup as setup_router,
+    threads_query,
 )
 
 log = structlog.get_logger("tracebility.api.app")
@@ -90,6 +91,7 @@ def create_app() -> FastAPI:
     app.include_router(api_keys.router)
     app.include_router(members.router)
     app.include_router(runs_query.router)
+    app.include_router(threads_query.router)
     app.include_router(metrics.router)
     return app
 

@@ -38,7 +38,7 @@ Generated 2026-06-03 after the first sidebar pass (8 LangSmith-equivalent surfac
 
 | Feature | Status | Notes |
 |---|---|---|
-| Threads (multi-turn sessions) | 🟡 | roadmap page; needs `session_id` rollup view |
+| Threads (multi-turn sessions) | ✅ | `/v1/threads` + `/v1/threads/{session_id}`; list + detail UI (loop #2) |
 | Monitoring dashboards | 🟡 | roadmap page; `/v1/metrics` backend exists |
 | Alerts | 🟡 | roadmap page; no rules engine |
 | Saved filters / views | ❌ | not designed |
@@ -106,23 +106,30 @@ from RoadmapSurface to real CRUD. RBAC: admin-only for writes; last-admin
 guard. Audit-fail-closed on every write (ER-10). Token format `ti_<id>.<secret>`,
 shown ONCE.
 
-## Loop iteration #2 — plan (next)
+## Loop iteration #2 — done
 
-Highest leverage that isn't already in flight. Order chosen to maximize **demoability** per
-unit of code (each surface is something a user can land on and use):
+✅ **Threads view** — `services/api/tracebility_api/routers/threads_query.py`
+adds `GET /v1/threads?project_id=...` (group-by `session_id` with turn count,
+total cost, error count, p95 latency, last status) and
+`GET /v1/threads/{session_id}` (chronological run list for one session).
+`web/src/app/threads/page.tsx` rewritten from RoadmapSurface to a real list
+table linking to `web/src/app/threads/[session_id]/page.tsx` (turn-by-turn
+detail with KPI strip — turns, errors, tokens, cost, duration). Single-turn
+runs (empty `session_id`) are intentionally excluded; they remain on `/runs`.
 
-1. **Threads view** (groups runs by `session_id`; ClickHouse query only)
-2. **Monitoring dashboards** (charts over the existing `/v1/metrics` endpoint)
-3. **Datasets CRUD** (postgres tables exist; build list/create/row pages)
-4. **Prompts CRUD** (postgres tables exist; build list/version/diff pages)
-5. **Evals runner v1** (single-judge; writes to existing `eval_score` table)
-6. **Feedback public-key endpoint** (write-only, scoped key)
-7. **Comparisons v1** (run two prompts on a dataset, render diff table)
-8. **Alerts rules engine** (new postgres table; cron evaluator)
-9. **Annotations queue** (sampling rule + reviewer queue UI)
-10. **Replay capture writer** (extends ingest worker)
-11. **Studio canvas** (depends on Replay — last)
-12. **OpenInference / OTel ingest** (interop layer)
-13. **LangSmith Python shim** (drop-in compat package)
+## Loop iteration #3 — plan (next)
+
+1. **Monitoring dashboards** (charts over the existing `/v1/metrics` endpoint)
+2. **Datasets CRUD** (postgres tables exist; build list/create/row pages)
+3. **Prompts CRUD** (postgres tables exist; build list/version/diff pages)
+4. **Evals runner v1** (single-judge; writes to existing `eval_score` table)
+5. **Feedback public-key endpoint** (write-only, scoped key)
+6. **Comparisons v1** (run two prompts on a dataset, render diff table)
+7. **Alerts rules engine** (new postgres table; cron evaluator)
+8. **Annotations queue** (sampling rule + reviewer queue UI)
+9. **Replay capture writer** (extends ingest worker)
+10. **Studio canvas** (depends on Replay — last)
+11. **OpenInference / OTel ingest** (interop layer)
+12. **LangSmith Python shim** (drop-in compat package)
 
 Each step ends with: commit, push, re-run gap analysis at top of this file, repeat.
