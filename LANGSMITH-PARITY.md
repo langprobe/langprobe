@@ -48,7 +48,7 @@ Generated 2026-06-03 after the first sidebar pass (8 LangSmith-equivalent surfac
 
 | Feature | Status | Notes |
 |---|---|---|
-| Datasets | 🟡 | postgres tables exist, no UI/API |
+| Datasets | ✅ | postgres CRUD + clickhouse items; list/detail UI (loop #4) |
 | Prompts (versioning + tags) | 🟡 | postgres tables exist, no UI/API |
 | Evals (single-judge) | 🟡 | clickhouse `eval_score` exists, no runner |
 | Evals (PoLL multi-judge) | ❌ | not built |
@@ -128,10 +128,25 @@ dashboard with KPI strip, four inline-SVG charts (latency, throughput,
 errors, cost) and the by-model table. Window picker: 1h / 6h / 24h / 7d.
 No client-side JS, no chart library — keeps the page light and on-brand.
 
-## Loop iteration #4 — plan (next)
+## Loop iteration #4 — done (item #1)
 
-1. **Datasets CRUD** (postgres tables exist; build list/create/row pages)
-3. **Prompts CRUD** (postgres tables exist; build list/version/diff pages)
+✅ **Datasets CRUD** — `services/api/tracebility_api/routers/datasets.py` adds
+`GET/POST /v1/datasets`, `GET/PATCH/DELETE /v1/datasets/{id}`, `GET/POST
+/v1/datasets/{id}/items`, `DELETE /v1/datasets/{id}/items/{item_id}`. Catalog
+rows live in postgres `dataset` (item_count maintained on every item write);
+items live in ClickHouse `dataset_item` (ReplacingMergeTree) and use soft-delete
+via `ALTER ... UPDATE deleted_at` so audit trails stay intact. RBAC: list/get =
+all roles; create/update/items = owner/admin/member; delete dataset =
+owner/admin only. Audit-fail-closed on every write (ER-10). `web/src/app/datasets/page.tsx`
+rewritten from RoadmapSurface to real list with `CreateDatasetButton` + delete
+per row; `web/src/app/datasets/[id]/page.tsx` is the detail page with KPI strip,
+`AddItemButton` (input/expected/metadata-JSON/source_run_id) and items table
+with per-row delete and source-run links back to `/runs/{id}`. Slug regex
+`^[a-z0-9][a-z0-9_-]*$` matches projects.
+
+## Loop iteration #4 — plan (remaining)
+
+2. **Prompts CRUD** (postgres tables exist; build list/version/diff pages)
 4. **Evals runner v1** (single-judge; writes to existing `eval_score` table)
 5. **Feedback public-key endpoint** (write-only, scoped key)
 6. **Comparisons v1** (run two prompts on a dataset, render diff table)
