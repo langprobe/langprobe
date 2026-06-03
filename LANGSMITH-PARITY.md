@@ -53,7 +53,7 @@ Generated 2026-06-03 after the first sidebar pass (8 LangSmith-equivalent surfac
 | Evals (single-judge) | ✅ | postgres `eval_run` lifecycle + clickhouse `eval_score` writes; built-in judges echo/contains/exact (loop #4) |
 | Evals (PoLL multi-judge) | ❌ | not built |
 | Luna prompted-judges | ❌ | not built |
-| Comparisons (A/B experiments) | 🟡 | roadmap page only |
+| Comparisons (A/B experiments) | ✅ | postgres `comparison` lifecycle + clickhouse `eval_score` cmp:a/cmp:b rows; list + paired-diff detail UI (loop #4) |
 | Playground | 🟡 | roadmap page only |
 | Annotations queue | 🟡 | roadmap page only |
 | Feedback (end-user signal) | ✅ | `tbf_pub_*` public keys + `POST /v1/feedback`; same eval_score store as judges (loop #4) |
@@ -87,7 +87,7 @@ Generated 2026-06-03 after the first sidebar pass (8 LangSmith-equivalent surfac
 | Feature | Status | Notes |
 |---|---|---|
 | Docker compose stack | ✅ | 7 services up green |
-| Postgres migrations | ✅ | 9 migrations |
+| Postgres migrations | ✅ | 10 migrations |
 | ClickHouse migrations | ✅ | 5 migrations |
 | Redis (queue) | ✅ | up |
 | Ingest worker | ✅ | up |
@@ -219,9 +219,44 @@ to two with `+N more`, Status column shows active/revoked badge.
 Below the table is a 4-line browser snippet you can paste in to wire
 it up immediately — no SDK required yet.
 
+## Loop iteration #4 — done (item #5)
+
+✅ **Comparisons v1** —
+`schemas/postgres/migrations/0010_comparisons.sql` adds the `comparison`
+table (lifecycle queued → running → done/failed; per-side counters
+`item_done_a/b`, `score_sum_a/b`, `score_avg_a/b`; check constraint
+`comparison_distinct_versions` so A and B must differ).
+`services/api/tracebility_api/routers/comparisons.py` implements
+`GET/POST /v1/comparisons`, `GET /v1/comparisons/{id}`,
+`GET /v1/comparisons/{id}/items?limit=...`. POST validates the judge
+kind (`echo` / `contains` / `exact`), distinct versions, dataset
+project ownership, and resolves both prompt versions through
+`prompt.project_id` to reject cross-project IDs at create time.
+Inserts the queued postgres row, returns 202, and dispatches
+`_run_comparison` via FastAPI `BackgroundTasks`. The runner pulls
+dataset items + both prompt templates, scores each item on both
+sides via `_render_for_variant(template, item)` + the deterministic
+judge, batches one ClickHouse insert with `judge_name='cmp:a'` and
+`'cmp:b'` rows tagged `eval_config_id=comparison.id`, then updates
+postgres counters per side. V1 stand-in: `_render_for_variant`
+returns the template body — real LLM generation slots into that one
+function next iteration without changing storage shape. Pairing for
+the diff view is a FULL OUTER JOIN on `run_id` (which carries
+`item_id`). Audit-fail-closed on creation (ER-10). RBAC: list/get =
+all roles; create = owner/admin/member. UI:
+`web/src/app/comparisons/page.tsx` rewritten from RoadmapSurface to a
+real comparisons list with `NewComparisonButton` (modal: dataset +
+two variant pickers + judge + optional name); table shows status,
+dataset slug, both variant labels (`prompt_slug v{n} @alias`), per-side
+averages, and the Δ. `web/src/app/comparisons/[id]/page.tsx` is the
+detail page with KPI strip (judge / Avg A / Avg B / Δ B−A / progress)
+and the per-item paired diff table — one row per dataset item with
+score A, score B, Δ, both labels, the winner's rationale, and
+judged_at. `pickWinnerRationale` falls back to either side if scores
+tie or one side hasn't run yet.
+
 ## Loop iteration #4 — plan (remaining)
 
-5. **Comparisons v1** (run two prompts on a dataset, render diff table)
 6. **Alerts rules engine** (new postgres table; cron evaluator)
 7. **Annotations queue** (sampling rule + reviewer queue UI)
 8. **Replay capture writer** (extends ingest worker)

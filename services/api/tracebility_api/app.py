@@ -17,6 +17,7 @@ from .middleware import install as install_middleware
 from .routers import (
     api_keys,
     auth as auth_router,
+    comparisons,
     datasets,
     evals,
     feedback,
@@ -101,6 +102,7 @@ def create_app() -> FastAPI:
     app.include_router(datasets.router)
     app.include_router(prompts.router)
     app.include_router(evals.router)
+    app.include_router(comparisons.router)
     app.include_router(feedback_keys.router)
     app.include_router(feedback.router)
     return app
