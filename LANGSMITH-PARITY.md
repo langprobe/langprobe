@@ -40,7 +40,7 @@ Generated 2026-06-03 after the first sidebar pass (8 LangSmith-equivalent surfac
 |---|---|---|
 | Threads (multi-turn sessions) | ✅ | `/v1/threads` + `/v1/threads/{session_id}`; list + detail UI (loop #2) |
 | Monitoring dashboards | ✅ | `/v1/metrics/timeseries` + `/v1/metrics/by-model`; SVG charts UI (loop #3) |
-| Alerts | 🟡 | roadmap page; no rules engine |
+| Alerts | ✅ | postgres `alert_rule` + `alert_event` lifecycle; in-process evaluator scans ClickHouse every 60s; CRUD + history UI (loop #4) |
 | Saved filters / views | ❌ | not designed |
 | Bulk actions on runs | ❌ | not designed |
 
@@ -87,7 +87,7 @@ Generated 2026-06-03 after the first sidebar pass (8 LangSmith-equivalent surfac
 | Feature | Status | Notes |
 |---|---|---|
 | Docker compose stack | ✅ | 7 services up green |
-| Postgres migrations | ✅ | 10 migrations |
+| Postgres migrations | ✅ | 11 migrations |
 | ClickHouse migrations | ✅ | 5 migrations |
 | Redis (queue) | ✅ | up |
 | Ingest worker | ✅ | up |
@@ -255,9 +255,43 @@ score A, score B, Δ, both labels, the winner's rationale, and
 judged_at. `pickWinnerRationale` falls back to either side if scores
 tie or one side hasn't run yet.
 
+## Loop iteration #4 — done (item #6)
+
+✅ **Alerts rules engine** —
+`schemas/postgres/migrations/0011_alerts.sql` adds `alert_rule` (project-scoped
+rule with metric + comparator + threshold + window_seconds 60–86400 + jsonb
+routes + enabled flag + last_evaluated_at/last_value cache + open_incident_id
+pointer to the firing event) and `alert_event` (fired/resolved transitions,
+both sides of an incident share the same `incident_id`). An incident is the
+event pair, not a third table — materializing it bought nothing while v1
+routes nowhere; the deferrable FK on `alert_rule.open_incident_id` lets
+fire-and-update happen in one transaction.
+`services/api/tracebility_api/routers/alerts.py` implements
+`GET/POST /v1/alerts`, `PATCH/DELETE /v1/alerts/{id}`, and
+`GET /v1/alerts/events?project_id=...&limit=...`. RBAC: list/get + events =
+all roles; create + patch (snooze/edit) = owner/admin/member;
+delete = owner/admin only. Audit-fail-closed on every write (ER-10).
+The evaluator runs in-process: `evaluator_loop(pool, clickhouse)` is
+spawned from `app.lifespan` and ticks every 60s — `evaluate_due_rules`
+selects enabled rules, `_measure` re-runs the same ClickHouse query the
+Monitoring page uses (parameterized over `{project_id:UUID}` +
+`{window:UInt32}` against `run final`), `_apply_rule_decision`
+transactionally writes a `fired` event with a fresh `incident_id` and
+flips the rule's `open_incident_id` pointer (or writes a `resolved`
+event reusing the same `incident_id` and clears the pointer). Routes
+are persisted but not delivered in v1 — Slack/PagerDuty/webhook/email
+slot in next iteration without changing the schema. UI:
+`web/src/app/alerts/page.tsx` rewritten from RoadmapSurface to a real
+server component that parallel-fetches rules + events; KPI strip
+(active rules / open incidents / events 24h / longest open), rules
+table with status badge (firing/ok/snoozed/pending), comparator + threshold
+formatted per metric, route badges, and per-row snooze/delete; events
+history table with fired/resolved badges and incident-id grouping.
+Cookie-forwarding proxies under `web/src/app/api/alerts/route.ts` (POST)
+and `web/src/app/api/alerts/[id]/route.ts` (PATCH/DELETE).
+
 ## Loop iteration #4 — plan (remaining)
 
-6. **Alerts rules engine** (new postgres table; cron evaluator)
 7. **Annotations queue** (sampling rule + reviewer queue UI)
 8. **Replay capture writer** (extends ingest worker)
 9. **Studio canvas** (depends on Replay — last)

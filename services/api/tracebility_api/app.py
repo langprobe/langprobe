@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -15,6 +16,7 @@ from . import config
 from .clickhouse_client import ClickHouseQuery
 from .middleware import install as install_middleware
 from .routers import (
+    alerts,
     api_keys,
     auth as auth_router,
     comparisons,
@@ -64,6 +66,12 @@ def create_app() -> FastAPI:
             if settings.clickhouse_url
             else None
         )
+        # Spawn the alert evaluator so threshold rules tick without an
+        # external scheduler. Cancelled cleanly on shutdown.
+        evaluator_task = asyncio.create_task(
+            alerts.evaluator_loop(app.state.pg, app.state.clickhouse),
+            name="alert-evaluator",
+        )
         log.info(
             "api started",
             bind=f"{settings.bind_host}:{settings.bind_port}",
@@ -72,6 +80,11 @@ def create_app() -> FastAPI:
         try:
             yield
         finally:
+            evaluator_task.cancel()
+            try:
+                await evaluator_task
+            except asyncio.CancelledError:
+                pass
             if app.state.clickhouse is not None:
                 app.state.clickhouse.close()
             await app.state.pg.close()
@@ -103,6 +116,7 @@ def create_app() -> FastAPI:
     app.include_router(prompts.router)
     app.include_router(evals.router)
     app.include_router(comparisons.router)
+    app.include_router(alerts.router)
     app.include_router(feedback_keys.router)
     app.include_router(feedback.router)
     return app
