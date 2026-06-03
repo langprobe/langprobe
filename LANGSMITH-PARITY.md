@@ -49,7 +49,7 @@ Generated 2026-06-03 after the first sidebar pass (8 LangSmith-equivalent surfac
 | Feature | Status | Notes |
 |---|---|---|
 | Datasets | ✅ | postgres CRUD + clickhouse items; list/detail UI (loop #4) |
-| Prompts (versioning + tags) | 🟡 | postgres tables exist, no UI/API |
+| Prompts (versioning + tags) | ✅ | postgres CRUD + versions + aliases; list/detail UI (loop #4) |
 | Evals (single-judge) | 🟡 | clickhouse `eval_score` exists, no runner |
 | Evals (PoLL multi-judge) | ❌ | not built |
 | Luna prompted-judges | ❌ | not built |
@@ -144,17 +144,39 @@ per row; `web/src/app/datasets/[id]/page.tsx` is the detail page with KPI strip,
 with per-row delete and source-run links back to `/runs/{id}`. Slug regex
 `^[a-z0-9][a-z0-9_-]*$` matches projects.
 
+## Loop iteration #4 — done (item #2)
+
+✅ **Prompts CRUD with versions + aliases** —
+`services/api/tracebility_api/routers/prompts.py` adds `GET/POST /v1/prompts`,
+`GET/PATCH/DELETE /v1/prompts/{id}`, `GET/POST /v1/prompts/{id}/versions`,
+`GET /v1/prompts/{id}/versions/{version}`, `POST /v1/prompts/{id}/aliases`.
+Catalog rows live in postgres `prompt`; immutable revisions live in
+`prompt_version` and carry the unique-per-prompt `aliases text[]`. Creating a
+new version with aliases atomically strips those aliases off any prior versions
+on the same prompt; assigning an alias to an existing version does the same in
+a single transaction (idempotent). Soft-delete on the catalog row keeps version
+history and historical run links intact (ER-23). jsonb columns `input_schema`
+and `model_params` are serialized via `_json.dumps` and cast with `$N::jsonb`
+on insert. RBAC: list/get = all roles; create/update/version-create =
+owner/admin/member; delete = owner/admin only. Audit-fail-closed on every
+write (ER-10). UI: `web/src/app/prompts/page.tsx` rewritten from RoadmapSurface
+to a real list with `CreatePromptButton` + per-row delete; columns include
+latest version, version count, and the union of aliases as badges.
+`web/src/app/prompts/[id]/page.tsx` is the detail page with KPI strip and a
+versions list showing template, optional input_schema/model_params, alias
+badges, and a per-row `AssignAliasButton`. Header has `NewVersionButton` for
+saving new revisions.
+
 ## Loop iteration #4 — plan (remaining)
 
-2. **Prompts CRUD** (postgres tables exist; build list/version/diff pages)
-4. **Evals runner v1** (single-judge; writes to existing `eval_score` table)
-5. **Feedback public-key endpoint** (write-only, scoped key)
-6. **Comparisons v1** (run two prompts on a dataset, render diff table)
-7. **Alerts rules engine** (new postgres table; cron evaluator)
-8. **Annotations queue** (sampling rule + reviewer queue UI)
-9. **Replay capture writer** (extends ingest worker)
-10. **Studio canvas** (depends on Replay — last)
-11. **OpenInference / OTel ingest** (interop layer)
-12. **LangSmith Python shim** (drop-in compat package)
+3. **Evals runner v1** (single-judge; writes to existing `eval_score` table)
+4. **Feedback public-key endpoint** (write-only, scoped key)
+5. **Comparisons v1** (run two prompts on a dataset, render diff table)
+6. **Alerts rules engine** (new postgres table; cron evaluator)
+7. **Annotations queue** (sampling rule + reviewer queue UI)
+8. **Replay capture writer** (extends ingest worker)
+9. **Studio canvas** (depends on Replay — last)
+10. **OpenInference / OTel ingest** (interop layer)
+11. **LangSmith Python shim** (drop-in compat package)
 
 Each step ends with: commit, push, re-run gap analysis at top of this file, repeat.

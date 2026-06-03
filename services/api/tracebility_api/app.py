@@ -22,6 +22,7 @@ from .routers import (
     members,
     metrics,
     projects,
+    prompts,
     runs_query,
     setup as setup_router,
     threads_query,
@@ -95,6 +96,7 @@ def create_app() -> FastAPI:
     app.include_router(threads_query.router)
     app.include_router(metrics.router)
     app.include_router(datasets.router)
+    app.include_router(prompts.router)
     return app
 
 
