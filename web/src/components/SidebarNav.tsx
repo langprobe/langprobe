@@ -2,14 +2,22 @@
 
 import {
   Activity,
+  Bell,
   Boxes,
   Database,
   FlaskConical,
+  GitCompare,
   Home,
   KeyRound,
+  LineChart,
   Library,
+  MessagesSquare,
+  PencilLine,
+  Play,
   Settings,
   Sparkles,
+  ThumbsUp,
+  Users,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -24,6 +32,9 @@ const SECTIONS: NavSection[] = [
     items: [
       { label: "Overview", href: "/", icon: <Home size={16} strokeWidth={1.5} /> },
       { label: "Traces", href: "/runs", icon: <Activity size={16} strokeWidth={1.5} /> },
+      { label: "Threads", href: "/threads", icon: <MessagesSquare size={16} strokeWidth={1.5} /> },
+      { label: "Monitoring", href: "/monitoring", icon: <LineChart size={16} strokeWidth={1.5} /> },
+      { label: "Alerts", href: "/alerts", icon: <Bell size={16} strokeWidth={1.5} /> },
       { label: "Replay", href: "/replay", icon: <Sparkles size={16} strokeWidth={1.5} /> },
     ],
   },
@@ -31,8 +42,12 @@ const SECTIONS: NavSection[] = [
     label: "Improve",
     items: [
       { label: "Evals", href: "/evals", icon: <FlaskConical size={16} strokeWidth={1.5} /> },
+      { label: "Comparisons", href: "/comparisons", icon: <GitCompare size={16} strokeWidth={1.5} /> },
       { label: "Datasets", href: "/datasets", icon: <Database size={16} strokeWidth={1.5} /> },
       { label: "Prompts", href: "/prompts", icon: <Library size={16} strokeWidth={1.5} /> },
+      { label: "Playground", href: "/playground", icon: <Play size={16} strokeWidth={1.5} /> },
+      { label: "Annotations", href: "/annotations", icon: <PencilLine size={16} strokeWidth={1.5} /> },
+      { label: "Feedback", href: "/feedback", icon: <ThumbsUp size={16} strokeWidth={1.5} /> },
       { label: "Studio", href: "/studio", icon: <Boxes size={16} strokeWidth={1.5} /> },
     ],
   },
@@ -40,6 +55,7 @@ const SECTIONS: NavSection[] = [
     label: "Settings",
     items: [
       { label: "API keys", href: "/api-keys", icon: <KeyRound size={16} strokeWidth={1.5} /> },
+      { label: "Members", href: "/members", icon: <Users size={16} strokeWidth={1.5} /> },
       { label: "Workspace", href: "/workspace", icon: <Settings size={16} strokeWidth={1.5} /> },
     ],
   },
