@@ -50,7 +50,7 @@ Generated 2026-06-03 after the first sidebar pass (8 LangSmith-equivalent surfac
 |---|---|---|
 | Datasets | ✅ | postgres CRUD + clickhouse items; list/detail UI (loop #4) |
 | Prompts (versioning + tags) | ✅ | postgres CRUD + versions + aliases; list/detail UI (loop #4) |
-| Evals (single-judge) | 🟡 | clickhouse `eval_score` exists, no runner |
+| Evals (single-judge) | ✅ | postgres `eval_run` lifecycle + clickhouse `eval_score` writes; built-in judges echo/contains/exact (loop #4) |
 | Evals (PoLL multi-judge) | ❌ | not built |
 | Luna prompted-judges | ❌ | not built |
 | Comparisons (A/B experiments) | 🟡 | roadmap page only |
@@ -167,9 +167,31 @@ versions list showing template, optional input_schema/model_params, alias
 badges, and a per-row `AssignAliasButton`. Header has `NewVersionButton` for
 saving new revisions.
 
+## Loop iteration #4 — done (item #3)
+
+✅ **Evals runner v1** — `schemas/postgres/migrations/0008_eval_runs.sql`
+adds `eval_run` (lifecycle: queued → running → done/failed; tracks
+`item_total`, `item_done`, `score_sum`, `score_avg`, `error`, timestamps).
+`services/api/tracebility_api/routers/evals.py` implements `GET/POST
+/v1/eval-runs`, `GET /v1/eval-runs/{id}`, `GET /v1/eval-runs/{id}/scores`.
+POST inserts the queued postgres row, returns 202, and kicks off
+`asyncio` `BackgroundTasks` runner. The runner pulls dataset items from
+ClickHouse `dataset_item`, scores each with a deterministic built-in
+judge (`echo` / `contains` / `exact` — no LLM key required), inserts
+one ClickHouse `eval_score` row per item (carrying `item_id` in `run_id`
+slot, postgres `eval_run.id` in `eval_config_id`), and rolls up
+`score_avg` on the postgres row. Audit-fail-closed on creation (ER-10).
+RBAC: list/get = all roles; create = owner/admin/member. UI:
+`web/src/app/evals/page.tsx` rewritten from RoadmapSurface to a real
+runs table with status badges and color-coded avg-score percentages;
+`NewEvalRunButton` modal picks dataset + judge_kind + optional name.
+`web/src/app/evals/[id]/page.tsx` detail page renders KPI strip
+(judge / progress / avg / duration), optional error card on failure,
+and a per-item scores table with label/outcome/rationale. LLM-as-judge
+swaps in next iteration without changing the storage shape.
+
 ## Loop iteration #4 — plan (remaining)
 
-3. **Evals runner v1** (single-judge; writes to existing `eval_score` table)
 4. **Feedback public-key endpoint** (write-only, scoped key)
 5. **Comparisons v1** (run two prompts on a dataset, render diff table)
 6. **Alerts rules engine** (new postgres table; cron evaluator)

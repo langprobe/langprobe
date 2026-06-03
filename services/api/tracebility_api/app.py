@@ -18,6 +18,7 @@ from .routers import (
     api_keys,
     auth as auth_router,
     datasets,
+    evals,
     health,
     members,
     metrics,
@@ -97,6 +98,7 @@ def create_app() -> FastAPI:
     app.include_router(metrics.router)
     app.include_router(datasets.router)
     app.include_router(prompts.router)
+    app.include_router(evals.router)
     return app
 
 
