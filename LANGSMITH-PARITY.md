@@ -56,7 +56,7 @@ Generated 2026-06-03 after the first sidebar pass (8 LangSmith-equivalent surfac
 | Comparisons (A/B experiments) | 🟡 | roadmap page only |
 | Playground | 🟡 | roadmap page only |
 | Annotations queue | 🟡 | roadmap page only |
-| Feedback (end-user signal) | 🟡 | roadmap page only |
+| Feedback (end-user signal) | ✅ | `tbf_pub_*` public keys + `POST /v1/feedback`; same eval_score store as judges (loop #4) |
 | Replay (deterministic re-run) | 🟡 | clickhouse `replay_captures` exists, no capture writer |
 | Studio (visual canvas) | 🟡 | roadmap page only; depends on Replay |
 
@@ -87,7 +87,7 @@ Generated 2026-06-03 after the first sidebar pass (8 LangSmith-equivalent surfac
 | Feature | Status | Notes |
 |---|---|---|
 | Docker compose stack | ✅ | 7 services up green |
-| Postgres migrations | ✅ | 6 migrations |
+| Postgres migrations | ✅ | 9 migrations |
 | ClickHouse migrations | ✅ | 5 migrations |
 | Redis (queue) | ✅ | up |
 | Ingest worker | ✅ | up |
@@ -190,9 +190,37 @@ runs table with status badges and color-coded avg-score percentages;
 and a per-item scores table with label/outcome/rationale. LLM-as-judge
 swaps in next iteration without changing the storage shape.
 
+## Loop iteration #4 — done (item #4)
+
+✅ **Feedback public-key endpoint** —
+`schemas/postgres/migrations/0009_feedback_public_keys.sql` adds
+`feedback_public_key` (id, project_id, public_id text unique, name,
+allowed_origins text[], created_by, last_used_at, revoked_at,
+created_at).
+`services/api/tracebility_api/routers/feedback_keys.py` implements
+admin CRUD at `/v1/feedback-keys` — `GET ?project_id=...`,
+`POST` (returns `plaintext_key: tbf_pub_<32 hex>` shown ONCE),
+`DELETE /{id}` — RBAC: list = all roles, create/revoke = owner/admin.
+Audit-fail-closed on every write (ER-10); ER-20 revocation immediate.
+`services/api/tracebility_api/routers/feedback.py` exposes the public
+ingest endpoint `POST /v1/feedback` — no `require_user` dep, the
+`tbf_pub_*` key is the credential. Validates key format, checks
+revoked_at IS NULL, enforces optional `allowed_origins` against the
+request `Origin` header (server-to-server with no Origin still
+allowed), then writes one ClickHouse `eval_score` row with
+`judge_name='user'`, `judge_endpoint='browser'`, `judge_version='v1'`
+so feedback aggregates alongside LLM-judge scores in the same store.
+Returns 202 on accept; 503 if ClickHouse is unreachable so SDKs can
+buffer (ER-23 — never silent-drop). UI:
+`web/src/app/feedback/page.tsx` rewritten from RoadmapSurface to a
+real list with `CreateFeedbackKeyButton` (modal with one-shot reveal +
+Copy) and per-row `RevokeFeedbackKeyButton`; Origins column shows up
+to two with `+N more`, Status column shows active/revoked badge.
+Below the table is a 4-line browser snippet you can paste in to wire
+it up immediately — no SDK required yet.
+
 ## Loop iteration #4 — plan (remaining)
 
-4. **Feedback public-key endpoint** (write-only, scoped key)
 5. **Comparisons v1** (run two prompts on a dataset, render diff table)
 6. **Alerts rules engine** (new postgres table; cron evaluator)
 7. **Annotations queue** (sampling rule + reviewer queue UI)
