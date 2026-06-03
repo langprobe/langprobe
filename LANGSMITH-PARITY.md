@@ -67,7 +67,7 @@ Generated 2026-06-03 after the first sidebar pass (8 LangSmith-equivalent surfac
 | API keys (list/create/revoke) | ✅ | full CRUD + reveal-once + audit |
 | Workspace settings | ✅ | sample, PII, RCA mode, cost ceiling |
 | Members RBAC backend | ✅ | owner/admin/member enforced |
-| Members UI | 🟡 | roadmap page; no invite flow |
+| Members UI | ✅ | invite + role-change + revoke shipped (loop #1) |
 | SSO (OIDC) | ❌ | not built |
 | SCIM 2.0 | ❌ | not built |
 | Audit log | ✅ | postgres `audit_log` table writes |
@@ -96,24 +96,33 @@ Generated 2026-06-03 after the first sidebar pass (8 LangSmith-equivalent surfac
 | Helm chart | ❌ | not built |
 | Kubernetes operator | ❌ | not built |
 
-## Loop iteration #1 — plan (next)
+## Loop iteration #1 — done
+
+✅ **Members invite UI** — `0007_invitations.sql` migration; `members.py` router
+with list/invite/role/remove/accept; Next.js proxy routes under
+`/api/workspaces/{ws}/members[+/{id}]` and `.../invitations[+/{id}]`;
+`MembersClient.tsx` with one-shot token reveal; `members/page.tsx` rewritten
+from RoadmapSurface to real CRUD. RBAC: admin-only for writes; last-admin
+guard. Audit-fail-closed on every write (ER-10). Token format `ti_<id>.<secret>`,
+shown ONCE.
+
+## Loop iteration #2 — plan (next)
 
 Highest leverage that isn't already in flight. Order chosen to maximize **demoability** per
 unit of code (each surface is something a user can land on and use):
 
-1. **Members invite UI** (membership backend exists, just needs API + form)
-2. **Threads view** (groups runs by `session_id`; ClickHouse query only)
-3. **Monitoring dashboards** (charts over the existing `/v1/metrics` endpoint)
-4. **Datasets CRUD** (postgres tables exist; build list/create/row pages)
-5. **Prompts CRUD** (postgres tables exist; build list/version/diff pages)
-6. **Evals runner v1** (single-judge; writes to existing `eval_score` table)
-7. **Feedback public-key endpoint** (write-only, scoped key)
-8. **Comparisons v1** (run two prompts on a dataset, render diff table)
-9. **Alerts rules engine** (new postgres table; cron evaluator)
-10. **Annotations queue** (sampling rule + reviewer queue UI)
-11. **Replay capture writer** (extends ingest worker)
-12. **Studio canvas** (depends on Replay — last)
-13. **OpenInference / OTel ingest** (interop layer)
-14. **LangSmith Python shim** (drop-in compat package)
+1. **Threads view** (groups runs by `session_id`; ClickHouse query only)
+2. **Monitoring dashboards** (charts over the existing `/v1/metrics` endpoint)
+3. **Datasets CRUD** (postgres tables exist; build list/create/row pages)
+4. **Prompts CRUD** (postgres tables exist; build list/version/diff pages)
+5. **Evals runner v1** (single-judge; writes to existing `eval_score` table)
+6. **Feedback public-key endpoint** (write-only, scoped key)
+7. **Comparisons v1** (run two prompts on a dataset, render diff table)
+8. **Alerts rules engine** (new postgres table; cron evaluator)
+9. **Annotations queue** (sampling rule + reviewer queue UI)
+10. **Replay capture writer** (extends ingest worker)
+11. **Studio canvas** (depends on Replay — last)
+12. **OpenInference / OTel ingest** (interop layer)
+13. **LangSmith Python shim** (drop-in compat package)
 
 Each step ends with: commit, push, re-run gap analysis at top of this file, repeat.
