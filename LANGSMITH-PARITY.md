@@ -55,7 +55,7 @@ Generated 2026-06-03 after the first sidebar pass (8 LangSmith-equivalent surfac
 | Luna prompted-judges | ❌ | not built |
 | Comparisons (A/B experiments) | ✅ | postgres `comparison` lifecycle + clickhouse `eval_score` cmp:a/cmp:b rows; list + paired-diff detail UI (loop #4) |
 | Playground | 🟡 | roadmap page only |
-| Annotations queue | 🟡 | roadmap page only |
+| Annotations queue | ✅ | postgres queue/item lifecycle + ClickHouse run sampling + reviewer UI; submissions write `eval_score` with `judge_name='human'` (loop #4) |
 | Feedback (end-user signal) | ✅ | `tbf_pub_*` public keys + `POST /v1/feedback`; same eval_score store as judges (loop #4) |
 | Replay (deterministic re-run) | 🟡 | clickhouse `replay_captures` exists, no capture writer |
 | Studio (visual canvas) | 🟡 | roadmap page only; depends on Replay |
@@ -87,7 +87,7 @@ Generated 2026-06-03 after the first sidebar pass (8 LangSmith-equivalent surfac
 | Feature | Status | Notes |
 |---|---|---|
 | Docker compose stack | ✅ | 7 services up green |
-| Postgres migrations | ✅ | 11 migrations |
+| Postgres migrations | ✅ | 12 migrations |
 | ClickHouse migrations | ✅ | 5 migrations |
 | Redis (queue) | ✅ | up |
 | Ingest worker | ✅ | up |
@@ -290,9 +290,46 @@ history table with fired/resolved badges and incident-id grouping.
 Cookie-forwarding proxies under `web/src/app/api/alerts/route.ts` (POST)
 and `web/src/app/api/alerts/[id]/route.ts` (PATCH/DELETE).
 
+## Loop iteration #4 — done (item #7)
+
+✅ **Annotations queue** — `schemas/postgres/migrations/0012_annotations.sql`
+adds `annotation_queue` (sampling rule + rubric snapshot, item totals,
+status open/complete/archived) and `annotation_item` (queue-scoped run,
+status pending/done/skipped, reviewer label/score/rationale, unique on
+`(queue_id, run_id)`). Queue is materialized at creation: the FastAPI
+router queries ClickHouse `run` for IDs in the configured window and
+status filter, samples N with `random.sample`, and inserts items in a
+single transaction. "I have N runs to review" stays true between
+sessions; a streaming sampler that re-evaluates on every render is a
+subtle source of double-counting.
+
+`services/api/tracebility_api/routers/annotations.py` exposes
+`/v1/annotations` (list/create/get/delete), `/v1/annotations/{id}/items`
+(list with optional status filter), and per-item `/submit` and `/skip`.
+Submission validates the label against `rubric.labels`, computes score
+per `rubric.score` (binary→first label is 1.0; scalar→reviewer-supplied
+0..1; none→0 sentinel), atomically flips item to `done` (only the
+first-time transition increments `item_done`), and writes one ClickHouse
+`eval_score` row tagged `judge_name='human'`, `judge_endpoint='annotation'`,
+`judge_version='v1'` so human labels aggregate alongside LLM judges
+(echo/contains/exact/cmp:a/cmp:b) and end-user feedback (`judge_name='user'`)
+in the same store. RBAC fail-closed; queue delete is owner/admin only.
+
+UI: server component list at `web/src/app/annotations/page.tsx` with
+KPI strip (queues / open / to-review / progress%), queues table (status
+badge, name+description link, rubric cell, sampling cell, progress bar,
+review/delete actions), and a usage card explaining why human labels
+share the `eval_score` store. Detail at
+`web/src/app/annotations/[id]/page.tsx` parallel-fetches queue and items;
+the next pending item gets a sticky `<AnnotationLabelForm>` panel above
+the items table for keyboard-friendly review. Cookie-forwarding proxies
+under `web/src/app/api/annotations/route.ts` (POST),
+`web/src/app/api/annotations/[id]/route.ts` (DELETE),
+`web/src/app/api/annotations/[id]/items/[itemId]/submit/route.ts` (POST),
+and `.../skip/route.ts` (POST).
+
 ## Loop iteration #4 — plan (remaining)
 
-7. **Annotations queue** (sampling rule + reviewer queue UI)
 8. **Replay capture writer** (extends ingest worker)
 9. **Studio canvas** (depends on Replay — last)
 10. **OpenInference / OTel ingest** (interop layer)
