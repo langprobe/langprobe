@@ -30,7 +30,7 @@ Generated 2026-06-03 after the first sidebar pass (8 LangSmith-equivalent surfac
 | LangChain callback bridge | ❌ | shim package not built |
 | LangGraph callback bridge | ❌ | shim package not built |
 | OpenAI Agents SDK ingest | 🟡 | works via OTel intake (loop #4 item 10); first-class adapter pending SDK launch |
-| `wrap_openai` / `wrap_anthropic` | ❌ | shim package not built |
+| `wrap_openai` / `wrap_anthropic` | ✅ | duck-typed proxies on `tracebility-langsmith-shim`; one tracebility run per vendor SDK call with prompt+completion+token usage; vendor SDKs not transitive deps (loop #5 item 5) |
 | Multipart `/runs/multipart` | ❌ | endpoint not built |
 | Migration importer (LS export → tb) | ❌ | tool not built |
 
@@ -530,6 +530,48 @@ Cookie-forwarding proxy at `web/src/app/api/playground/runs/route.ts`.
 Re-scoring the scoreboard at the top, the remaining ❌ / 🟡 cells
 break into five buckets. Ordered by leverage (visible gap × user
 demand ÷ implementation cost):
+
+## Loop iteration #5 — done (item #5)
+
+✅ **`wrap_openai` / `wrap_anthropic` helpers** —
+`packages/sdk-python/tracebility_langsmith_shim/wrappers.py` adds
+two duck-typed proxies that wrap a vendor SDK client and emit one
+tracebility run per call. Usage:
+
+```python
+from openai import OpenAI
+from tracebility_langsmith_shim import wrap_openai
+client = wrap_openai(OpenAI())
+client.chat.completions.create(model="gpt-4o-mini", messages=[...])
+```
+
+Mechanics: `_Proxy` + `_SubPath` walk dotted attribute access lazily
+so `client.chat.completions.create(...)` resolves through one traced
+hop with everything else delegated transparently to the underlying
+vendor object. Traced paths are declared per-vendor:
+`("chat", "completions", "create")` for OpenAI,
+`("messages", "create")` for Anthropic. We don't import the vendor
+SDK at module load — the proxy inspects whatever object you hand it,
+so the shim remains installable without `openai` / `anthropic` as
+transitive deps.
+
+Per call: at entry we POST a `run_type="llm"` with model + messages
++ temperature/max_tokens (and `extra.metadata.vendor` so reads can
+filter). At exit we PATCH with the response summary —
+`{output, prompt_tokens, completion_tokens, total_tokens, finish_reason
+| stop_reason}`. The summarizers honor both `model_dump()`-style
+modern responses and dict responses. Errors are caught, recorded
+with `error="<ExcType>: <msg>"`, and re-raised — the wrapper never
+swallows.
+
+Async wrappers slot in next iteration without changing the surface
+(same dotted-path table). Streaming responses are recorded as one
+run with `stream=true` in inputs; per-chunk spans would explode the
+trace tree without helping anyone debug agents.
+
+Bumped package version to `0.0.2`. README extended with vendor-SDK
+usage examples. Smoke tests verified both vendors plus the
+error-path PATCH.
 
 ## Loop iteration #5 — done (item #4)
 

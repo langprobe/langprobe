@@ -26,6 +26,7 @@ the tracebility-native Python SDK for queries.
 
 from .client import Client
 from .traceable import traceable
+from .wrappers import wrap_anthropic, wrap_openai
 
-__all__ = ["Client", "traceable"]
-__version__ = "0.0.1"
+__all__ = ["Client", "traceable", "wrap_anthropic", "wrap_openai"]
+__version__ = "0.0.2"

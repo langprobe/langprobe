@@ -56,6 +56,41 @@ generate("hello")
 Nested `@traceable` calls form a tree via a `ContextVar` that threads
 `parent_run_id` through the call stack — matching LangSmith's semantics.
 
+## Auto-tracing vendor SDKs
+
+Hand the wrapper your existing OpenAI / Anthropic client and every
+call emits one tracebility run with prompt + completion + token
+usage:
+
+```python
+from openai import OpenAI
+from tracebility_langsmith_shim import wrap_openai
+
+client = wrap_openai(OpenAI())
+client.chat.completions.create(
+    model="gpt-4o-mini",
+    messages=[{"role": "user", "content": "hi"}],
+)
+# → one tracebility run per call (model, messages, tokens, output)
+```
+
+```python
+from anthropic import Anthropic
+from tracebility_langsmith_shim import wrap_anthropic
+
+client = wrap_anthropic(Anthropic())
+client.messages.create(
+    model="claude-sonnet-4-6",
+    max_tokens=512,
+    messages=[{"role": "user", "content": "hi"}],
+)
+```
+
+The wrappers are duck-typed proxies — anything you don't trace is
+delegated transparently. We don't import `openai` / `anthropic` at
+module load, so the shim stays installable without those vendor
+SDKs as transitive deps.
+
 ## Scope
 
 The shim covers the **write path** LangSmith users actually call from
@@ -65,6 +100,8 @@ application code:
 - `Client.update_run(...)` → `PATCH /runs/{id}`
 - `Client.batch_ingest_runs(create=..., update=...)` → `POST /runs/batch`
 - `@traceable` decorator (sync + async)
+- `wrap_openai(client)` / `wrap_anthropic(client)` — auto-trace every
+  vendor SDK call with one run per invocation
 
 The read-side (`read_run`, `list_runs`, `read_project`) is intentionally
 **not** implemented. tracebility's read API has a different shape; use
