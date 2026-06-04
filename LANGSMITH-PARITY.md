@@ -79,7 +79,7 @@ Generated 2026-06-03 after the first sidebar pass (8 LangSmith-equivalent surfac
 | Python SDK (native) | ❌ | not started |
 | JS/TS SDK (native) | ❌ | not started |
 | LangSmith-compatible Python shim | ✅ | `tracebility-langsmith-shim` ships `Client` + `@traceable` (sync+async) posting to ingest-api parity endpoints; one-line import migration (loop #4 item 11) |
-| LangSmith-compatible JS shim | ❌ | not built |
+| LangSmith-compatible JS shim | ✅ | `packages/sdk-typescript/` ships `Client` + `traceable` (Proxy-free; `AsyncLocalStorage`-threaded parent ids) + `wrapOpenAI` / `wrapAnthropic`; one-line import migration; smoke-tested 8/8 (loop #5 item 6) |
 | Public-key (browser) feedback SDK | ❌ | not built |
 
 ### Self-hosting + ops
@@ -530,6 +530,49 @@ Cookie-forwarding proxy at `web/src/app/api/playground/runs/route.ts`.
 Re-scoring the scoreboard at the top, the remaining ❌ / 🟡 cells
 break into five buckets. Ordered by leverage (visible gap × user
 demand ÷ implementation cost):
+
+## Loop iteration #5 — done (item #6)
+
+✅ **JS/TS LangSmith shim** —
+`packages/sdk-typescript/` is the symmetric port of the Python shim:
+`Client` with `createRun` / `updateRun` / `batchIngestRuns`,
+`traceable` wrapper for sync + async functions, and `wrapOpenAI` /
+`wrapAnthropic` Proxy-based vendor SDK wrappers. One-line import
+migration:
+
+```diff
+- import { Client, traceable } from "langsmith";
++ import { Client, traceable } from "tracebility-langsmith-shim";
+```
+
+Same env-var contract as the Python side (`LANGSMITH_ENDPOINT` /
+`LANGSMITH_API_KEY` / `LANGSMITH_PROJECT`, with `LANGCHAIN_*`
+fallbacks). Runtime: Node 18+ for `fetch` and `crypto.randomUUID`;
+no third-party runtime deps. Tests inject a custom `fetchImpl` so
+they never hit the network.
+
+`traceable` threads `parent_run_id` through nested calls via
+`AsyncLocalStorage` (loaded lazily so non-Node runtimes still work
+with a module-level fallback stack). Async functions are detected at
+runtime — return a `Promise` from your wrapped fn and the run is
+finalized after the promise settles.
+
+`wrapOpenAI` and `wrapAnthropic` use `Proxy` walks rather than
+class-extension so vendor SDK internals stay opaque. We do NOT
+import `openai` or `@anthropic-ai/sdk` at module load; the proxy
+inspects whatever object is handed in. That keeps the shim
+installable without those vendor SDKs as transitive deps. Traced
+paths: `chat.completions.create` (OpenAI), `messages.create`
+(Anthropic). Streaming responses are recorded as one run with
+`stream=true` in inputs (per-chunk spans would explode the trace
+tree without helping anyone debug agents).
+
+Smoke-tested end-to-end via a fake fetch + fake vendor clients:
+`createRun` / `updateRun` / `batchIngestRuns`, sync + async
+`traceable`, nested traceable, `wrapOpenAI` happy path,
+`wrapAnthropic` happy path, and `wrapAnthropic` error path —
+8/8 pass. README ships migration + usage examples for both
+vendor wrappers.
 
 ## Loop iteration #5 — done (item #5)
 
