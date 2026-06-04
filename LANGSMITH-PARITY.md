@@ -58,7 +58,7 @@ Generated 2026-06-03 after the first sidebar pass (8 LangSmith-equivalent surfac
 | Annotations queue | ✅ | postgres queue/item lifecycle + ClickHouse run sampling + reviewer UI; submissions write `eval_score` with `judge_name='human'` (loop #4) |
 | Feedback (end-user signal) | ✅ | `tbf_pub_*` public keys + `POST /v1/feedback`; same eval_score store as judges (loop #4) |
 | Replay (deterministic re-run) | ✅ | worker derives content-addressed captures per llm/tool/retrieval span; per-run index endpoint + run-detail panel (loop #4 item 8) |
-| Studio (visual canvas) | 🟡 | roadmap page only; depends on Replay |
+| Studio (visual canvas) | ✅ | postgres `studio_branch` lifecycle (draft → replayed → promoted) + edits jsonb + canvas UI; v1 replay synthesizes diff_summary, real LLM runner slots in next iteration (loop #4 item 9) |
 
 ### Workspace + identity
 
@@ -360,9 +360,54 @@ selected. Cookie-forwarding proxy at
 `object_ref` is `inline:sha256:<hash>` until the object-store backend
 is wired; flipping to `s3://...` will not change the read path.
 
+## Loop iteration #4 — done (item #9)
+
+✅ **Studio canvas** —
+`schemas/postgres/migrations/0013_studio_branches.sql` adds the
+`studio_branch` table (project-scoped row pointing at a captured run
++ optional branch-point span + ordered jsonb edits + lifecycle
+`draft` → `replayed` → `promoted` + `diff_summary` + `replay_run_id`).
+No FK to ClickHouse runs; ER-23 says we don't cascade-delete on a
+missing source. Storage shape rationale: edits are an ordered list
+authored as one transaction on the canvas, not a queryable per-edit
+table; jsonb path operators cover the rare "find branches that
+edited model on llm_router spans" query.
+
+`services/api/tracebility_api/routers/studio.py` exposes
+`/v1/studio/branches` (list/create), `/v1/studio/branches/{id}`
+(get/patch/delete), `/v1/studio/branches/{id}/replay` (the stand-in
+runner that flips status to `replayed` and synthesizes
+`diff_summary` from the edit list), and `/v1/studio/branches/{id}/promote`
+(replayed → promoted; Prompts revision wiring ships next iteration).
+Edit field allowlist: `prompt | model | temperature | tool_args`
+with per-field validation (temperature in [0.0, 2.0], prompt/model
+non-empty string, tool_args object/array). Edits are frozen via 409
+once the branch has been replayed — re-iterating means creating a
+new branch (same pattern as immutable prompt_version rows).
+RBAC: list/get all roles; create/patch/replay/promote owner/admin/member;
+delete owner/admin only. Audit-fail-closed on every write (ER-10).
+
+UI: `web/src/app/studio/page.tsx` rewritten from RoadmapSurface to a
+server-component branches list with KPI strip (branches / drafts /
+replayed / promoted), `NewBranchButton` (modal: name + description
++ source_run_id + optional source_span_id; POST returns id, we push
+straight to `/studio/{id}`), and a usage card explaining the
+edit-replay-promote round-trip. `web/src/app/studio/[id]/page.tsx`
+is the canvas — header with status badge + Replay/Promote/Delete
+actions, source card linking back to `/runs/{run_id}` (and to
+`/runs/{run_id}?span={span_id}` when the branch point is a span),
+diff-summary card once replayed, and the in-place `StudioEditsEditor`
+client component (add/remove rows, target_span_id + field
+dropdown + value editor that adapts per field type — multiline
+textarea for prompt and tool_args JSON, numeric for temperature).
+Editor is frozen post-replay. Cookie-forwarding proxies under
+`web/src/app/api/studio/branches/route.ts` (POST),
+`web/src/app/api/studio/branches/[id]/route.ts` (PATCH/DELETE),
+`web/src/app/api/studio/branches/[id]/replay/route.ts` (POST), and
+`web/src/app/api/studio/branches/[id]/promote/route.ts` (POST).
+
 ## Loop iteration #4 — plan (remaining)
 
-9. **Studio canvas** (depends on Replay — last)
 10. **OpenInference / OTel ingest** (interop layer)
 11. **LangSmith Python shim** (drop-in compat package)
 

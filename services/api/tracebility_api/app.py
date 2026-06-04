@@ -33,6 +33,7 @@ from .routers import (
     replays,
     runs_query,
     setup as setup_router,
+    studio,
     threads_query,
 )
 
@@ -123,6 +124,7 @@ def create_app() -> FastAPI:
     app.include_router(annotations.router)
     app.include_router(feedback_keys.router)
     app.include_router(feedback.router)
+    app.include_router(studio.router)
     return app
 
 
