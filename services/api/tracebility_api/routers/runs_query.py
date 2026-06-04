@@ -105,6 +105,9 @@ async def list_runs(
     request: Request,
     project_id: UUID = Query(...),
     status_filter: str | None = Query(default=None, alias="status"),
+    kind: str | None = Query(default=None),
+    search: str | None = Query(default=None, max_length=256),
+    window_seconds: int | None = Query(default=None, ge=60, le=30 * 86400),
     limit: int = Query(default=100, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
     principal: Principal = Depends(require_user),
@@ -144,6 +147,19 @@ async def list_runs(
     if status_filter is not None:
         sql += " and status = {status_filter:String}"
         params["status_filter"] = status_filter
+    if kind is not None:
+        sql += " and kind = {kind:String}"
+        params["kind"] = kind
+    if search:
+        # Case-insensitive substring on `name`. The mergetree column is
+        # LowCardinality(String); positionCaseInsensitive is fine on it
+        # and we don't expect this to be the hot path -- the index is
+        # by start_time + project, search is a UI convenience.
+        sql += " and positionCaseInsensitive(name, {search:String}) > 0"
+        params["search"] = search
+    if window_seconds is not None:
+        sql += " and start_time >= now64(9) - toIntervalSecond({window:UInt32})"
+        params["window"] = window_seconds
     sql += " order by start_time desc limit {limit:UInt32} offset {offset:UInt32}"
 
     try:

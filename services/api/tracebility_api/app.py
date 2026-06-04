@@ -34,6 +34,7 @@ from .routers import (
     prompts,
     replays,
     runs_query,
+    saved_views,
     setup as setup_router,
     studio,
     threads_query,
@@ -129,6 +130,7 @@ def create_app() -> FastAPI:
     app.include_router(studio.router)
     app.include_router(playground.router)
     app.include_router(poll_runs.router)
+    app.include_router(saved_views.router)
     return app
 
 

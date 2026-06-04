@@ -1,14 +1,25 @@
 import Link from "next/link";
 import { Shell } from "@/components/Shell";
+import {
+  FilterBar,
+  SavedViewsBar,
+  type SavedViewRow,
+} from "@/components/SavedViewsClient";
 import { apiGet } from "@/lib/api";
 import { resolveActiveProject, type Project } from "@/lib/projects";
 
 /**
  * Traces — full runs list.
  *
- * Server-rendered list of recent runs for the active project. Mirrors the
- * shape used on Overview but without the KPI grid; this is the
- * "production debugger surface area" view (DESIGN.md mock).
+ * Server-rendered list of recent runs for the active project. Filters
+ * (status / kind / search / window) come from the URL searchParams so
+ * they round-trip cleanly with saved views: a SavedViewsBar chip click
+ * navigates to /runs?status=error&window=86400, the server re-renders
+ * with that filter, and the chip lights up because its filter shape
+ * matches the URL.
+ *
+ * The runs list endpoint accepts the same filter knobs; we forward
+ * them straight through.
  */
 
 type Status = "ok" | "error" | "running" | string;
@@ -31,7 +42,70 @@ interface RunListResponse {
 
 const DEFAULT_LIMIT = 200;
 
-export default async function TracesPage() {
+const ALLOWED_STATUS = new Set(["ok", "error", "running", "cancelled"]);
+const ALLOWED_KIND = new Set([
+  "agent",
+  "chain",
+  "llm",
+  "tool",
+  "retriever",
+  "embedding",
+  "parser",
+]);
+
+interface AppliedFilters {
+  status: string | null;
+  kind: string | null;
+  search: string | null;
+  window_seconds: number | null;
+}
+
+function readFilters(
+  searchParams: Record<string, string | string[] | undefined>,
+): AppliedFilters {
+  const pick = (k: string): string | null => {
+    const v = searchParams[k];
+    if (Array.isArray(v)) return v[0] ?? null;
+    return v ?? null;
+  };
+  const status = pick("status");
+  const kind = pick("kind");
+  const search = pick("search");
+  const window = pick("window");
+  let windowSeconds: number | null = null;
+  if (window) {
+    const n = Number(window);
+    if (Number.isFinite(n) && n >= 60 && n <= 30 * 86400) {
+      windowSeconds = Math.round(n);
+    }
+  }
+  return {
+    status: status && ALLOWED_STATUS.has(status) ? status : null,
+    kind: kind && ALLOWED_KIND.has(kind) ? kind : null,
+    search: search ? search.slice(0, 256) : null,
+    window_seconds: windowSeconds,
+  };
+}
+
+function buildRunsQuery(projectId: string, filters: AppliedFilters): string {
+  const sp = new URLSearchParams({
+    project_id: projectId,
+    limit: String(DEFAULT_LIMIT),
+  });
+  if (filters.status) sp.set("status", filters.status);
+  if (filters.kind) sp.set("kind", filters.kind);
+  if (filters.search) sp.set("search", filters.search);
+  if (filters.window_seconds) {
+    sp.set("window_seconds", String(filters.window_seconds));
+  }
+  return `/v1/runs?${sp.toString()}`;
+}
+
+export default async function TracesPage({
+  searchParams,
+}: {
+  searchParams: Record<string, string | string[] | undefined>;
+}) {
   const { active, all, reason } = await resolveActiveProject();
 
   if (!active) {
@@ -45,18 +119,30 @@ export default async function TracesPage() {
     );
   }
 
-  const runsRes = await apiGet<RunListResponse>(
-    `/v1/runs?project_id=${encodeURIComponent(active.id)}&limit=${DEFAULT_LIMIT}`,
-  );
+  const filters = readFilters(searchParams);
+  const [runsRes, viewsRes] = await Promise.all([
+    apiGet<RunListResponse>(buildRunsQuery(active.id, filters)),
+    apiGet<SavedViewRow[]>(
+      `/v1/saved-views?project_id=${encodeURIComponent(active.id)}`,
+    ),
+  ]);
   const runs = runsRes.data?.items ?? [];
+  const views = viewsRes.data ?? [];
+
+  const hasFilter =
+    filters.status || filters.kind || filters.search || filters.window_seconds;
 
   return (
     <Shell active={active} projects={all}>
       <PageInterior>
         <PageHeader
           title="Traces"
-          subtitle={`${active.slug} · last ${DEFAULT_LIMIT}`}
+          subtitle={`${active.slug} · ${runs.length} ${
+            runs.length === 1 ? "run" : "runs"
+          }${hasFilter ? " (filtered)" : ` of last ${DEFAULT_LIMIT}`}`}
         />
+        <SavedViewsBar projectId={active.id} views={views} />
+        <FilterBar projectId={active.id} />
         <RunsCard runs={runs} reason={runsRes.error} project={active} />
       </PageInterior>
     </Shell>

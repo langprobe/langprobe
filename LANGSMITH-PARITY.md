@@ -41,7 +41,7 @@ Generated 2026-06-03 after the first sidebar pass (8 LangSmith-equivalent surfac
 | Threads (multi-turn sessions) | ✅ | `/v1/threads` + `/v1/threads/{session_id}`; list + detail UI (loop #2) |
 | Monitoring dashboards | ✅ | `/v1/metrics/timeseries` + `/v1/metrics/by-model`; SVG charts UI (loop #3) |
 | Alerts | ✅ | postgres `alert_rule` + `alert_event` lifecycle; in-process evaluator scans ClickHouse every 60s; CRUD + history UI (loop #4) |
-| Saved filters / views | ❌ | not designed |
+| Saved filters / views | ✅ | postgres `saved_view` (personal + shared) on /runs; URL-as-source-of-truth filter state (status/kind/search/window) round-trips with chip clicks; pin + delete (loop #5 item 3) |
 | Bulk actions on runs | ❌ | not designed |
 
 ### Eval + improvement
@@ -530,6 +530,53 @@ Cookie-forwarding proxy at `web/src/app/api/playground/runs/route.ts`.
 Re-scoring the scoreboard at the top, the remaining ❌ / 🟡 cells
 break into five buckets. Ordered by leverage (visible gap × user
 demand ÷ implementation cost):
+
+## Loop iteration #5 — done (item #3)
+
+✅ **Saved filters / views on /runs** —
+`schemas/postgres/migrations/0016_saved_views.sql` adds `saved_view`
+(project-scoped, jsonb `filters` bag, `is_shared` bool, `pinned` bool,
+`sort_index`, `created_by`) with two partial unique indices: one on
+`(project_id, name) where is_shared` for shared views, one on
+`(project_id, created_by, name) where not is_shared` for personal
+views. Filter shape v1: `{status, kind, search, window_seconds}` —
+free-form jsonb so we can extend without migration; unknown keys
+dropped at read time (defense-in-depth against v2-poisoning-v1).
+
+`services/api/tracebility_api/routers/saved_views.py` exposes
+`GET/POST /v1/saved-views`, `PATCH/DELETE /v1/saved-views/{id}`.
+List filters server-side to "shared OR mine" so personal views
+stay private. RBAC: personal view edits/deletes restricted to the
+creator; shared edits/deletes restricted to owner/admin. Audit
+fail-closed (ER-10) on every write. Constraint enforces
+`(is_shared and created_by IS NULL) OR (NOT is_shared AND created_by
+IS NOT NULL)` so a personal view always has an owner.
+
+`services/api/tracebility_api/routers/runs_query.py` `list_runs`
+now accepts `kind`, `search`, `window_seconds` alongside `status`.
+Search uses `positionCaseInsensitive` on the `name` column (it's
+LowCardinality(String); the column isn't indexed for search but the
+hot path is start_time + project so this is fine). Window filter
+uses `start_time >= now64(9) - toIntervalSecond({window:UInt32})`.
+
+UI: `web/src/app/runs/page.tsx` reads filters from `searchParams`
+and forwards them to `/v1/runs`; URL is the single source of truth.
+Two new bars stack above the runs table:
+  - `SavedViewsBar` — chips for shared and personal views with
+    "active" detection (chip lights up when its filter shape matches
+    the URL — survives reload, shareable URLs work). Per-chip pin
+    and delete affordances; clear-filter affordance and
+    "Save view" modal that captures the current URL filter as a
+    new row. Save modal toggles personal vs shared visibility +
+    optional pin (personal only in v1; per-user pins on shared
+    views need a join table — deferred).
+  - `FilterBar` — search input + status / kind / window-window
+    selectors; submitting pushes a new URL via `router.push` so the
+    server re-renders.
+
+Cookie-forwarding proxies under
+`web/src/app/api/saved-views/route.ts` (POST) and
+`web/src/app/api/saved-views/[id]/route.ts` (PATCH/DELETE).
 
 ## Loop iteration #5 — done (item #2)
 
