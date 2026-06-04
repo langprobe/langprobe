@@ -78,7 +78,7 @@ Generated 2026-06-03 after the first sidebar pass (8 LangSmith-equivalent surfac
 |---|---|---|
 | Python SDK (native) | ❌ | not started |
 | JS/TS SDK (native) | ❌ | not started |
-| LangSmith-compatible Python shim | ❌ | not built |
+| LangSmith-compatible Python shim | ✅ | `tracebility-langsmith-shim` ships `Client` + `@traceable` (sync+async) posting to ingest-api parity endpoints; one-line import migration (loop #4 item 11) |
 | LangSmith-compatible JS shim | ❌ | not built |
 | Public-key (browser) feedback SDK | ❌ | not built |
 
@@ -447,8 +447,45 @@ export OTEL_EXPORTER_OTLP_HEADERS=authorization=Bearer\ tk_...
 # Phoenix-compatible, custom) starts flowing without changing code.
 ```
 
-## Loop iteration #4 — plan (remaining)
+## Loop iteration #4 — done (item #11)
 
-11. **LangSmith Python shim** (drop-in compat package)
+✅ **LangSmith Python shim** —
+`packages/sdk-python/tracebility_langsmith_shim/` ships a drop-in
+compat layer for LangSmith's `Client` + `@traceable` write surface.
+One-line migration: `from langsmith import Client, traceable` →
+`from tracebility_langsmith_shim import Client, traceable`. The
+shim honors `LANGSMITH_ENDPOINT` / `LANGCHAIN_ENDPOINT`,
+`LANGSMITH_API_KEY` / `LANGCHAIN_API_KEY`, and `LANGSMITH_PROJECT`
+/ `LANGCHAIN_PROJECT` so existing deployments migrate without code
+changes; constructor args override env.
+
+`Client.create_run` POSTs `/runs`, `update_run` PATCHes
+`/runs/{id}`, `batch_ingest_runs` POSTs `/runs/batch` — all hitting
+the existing `services/ingest-api/.../langsmith_shim.py` router so
+SDK calls land in the same Redis queue native ingest uses. The
+shim is small on purpose (≈220 lines client + 150 lines traceable):
+the heavy work — queueing, redaction, batching to ClickHouse —
+happens server-side.
+
+`@traceable` covers both sync and async functions; nested calls
+form a parent/child tree via a `ContextVar` that threads
+`parent_run_id` through the call stack (matches LangSmith semantics).
+Bare `@traceable` and parameterized `@traceable(run_type="llm",
+tags=[...])` both work.
+
+Read-side methods (`read_run`, `list_runs`, `read_project`) are
+intentionally NOT implemented — tracebility's read API has a
+different shape and pretending otherwise would mask bugs. The
+native tracebility Python SDK (not this shim) is the right surface
+for queries.
+
+Legal/security: the package name is `tracebility-langsmith-shim`,
+NOT `langsmith` — nominative fair use only. The README is explicit
+about non-affiliation.
+
+## Loop iteration #4 — done
+
+All eleven items shipped. Next iteration begins with a fresh
+gap analysis at the top of this file.
 
 Each step ends with: commit, push, re-run gap analysis at top of this file, repeat.
