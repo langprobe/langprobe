@@ -131,7 +131,7 @@ export default async function TracesPage({
   const [runsRes, viewsRes, datasetsRes, queuesRes] = await Promise.all([
     apiGet<RunListResponse>(buildRunsQuery(active.id, filters)),
     apiGet<SavedViewRow[]>(
-      `/v1/saved-views?project_id=${encodeURIComponent(active.id)}`,
+      `/v1/saved-views?project_id=${encodeURIComponent(active.id)}&surface=runs`,
     ),
     apiGet<DatasetListItem[]>(
       `/v1/datasets?project_id=${encodeURIComponent(active.id)}`,

@@ -29,12 +29,19 @@ export interface SavedViewFilters {
   kind?: string | null;
   search?: string | null;
   window_seconds?: number | null;
+  /** /monitoring uses the label form ("1h" / "6h" / "24h" / "7d"). */
+  window?: string | null;
+  /** /monitoring breakdown filter. */
+  model?: string | null;
 }
+
+export type SavedViewSurface = "runs" | "monitoring";
 
 export interface SavedViewRow {
   id: string;
   project_id: string;
   name: string;
+  surface: SavedViewSurface;
   filters: SavedViewFilters;
   is_shared: boolean;
   pinned: boolean;
@@ -72,8 +79,17 @@ const WINDOW_OPTIONS: { value: string; label: string }[] = [
   { value: "604800", label: "last 7d" },
 ];
 
-export function buildSearchParams(filters: SavedViewFilters): URLSearchParams {
+export function buildSearchParams(
+  filters: SavedViewFilters,
+  surface: SavedViewSurface = "runs",
+): URLSearchParams {
   const sp = new URLSearchParams();
+  if (surface === "monitoring") {
+    if (filters.window) sp.set("window", filters.window);
+    if (filters.model) sp.set("model", filters.model);
+    if (filters.kind) sp.set("kind", filters.kind);
+    return sp;
+  }
   if (filters.status) sp.set("status", filters.status);
   if (filters.kind) sp.set("kind", filters.kind);
   if (filters.search && filters.search.trim()) {
@@ -85,7 +101,18 @@ export function buildSearchParams(filters: SavedViewFilters): URLSearchParams {
   return sp;
 }
 
-function filtersFromSearchParams(sp: URLSearchParams): SavedViewFilters {
+function filtersFromSearchParams(
+  sp: URLSearchParams,
+  surface: SavedViewSurface,
+): SavedViewFilters {
+  if (surface === "monitoring") {
+    const window = sp.get("window");
+    return {
+      window: window || null,
+      model: sp.get("model") || null,
+      kind: sp.get("kind") || null,
+    };
+  }
   const window = sp.get("window");
   return {
     status: sp.get("status") || null,
@@ -95,7 +122,18 @@ function filtersFromSearchParams(sp: URLSearchParams): SavedViewFilters {
   };
 }
 
-function filtersEqual(a: SavedViewFilters, b: SavedViewFilters): boolean {
+function filtersEqual(
+  a: SavedViewFilters,
+  b: SavedViewFilters,
+  surface: SavedViewSurface = "runs",
+): boolean {
+  if (surface === "monitoring") {
+    return (
+      (a.window || null) === (b.window || null) &&
+      (a.model || null) === (b.model || null) &&
+      (a.kind || null) === (b.kind || null)
+    );
+  }
   return (
     (a.status || null) === (b.status || null) &&
     (a.kind || null) === (b.kind || null) &&
@@ -111,21 +149,29 @@ function filtersEqual(a: SavedViewFilters, b: SavedViewFilters): boolean {
 export function SavedViewsBar({
   projectId,
   views,
+  surface = "runs",
+  basePath = "/runs",
 }: {
   projectId: string;
   views: SavedViewRow[];
+  surface?: SavedViewSurface;
+  basePath?: string;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const currentFilters = useMemo(
-    () => filtersFromSearchParams(searchParams),
-    [searchParams],
+    () => filtersFromSearchParams(searchParams, surface),
+    [searchParams, surface],
   );
   const hasFilter =
-    currentFilters.status ||
-    currentFilters.kind ||
-    currentFilters.search ||
-    currentFilters.window_seconds;
+    surface === "monitoring"
+      ? Boolean(currentFilters.window || currentFilters.model || currentFilters.kind)
+      : Boolean(
+          currentFilters.status ||
+            currentFilters.kind ||
+            currentFilters.search ||
+            currentFilters.window_seconds,
+        );
 
   const sorted = [...views].sort((a, b) => {
     if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
@@ -134,13 +180,13 @@ export function SavedViewsBar({
   });
 
   function applyView(view: SavedViewRow) {
-    const sp = buildSearchParams(view.filters);
+    const sp = buildSearchParams(view.filters, surface);
     const qs = sp.toString();
-    router.push(qs ? `/runs?${qs}` : "/runs");
+    router.push(qs ? `${basePath}?${qs}` : basePath);
   }
 
   function clearFilter() {
-    router.push("/runs");
+    router.push(basePath);
   }
 
   return (
@@ -174,7 +220,7 @@ export function SavedViewsBar({
       ) : (
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           {sorted.map((view) => {
-            const active = filtersEqual(view.filters, currentFilters);
+            const active = filtersEqual(view.filters, currentFilters, surface);
             return (
               <ViewChip
                 key={view.id}
@@ -200,6 +246,7 @@ export function SavedViewsBar({
       <SaveCurrentViewButton
         projectId={projectId}
         currentFilters={currentFilters}
+        surface={surface}
         disabled={!hasFilter}
       />
     </section>
@@ -323,10 +370,12 @@ function ViewChip({
 function SaveCurrentViewButton({
   projectId,
   currentFilters,
+  surface,
   disabled,
 }: {
   projectId: string;
   currentFilters: SavedViewFilters;
+  surface: SavedViewSurface;
   disabled: boolean;
 }) {
   const router = useRouter();
@@ -359,6 +408,7 @@ function SaveCurrentViewButton({
         body: JSON.stringify({
           project_id: projectId,
           name: trimmed,
+          surface,
           filters: currentFilters,
           is_shared: shared,
           pinned: pinned && !shared,
@@ -511,6 +561,8 @@ function FilterSummary({ filters }: { filters: SavedViewFilters }) {
   if (filters.window_seconds) {
     parts.push(`window=${filters.window_seconds}s`);
   }
+  if (filters.window) parts.push(`window=${filters.window}`);
+  if (filters.model) parts.push(`model=${filters.model}`);
   return (
     <pre
       className="mono"
@@ -532,11 +584,11 @@ function FilterSummary({ filters }: { filters: SavedViewFilters }) {
 // Filter bar (separate component, drives URL state)
 // ---------------------------------------------------------------------------
 
-export function FilterBar({ projectId }: { projectId: string }) {
+export function FilterBar({ projectId: _projectId }: { projectId: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const initial = useMemo(
-    () => filtersFromSearchParams(searchParams),
+    () => filtersFromSearchParams(searchParams, "runs"),
     [searchParams],
   );
   const [statusV, setStatusV] = useState<string>(initial.status ?? "");

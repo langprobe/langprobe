@@ -1,4 +1,8 @@
 import { Shell } from "@/components/Shell";
+import {
+  SavedViewsBar,
+  type SavedViewRow,
+} from "@/components/SavedViewsClient";
 import { apiGet } from "@/lib/api";
 import { resolveActiveProject, type Project } from "@/lib/projects";
 
@@ -55,11 +59,12 @@ const WINDOWS: { label: string; seconds: number; bucket: number }[] = [
 export default async function MonitoringPage({
   searchParams,
 }: {
-  searchParams: { window?: string };
+  searchParams: { window?: string; model?: string; kind?: string };
 }) {
   const { active, all, reason } = await resolveActiveProject();
   const win =
     WINDOWS.find((w) => w.label === searchParams.window) ?? WINDOWS[0];
+  const modelFilter = (searchParams.model || "").trim() || null;
 
   if (!active) {
     return (
@@ -72,16 +77,26 @@ export default async function MonitoringPage({
     );
   }
 
-  const [tsRes, byModelRes] = await Promise.all([
+  const [tsRes, byModelRes, viewsRes] = await Promise.all([
     apiGet<TimeseriesResponse>(
       `/v1/metrics/timeseries?project_id=${encodeURIComponent(active.id)}&window_seconds=${win.seconds}&bucket_seconds=${win.bucket}`,
     ),
     apiGet<ModelBreakdownResponse>(
       `/v1/metrics/by-model?project_id=${encodeURIComponent(active.id)}&window_seconds=${win.seconds}`,
     ),
+    apiGet<SavedViewRow[]>(
+      `/v1/saved-views?project_id=${encodeURIComponent(active.id)}&surface=monitoring`,
+    ),
   ]);
   const buckets = tsRes.data?.buckets ?? [];
-  const models = byModelRes.data?.items ?? [];
+  const allModels = byModelRes.data?.items ?? [];
+  // Apply the optional model filter at the view layer; the breakdown
+  // endpoint is unchanged so the saved view round-trips cleanly when
+  // we extend that endpoint with a server-side filter later.
+  const models = modelFilter
+    ? allModels.filter((m) => m.model === modelFilter)
+    : allModels;
+  const views = viewsRes.data ?? [];
 
   const totals = aggregate(buckets);
 
@@ -90,8 +105,14 @@ export default async function MonitoringPage({
       <PageInterior>
         <PageHeader
           title="Monitoring"
-          subtitle={`${active.slug} · last ${win.label}`}
+          subtitle={`${active.slug} · last ${win.label}${modelFilter ? ` · ${modelFilter}` : ""}`}
           right={<WindowPicker current={win.label} />}
+        />
+        <SavedViewsBar
+          projectId={active.id}
+          views={views}
+          surface="monitoring"
+          basePath="/monitoring"
         />
         <KpiStrip totals={totals} />
         <ChartGrid buckets={buckets} bucketSeconds={win.bucket} />

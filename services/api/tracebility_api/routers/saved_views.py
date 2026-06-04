@@ -43,19 +43,34 @@ router = APIRouter(prefix="/v1/saved-views", tags=["saved-views"])
 
 _VALID_STATUS = {"ok", "error", "running", "cancelled"}
 _VALID_KIND = {"agent", "chain", "llm", "tool", "retriever", "embedding", "parser"}
+_VALID_SURFACE = {"runs", "monitoring"}
+_VALID_WINDOW_LABELS = {"1h", "6h", "24h", "7d"}
 
 
 class SavedViewFilters(BaseModel):
+    """Free-form filter bag.
+
+    Different surfaces interpret different keys; unknown keys are
+    dropped at read time. v1 schema:
+      - runs:        {status, kind, search, window_seconds}
+      - monitoring:  {window, model, kind}
+    `window_seconds` is the canonical seconds-based window; `window` is
+    a UI-friendly label ("1h" / "6h" / "24h" / "7d") used by /monitoring.
+    """
+
     status: str | None = None
     kind: str | None = None
     search: str | None = Field(default=None, max_length=256)
     window_seconds: int | None = Field(default=None, ge=60, le=30 * 86400)
+    window: str | None = Field(default=None, max_length=8)
+    model: str | None = Field(default=None, max_length=128)
 
 
 class SavedViewOut(BaseModel):
     id: UUID
     project_id: UUID
     name: str
+    surface: str
     filters: SavedViewFilters
     is_shared: bool
     pinned: bool
@@ -69,6 +84,7 @@ class SavedViewOut(BaseModel):
 class SavedViewCreate(BaseModel):
     project_id: UUID
     name: str = Field(min_length=1, max_length=120)
+    surface: str = Field(default="runs")
     filters: SavedViewFilters = Field(default_factory=SavedViewFilters)
     is_shared: bool = False
     pinned: bool = False
@@ -91,14 +107,25 @@ def _validate_filters(f: SavedViewFilters) -> None:
             status.HTTP_400_BAD_REQUEST,
             f"filters.kind must be one of {sorted(_VALID_KIND)} or null",
         )
+    if f.window is not None and f.window not in _VALID_WINDOW_LABELS:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"filters.window must be one of {sorted(_VALID_WINDOW_LABELS)} or null",
+        )
 
 
 @router.get("", response_model=list[SavedViewOut])
 async def list_views(
     request: Request,
     project_id: UUID = Query(...),
+    surface: str = Query(default="runs"),
     principal: Principal = Depends(require_user),
 ) -> list[SavedViewOut]:
+    if surface not in _VALID_SURFACE:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"surface must be one of {sorted(_VALID_SURFACE)}",
+        )
     pool: asyncpg.Pool = request.app.state.pg
     await _assert_project_role(
         pool, principal, project_id,
@@ -106,14 +133,16 @@ async def list_views(
     )
     rows = await pool.fetch(
         """
-        select id, project_id, name, filters, is_shared, pinned,
+        select id, project_id, name, surface, filters, is_shared, pinned,
                sort_index, created_by, created_at, updated_at
           from saved_view
          where project_id = $1
-           and (is_shared = true or created_by = $2)
+           and surface = $2
+           and (is_shared = true or created_by = $3)
          order by pinned desc, sort_index asc, created_at asc
         """,
         project_id,
+        surface,
         principal.user_id,
     )
     return [_view_out(r, principal.user_id) for r in rows]
@@ -129,6 +158,11 @@ async def create_view(
     body: SavedViewCreate,
     principal: Principal = Depends(require_user),
 ) -> SavedViewOut:
+    if body.surface not in _VALID_SURFACE:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"surface must be one of {sorted(_VALID_SURFACE)}",
+        )
     _validate_filters(body.filters)
 
     pool: asyncpg.Pool = request.app.state.pg
@@ -143,15 +177,16 @@ async def create_view(
         row = await pool.fetchrow(
             """
             insert into saved_view (
-                project_id, name, filters, is_shared, pinned,
+                project_id, name, surface, filters, is_shared, pinned,
                 created_by
             )
-            values ($1, $2, $3::jsonb, $4, $5, $6)
-            returning id, project_id, name, filters, is_shared, pinned,
+            values ($1, $2, $3, $4::jsonb, $5, $6, $7)
+            returning id, project_id, name, surface, filters, is_shared, pinned,
                       sort_index, created_by, created_at, updated_at
             """,
             body.project_id,
             body.name,
+            body.surface,
             _json.dumps(body.filters.model_dump(exclude_none=True)),
             body.is_shared,
             body.pinned and not body.is_shared,
@@ -172,6 +207,7 @@ async def create_view(
         target_id=row["id"],
         payload={
             "name": body.name,
+            "surface": body.surface,
             "is_shared": body.is_shared,
             "filters": body.filters.model_dump(exclude_none=True),
         },
@@ -235,7 +271,7 @@ async def patch_view(
             update saved_view
                set {', '.join(sets)}
              where id = ${len(args)}
-            returning id, project_id, name, filters, is_shared, pinned,
+            returning id, project_id, name, surface, filters, is_shared, pinned,
                       sort_index, created_by, created_at, updated_at
             """,
             *args,
@@ -307,7 +343,7 @@ async def delete_view(
 async def _fetch_view(pool: asyncpg.Pool, view_id: UUID) -> asyncpg.Record:
     row = await pool.fetchrow(
         """
-        select id, project_id, name, filters, is_shared, pinned,
+        select id, project_id, name, surface, filters, is_shared, pinned,
                sort_index, created_by, created_at, updated_at
           from saved_view
          where id = $1
@@ -355,7 +391,7 @@ def _coerce_filters(raw: Any) -> SavedViewFilters:
     # Drop unknown keys quietly so v2 clients can't poison v1 reads.
     keep = {
         k: v for k, v in data.items()
-        if k in {"status", "kind", "search", "window_seconds"}
+        if k in {"status", "kind", "search", "window_seconds", "window", "model"}
     }
     try:
         return SavedViewFilters(**keep)
@@ -364,10 +400,12 @@ def _coerce_filters(raw: Any) -> SavedViewFilters:
 
 
 def _view_out(row: asyncpg.Record, current_user: UUID) -> SavedViewOut:
+    surface_val = row["surface"] if "surface" in row.keys() else "runs"
     return SavedViewOut(
         id=row["id"],
         project_id=row["project_id"],
         name=row["name"],
+        surface=str(surface_val or "runs"),
         filters=_coerce_filters(row["filters"]),
         is_shared=bool(row["is_shared"]),
         pinned=bool(row["pinned"]),

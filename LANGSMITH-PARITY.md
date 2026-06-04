@@ -531,6 +531,40 @@ Re-scoring the scoreboard at the top, the remaining ❌ / 🟡 cells
 break into five buckets. Ordered by leverage (visible gap × user
 demand ÷ implementation cost):
 
+## Loop iteration #5 — done (item #8)
+
+✅ **Saved dashboards on /monitoring** —
+`schemas/postgres/migrations/0017_saved_view_surface.sql` adds a
+`surface` discriminator column (default `'runs'`, check constraint
+allows `'monitoring'` too). The two existing partial unique indices
+were dropped and rebuilt with `surface` in the key — a `runs` view
+named *"p95 last 24h"* no longer collides with a `monitoring` view
+of the same name in the same project.
+
+`services/api/tracebility_api/routers/saved_views.py`: list now
+takes `surface` as a query param; create persists + validates it;
+the read-time filter coercion accepts `window` (label form like
+`"1h"`) and `model` keys for the monitoring surface alongside the
+existing runs keys. The free-form jsonb shape means both surfaces
+share one schema with no migration churn when one of them grows
+new knobs.
+
+`web/src/components/SavedViewsClient.tsx`: `SavedViewsBar` now
+takes `surface` and `basePath` props; chip clicks navigate to the
+right page (`/runs` or `/monitoring`) and the URL→filters
+extraction branches per surface. `buildSearchParams` and
+`filtersEqual` are surface-aware so the chip-active detection still
+round-trips. The "Save view" modal includes the surface in the POST
+so a saved monitoring view never leaks onto /runs.
+
+`web/src/app/monitoring/page.tsx`: server-fetches the monitoring
+saved views in parallel with timeseries + by-model, drops a
+`SavedViewsBar surface="monitoring"` above the KPI strip, and
+applies the optional `?model=` filter at the view layer (the
+breakdown endpoint stays unchanged; we filter in TS so the saved
+view round-trips cleanly when we extend the endpoint with a
+server-side model filter later).
+
 ## Loop iteration #5 — done (item #7)
 
 ✅ **Migration importer** —
@@ -817,7 +851,7 @@ unchanged.
 6. **JS/TS LangSmith shim** (❌) — symmetric port of the Python shim.
 7. **Migration importer** (❌) — LangSmith export JSON → tracebility
    ClickHouse runs; the unblocker for "we already have history".
-8. **Saved filters / dashboards on /monitoring** — extends item 3.
+8. **Saved filters / dashboards on /monitoring** ✅ shipped (item #8).
 9. **Helm chart** (❌) — self-host adoption surface.
 10. **Native Python SDK** (❌) — tracebility-shaped client (read +
     write); the LangSmith shim covers write parity but the read
