@@ -7,10 +7,20 @@ Idempotency: ``run`` and ``span`` are ReplacingMergeTree on
 ``(project_id, run_id, span_id)`` ordered by ``received_at``. So a redelivery
 from the Redis stream produces a second row that the merge collapses. We
 don't need to dedupe at write time.
+
+Replay captures: for every span of kind tool/llm/retriever we derive a
+``replay_capture`` row with a content-addressed sha256 over the bytes the
+replayer would need (model+temperature+inputs+outputs+attributes for llm,
+inputs+outputs for tool/retriever). Same byte payload → same hash → shared
+``object_ref`` across runs. The ``object_ref`` is currently
+``inline:sha256:<hash>`` because we keep the bytes in the span row itself;
+when an object-store backend is wired we'll flip the ref to ``s3://...``
+without touching the index.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import UTC, datetime
 from typing import Any
@@ -75,6 +85,28 @@ _SPAN_COLUMNS: tuple[str, ...] = (
     "error_message",
     "schema_version",
 )
+
+_REPLAY_CAPTURE_COLUMNS: tuple[str, ...] = (
+    "project_id",
+    "run_id",
+    "span_id",
+    "kind",
+    "content_hash",
+    "object_ref",
+    "size_bytes",
+    "attributes",
+    "captured_at",
+    "schema_version",
+)
+
+# span.kind -> replay_capture.kind. Embedding/parser/chain/agent are
+# orchestration concerns the replayer doesn't need to mock; only IO at
+# the boundary matters for deterministic replay.
+_REPLAY_KIND_BY_SPAN_KIND: dict[str, str] = {
+    "llm": "llm_call",
+    "tool": "tool_io",
+    "retriever": "retrieval",
+}
 
 
 def _parse_dt(value: Any) -> datetime | None:
@@ -163,32 +195,138 @@ def _row_for_span(
     )
 
 
+def _content_hash(parts: list[str]) -> tuple[str, int]:
+    """Stable sha256 hex over the concatenation of parts. Returns
+    ``(hex_digest, total_bytes)``. ``parts`` are already strings (json
+    or plain) so we can join them with a NUL separator that won't
+    collide with the JSON itself."""
+    blob = "\x00".join(parts).encode("utf-8")
+    digest = hashlib.sha256(blob).hexdigest()
+    return digest, len(blob)
+
+
+def _replay_payload_parts(span: dict[str, Any], replay_kind: str) -> list[str]:
+    """Pick the byte payload that determines replay determinism per kind.
+
+    LLM call: model + temperature + inputs + outputs. A different model
+    string is the canonical replay-divergence signal (ER-18: warned, not
+    silent-substituted).
+
+    Tool I/O: inputs + outputs. The tool function itself is the contract;
+    we capture its observed effect.
+
+    Retrieval: inputs (the query) + outputs (the docs). If the index has
+    drifted, the outputs differ.
+    """
+    inputs = span.get("inputs") or ""
+    outputs = span.get("outputs") or ""
+    if replay_kind == "llm_call":
+        model = span.get("model") or ""
+        temp = span.get("temperature")
+        temp_str = "" if temp is None else f"{float(temp):.6f}"
+        return [model, temp_str, inputs, outputs]
+    return [inputs, outputs]
+
+
+def _row_for_replay_capture(
+    envelope: dict[str, Any],
+    span: dict[str, Any],
+    *,
+    parent_run_id: str | None = None,
+) -> tuple[Any, ...] | None:
+    """Build a ``replay_capture`` row from a span. Returns None when the
+    span is not replay-relevant (e.g. chain/agent orchestration)."""
+    span_kind = span.get("kind") or ""
+    replay_kind = _REPLAY_KIND_BY_SPAN_KIND.get(span_kind)
+    if replay_kind is None:
+        return None
+    run_id = span.get("run_id") or parent_run_id
+    if run_id is None:
+        return None
+    parts = _replay_payload_parts(span, replay_kind)
+    digest, size_bytes = _content_hash(parts)
+    captured_at = _epoch(envelope.get("received_at"))
+    attrs = {
+        "span_kind": span_kind,
+        "name": span.get("name") or "",
+        "model": span.get("model"),
+        "temperature": span.get("temperature"),
+    }
+    return (
+        envelope["project_id"],
+        run_id,
+        span["span_id"],
+        replay_kind,
+        digest,
+        f"inline:sha256:{digest}",
+        size_bytes,
+        json.dumps({k: v for k, v in attrs.items() if v is not None}),
+        captured_at,
+        1,
+    )
+
+
 class ClickHouseWriter:
     def __init__(self, url: str) -> None:
         self._client: Client = clickhouse_connect.get_client(dsn=url)
 
-    def insert_envelope(self, envelope: dict[str, Any]) -> tuple[int, int]:
-        """Translate one envelope into row inserts. Returns (runs, spans) counts."""
+    def insert_envelope(
+        self, envelope: dict[str, Any]
+    ) -> tuple[int, int, int]:
+        """Translate one envelope into row inserts.
+
+        Returns ``(runs, spans, replay_captures)`` counts. The third
+        element was added in v0.2 of the worker; old log lines that
+        unpacked ``(runs, spans)`` still work because tuple-of-three is
+        also iterable, but consumers reading by index should pick up the
+        new field.
+        """
         payload = envelope.get("payload") or {}
         runs = payload.get("runs") or []
         loose_spans = payload.get("spans") or []
 
         run_rows: list[tuple[Any, ...]] = []
         span_rows: list[tuple[Any, ...]] = []
+        capture_rows: list[tuple[Any, ...]] = []
         for r in runs:
             run_rows.append(_row_for_run(envelope, r))
             for s in r.get("spans") or []:
                 span_rows.append(
                     _row_for_span(envelope, s, parent_run_id=r["run_id"])
                 )
+                cap = _row_for_replay_capture(
+                    envelope, s, parent_run_id=r["run_id"]
+                )
+                if cap is not None:
+                    capture_rows.append(cap)
         for s in loose_spans:
             span_rows.append(_row_for_span(envelope, s))
+            cap = _row_for_replay_capture(envelope, s)
+            if cap is not None:
+                capture_rows.append(cap)
 
         if run_rows:
             self._client.insert("run", run_rows, column_names=_RUN_COLUMNS)
         if span_rows:
             self._client.insert("span", span_rows, column_names=_SPAN_COLUMNS)
-        return (len(run_rows), len(span_rows))
+        if capture_rows:
+            try:
+                self._client.insert(
+                    "replay_capture",
+                    capture_rows,
+                    column_names=_REPLAY_CAPTURE_COLUMNS,
+                )
+            except Exception as exc:  # noqa: BLE001
+                # Replay index is a derived store. Don't drop the trace
+                # because the capture insert tripped — log and move on.
+                # Per ER-23 we never silent-drop primary trace data, but
+                # the capture index can be backfilled later from spans.
+                log.warning(
+                    "replay_capture insert failed",
+                    error=str(exc),
+                    captures=len(capture_rows),
+                )
+        return (len(run_rows), len(span_rows), len(capture_rows))
 
     def close(self) -> None:
         self._client.close()

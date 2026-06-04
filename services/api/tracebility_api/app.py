@@ -30,6 +30,7 @@ from .routers import (
     metrics,
     projects,
     prompts,
+    replays,
     runs_query,
     setup as setup_router,
     threads_query,
@@ -111,6 +112,7 @@ def create_app() -> FastAPI:
     app.include_router(api_keys.router)
     app.include_router(members.router)
     app.include_router(runs_query.router)
+    app.include_router(replays.router)
     app.include_router(threads_query.router)
     app.include_router(metrics.router)
     app.include_router(datasets.router)

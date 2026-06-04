@@ -118,7 +118,7 @@ class Consumer:
 
         try:
             loop = asyncio.get_running_loop()
-            runs, spans = await loop.run_in_executor(
+            runs, spans, captures = await loop.run_in_executor(
                 None, self._writer.insert_envelope, envelope
             )
             await self._redis.xack(
@@ -126,7 +126,13 @@ class Consumer:
                 self._settings.consumer_group,
                 message_id,
             )
-            log.debug("acked", id=message_id, runs=runs, spans=spans)
+            log.debug(
+                "acked",
+                id=message_id,
+                runs=runs,
+                spans=spans,
+                captures=captures,
+            )
         except Exception as exc:  # noqa: BLE001 — catch-all so we can decide DLQ
             await self._maybe_dlq(message_id, raw, exc)
 

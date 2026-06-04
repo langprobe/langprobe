@@ -57,7 +57,7 @@ Generated 2026-06-03 after the first sidebar pass (8 LangSmith-equivalent surfac
 | Playground | 🟡 | roadmap page only |
 | Annotations queue | ✅ | postgres queue/item lifecycle + ClickHouse run sampling + reviewer UI; submissions write `eval_score` with `judge_name='human'` (loop #4) |
 | Feedback (end-user signal) | ✅ | `tbf_pub_*` public keys + `POST /v1/feedback`; same eval_score store as judges (loop #4) |
-| Replay (deterministic re-run) | 🟡 | clickhouse `replay_captures` exists, no capture writer |
+| Replay (deterministic re-run) | ✅ | worker derives content-addressed captures per llm/tool/retrieval span; per-run index endpoint + run-detail panel (loop #4 item 8) |
 | Studio (visual canvas) | 🟡 | roadmap page only; depends on Replay |
 
 ### Workspace + identity
@@ -328,9 +328,40 @@ under `web/src/app/api/annotations/route.ts` (POST),
 `web/src/app/api/annotations/[id]/items/[itemId]/submit/route.ts` (POST),
 and `.../skip/route.ts` (POST).
 
+## Loop iteration #4 — done (item #8)
+
+✅ **Replay capture writer** — `services/ingest-worker/tracebility_worker/writer.py`
+now derives a `replay_capture` row alongside every span of kind
+`llm` / `tool` / `retriever` (mapped to `llm_call` / `tool_io` /
+`retrieval`; `embedding`, `parser`, `chain`, and `agent` are
+orchestration concerns the replayer does not need to mock — only IO
+at the boundary determines deterministic replay). Each capture is
+content-addressed: sha256 over `(model, temperature.6f, inputs,
+outputs)` for LLM calls, and `(inputs, outputs)` for tool/retrieval.
+Same byte payload across runs → same hash → same `object_ref`,
+so dedup is free at the object-store layer when that lands. Per
+ER-18, model is the canonical replay-divergence signal — different
+model string is a warned diff, not a silent substitute. Per ER-23,
+if the `replay_capture` insert trips, we log and move on without
+dropping the primary trace; the capture index can be rebuilt from
+spans later. `insert_envelope` now returns `(runs, spans, captures)`;
+`consumer.py` unpacks the third element and includes it in the
+acked-message debug log. `services/api/tracebility_api/routers/replays.py`
+exposes `GET /v1/runs/{run_id}/replay-captures?project_id=...&limit=`,
+returning `ReplayCaptureList { summary { total, by_kind, bytes_total,
+unique_hashes }, items[] }`. RBAC fail-closed via
+`assert_workspace_role` (all roles); 503 if ClickHouse is unset.
+UI: `web/src/app/runs/[run_id]/page.tsx` parallel-fetches captures
+alongside the run + spans; the inspector renders a Replay panel on
+the run view (KPI summary + first-50 captures table) and a
+"replay-ready" badge plus a per-span CaptureBlock when a span is
+selected. Cookie-forwarding proxy at
+`web/src/app/api/runs/[run_id]/replay-captures/route.ts`. The
+`object_ref` is `inline:sha256:<hash>` until the object-store backend
+is wired; flipping to `s3://...` will not change the read path.
+
 ## Loop iteration #4 — plan (remaining)
 
-8. **Replay capture writer** (extends ingest worker)
 9. **Studio canvas** (depends on Replay — last)
 10. **OpenInference / OTel ingest** (interop layer)
 11. **LangSmith Python shim** (drop-in compat package)

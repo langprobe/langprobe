@@ -71,6 +71,28 @@ interface SpanListResponse {
   items: Span[];
 }
 
+interface ReplayCaptureItem {
+  span_id: string;
+  kind: string;
+  content_hash: string;
+  object_ref: string;
+  size_bytes: number;
+  attributes: string;
+  captured_at: string;
+}
+
+interface ReplayCaptureSummary {
+  total: number;
+  by_kind: Record<string, number>;
+  bytes_total: number;
+  unique_hashes: number;
+}
+
+interface ReplayCaptureList {
+  summary: ReplayCaptureSummary;
+  items: ReplayCaptureItem[];
+}
+
 interface SpanNode {
   span: Span;
   depth: number;
@@ -98,10 +120,13 @@ export default async function RunDetailPage({
   }
 
   const projectQuery = `project_id=${encodeURIComponent(active.id)}`;
-  const [runRes, spansRes] = await Promise.all([
+  const [runRes, spansRes, capturesRes] = await Promise.all([
     apiGet<Run>(`/v1/runs/${encodeURIComponent(params.run_id)}?${projectQuery}`),
     apiGet<SpanListResponse>(
       `/v1/runs/${encodeURIComponent(params.run_id)}/spans?${projectQuery}`,
+    ),
+    apiGet<ReplayCaptureList>(
+      `/v1/runs/${encodeURIComponent(params.run_id)}/replay-captures?${projectQuery}`,
     ),
   ]);
 
@@ -126,6 +151,13 @@ export default async function RunDetailPage({
   const flat = flatten(buildTree(spans));
   const selectedSpan =
     spans.find((s) => s.span_id === searchParams.span) ?? null;
+  const captures = capturesRes.data ?? null;
+  const capturesBySpanId = new Map<string, ReplayCaptureItem>();
+  if (captures) {
+    for (const c of captures.items) {
+      capturesBySpanId.set(c.span_id, c);
+    }
+  }
 
   const crumbs = (
     <>
@@ -170,7 +202,16 @@ export default async function RunDetailPage({
             runId={run.run_id}
             selectedSpanId={selectedSpan?.span_id ?? null}
           />
-          <InspectorPane run={run} span={selectedSpan} />
+          <InspectorPane
+            run={run}
+            span={selectedSpan}
+            captures={captures}
+            capture={
+              selectedSpan
+                ? capturesBySpanId.get(selectedSpan.span_id) ?? null
+                : null
+            }
+          />
         </div>
       </div>
     </Shell>
@@ -608,7 +649,17 @@ function TimelineRow({
   );
 }
 
-function InspectorPane({ run, span }: { run: Run; span: Span | null }) {
+function InspectorPane({
+  run,
+  span,
+  captures,
+  capture,
+}: {
+  run: Run;
+  span: Span | null;
+  captures: ReplayCaptureList | null;
+  capture: ReplayCaptureItem | null;
+}) {
   return (
     <aside
       style={{
@@ -648,13 +699,23 @@ function InspectorPane({ run, span }: { run: Run; span: Span | null }) {
           gap: 16,
         }}
       >
-        {span ? <SpanInspector span={span} /> : <RunInspector run={run} />}
+        {span ? (
+          <SpanInspector span={span} capture={capture} />
+        ) : (
+          <RunInspector run={run} captures={captures} />
+        )}
       </div>
     </aside>
   );
 }
 
-function SpanInspector({ span }: { span: Span }) {
+function SpanInspector({
+  span,
+  capture,
+}: {
+  span: Span;
+  capture: ReplayCaptureItem | null;
+}) {
   return (
     <>
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -662,6 +723,14 @@ function SpanInspector({ span }: { span: Span }) {
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           <KindBadge kind={span.kind} />
           <StatusPill status={span.status} />
+          {capture ? (
+            <span
+              className="badge badge-neutral"
+              title={`replay-capture · ${capture.kind} · ${capture.size_bytes} bytes`}
+            >
+              replay-ready
+            </span>
+          ) : null}
         </div>
       </div>
       <KvList>
@@ -705,11 +774,32 @@ function SpanInspector({ span }: { span: Span }) {
           <Pre value={span.attributes} />
         </Section>
       ) : null}
+      {capture ? <CaptureBlock capture={capture} /> : null}
     </>
   );
 }
 
-function RunInspector({ run }: { run: Run }) {
+function CaptureBlock({ capture }: { capture: ReplayCaptureItem }) {
+  return (
+    <Section label="replay capture">
+      <KvList>
+        <Kv k="kind" v={capture.kind} />
+        <Kv k="hash" v={capture.content_hash.slice(0, 16) + "…"} />
+        <Kv k="ref" v={capture.object_ref} />
+        <Kv k="bytes" v={fmtBytes(capture.size_bytes)} />
+        <Kv k="captured" v={fmtIso(capture.captured_at)} />
+      </KvList>
+    </Section>
+  );
+}
+
+function RunInspector({
+  run,
+  captures,
+}: {
+  run: Run;
+  captures: ReplayCaptureList | null;
+}) {
   return (
     <>
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -747,7 +837,98 @@ function RunInspector({ run }: { run: Run }) {
           <Pre value={run.metadata} />
         </Section>
       ) : null}
+      {captures ? <ReplayPanel captures={captures} /> : null}
     </>
+  );
+}
+
+function ReplayPanel({ captures }: { captures: ReplayCaptureList }) {
+  const { summary, items } = captures;
+  const kinds = Object.entries(summary.by_kind).sort(
+    ([, a], [, b]) => b - a,
+  );
+  return (
+    <Section label="replay">
+      {summary.total === 0 ? (
+        <span style={{ color: "var(--text-3)", fontSize: 12 }}>
+          no replay-relevant spans (llm / tool / retriever) captured for this run
+        </span>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <KvList>
+            <Kv k="captures" v={String(summary.total)} />
+            <Kv k="unique" v={String(summary.unique_hashes)} />
+            <Kv k="bytes" v={fmtBytes(summary.bytes_total)} />
+            {kinds.length > 0 ? (
+              <Kv
+                k="by kind"
+                v={kinds.map(([k, n]) => `${k}=${n}`).join(", ")}
+              />
+            ) : null}
+          </KvList>
+          <div
+            style={{
+              border: "1px solid var(--border)",
+              borderRadius: "var(--r-2)",
+              overflow: "hidden",
+              background: "var(--surface)",
+            }}
+          >
+            {items.slice(0, 50).map((c) => (
+              <div
+                key={c.span_id}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "auto 1fr auto",
+                  gap: 8,
+                  alignItems: "center",
+                  padding: "6px 10px",
+                  borderBottom: "1px solid var(--border)",
+                  fontSize: 11,
+                }}
+              >
+                <span
+                  className="badge badge-neutral"
+                  style={{ fontSize: 10 }}
+                >
+                  {c.kind}
+                </span>
+                <span
+                  className="mono"
+                  style={{
+                    color: "var(--text-3)",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                  title={c.content_hash}
+                >
+                  {c.content_hash.slice(0, 16)}…
+                </span>
+                <span
+                  className="mono num"
+                  style={{ color: "var(--text-3)" }}
+                >
+                  {fmtBytes(c.size_bytes)}
+                </span>
+              </div>
+            ))}
+            {items.length > 50 ? (
+              <div
+                style={{
+                  padding: "6px 10px",
+                  fontSize: 11,
+                  color: "var(--text-3)",
+                  textAlign: "center",
+                }}
+              >
+                + {items.length - 50} more
+              </div>
+            ) : null}
+          </div>
+        </div>
+      )}
+    </Section>
   );
 }
 
@@ -1000,6 +1181,15 @@ function fmtLatency(ms: number | null): string {
 function fmtCost(usd: number): string {
   if (!usd) return "—";
   return `$${usd.toFixed(4)}`;
+}
+
+function fmtBytes(bytes: number): string {
+  if (!bytes) return "0 B";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024)
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
 function fmtIso(iso: string): string {
