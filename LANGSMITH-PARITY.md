@@ -31,7 +31,7 @@ Generated 2026-06-03 after the first sidebar pass (8 LangSmith-equivalent surfac
 | LangGraph callback bridge | ✅ | same handler — LangGraph emits the same callback shapes; pass `sdk="langgraph"` to distinguish in /runs (loop #6 item 3) |
 | OpenAI Agents SDK ingest | 🟡 | works via OTel intake (loop #4 item 10); first-class adapter pending SDK launch |
 | `wrap_openai` / `wrap_anthropic` | ✅ | duck-typed proxies on `tracebility-langsmith-shim`; one tracebility run per vendor SDK call with prompt+completion+token usage; vendor SDKs not transitive deps (loop #5 item 5) |
-| Multipart `/runs/multipart` | ❌ | endpoint not built |
+| Multipart `/runs/multipart` | ✅ | `POST /v1/runs/multipart` accepts `multipart/form-data` (envelope + N attachments); attachments hashed (sha256), persisted content-addressed under `<disk_buffer>/attachments/<hh>/<hash>`; envelope refs `attachment://<hash>` (loop #6 item 4) |
 | Migration importer (LS export → tb) | ✅ | `tb-migrate-langsmith` CLI streams JSONL/dir/stdin → `/runs/batch` in batches of 100; dry-run validates without posting; per-row parse failures logged with `<file>:<line>` and counted; non-zero exit on any failure (loop #5 item 7) |
 
 ### Observability surfaces
@@ -525,6 +525,40 @@ parallel POSTs against different models), per-output card with
 latency + token stats + deep-link to the trace at `/runs/{id}`.
 Cookie-forwarding proxy at `web/src/app/api/playground/runs/route.ts`.
 
+## Loop iteration #6 — done (item #4)
+
+✅ **Multipart `/runs/multipart`** —
+`services/ingest-api/tracebility_ingest/routers/multipart.py` adds
+`POST /v1/runs/multipart` (multipart/form-data). One `envelope`
+form field carries the IngestBatch JSON; zero or more `attachments`
+file parts carry binary blobs. The endpoint:
+
+  1. Parses + validates the envelope through the existing `IngestBatch`
+     pydantic model — same wire shape as the JSON path.
+  2. **Stream-hashes** each attachment (64KB chunks) so multi-GB
+     uploads don't OOM the worker.
+  3. Persists each attachment **content-addressed** at
+     `<disk_buffer_path>/attachments/<hh>/<hash>` (sharded by the
+     first 2 hex chars of sha256). Atomic write via tmp + replace;
+     skips if the file already exists (content-addressing makes
+     retries idempotent).
+  4. Returns a manifest: `[{filename, content_type, size_bytes,
+     content_hash, ref}]` with `ref` = `attachment://<hash>`. The
+     envelope's `inputs_obj_ref` / `outputs_obj_ref` fields can
+     point at these refs and the worker resolves them off the
+     buffer.
+  5. Wraps the envelope with tenant ids + `attachments` manifest,
+     redacts PII, enqueues onto the same Redis queue native ingest
+     uses.
+
+ER-23 honored: failed attachment writes return 503 (caller retries
+land idempotent). The disk buffer doubles as the attachment store
+in v1; when the dedicated object-store backend lands, attachments
+move to `s3://...` without changing the URL or worker contract.
+
+`app.state.settings` is now wired so the router can read
+`disk_buffer_path` at request time.
+
 ## Loop iteration #6 — done (item #3)
 
 ✅ **LangChain / LangGraph callback bridges** —
@@ -694,9 +728,8 @@ Ordered by leverage:
 3. **LangChain / LangGraph callback bridges** ✅ shipped (item #3)
    — duck-typed Python handler that maps callback events into
    ingest runs/spans.
-4. **Multipart `/runs/multipart`** — accept large multipart payloads
-   (file attachments, large tool I/O); LangSmith ships this and a
-   handful of users will hit the JSON envelope size ceiling.
+4. **Multipart `/runs/multipart`** ✅ shipped (item #4) — accepts
+   large multipart payloads with content-addressed attachments.
 5. **Luna prompted-judges** — an LLM-judge type that takes a
    user-authored rubric prompt; rides the existing `eval_score`
    shape so reads inherit.
