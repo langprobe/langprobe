@@ -32,7 +32,7 @@ Generated 2026-06-03 after the first sidebar pass (8 LangSmith-equivalent surfac
 | OpenAI Agents SDK ingest | 🟡 | works via OTel intake (loop #4 item 10); first-class adapter pending SDK launch |
 | `wrap_openai` / `wrap_anthropic` | ✅ | duck-typed proxies on `tracebility-langsmith-shim`; one tracebility run per vendor SDK call with prompt+completion+token usage; vendor SDKs not transitive deps (loop #5 item 5) |
 | Multipart `/runs/multipart` | ❌ | endpoint not built |
-| Migration importer (LS export → tb) | ❌ | tool not built |
+| Migration importer (LS export → tb) | ✅ | `tb-migrate-langsmith` CLI streams JSONL/dir/stdin → `/runs/batch` in batches of 100; dry-run validates without posting; per-row parse failures logged with `<file>:<line>` and counted; non-zero exit on any failure (loop #5 item 7) |
 
 ### Observability surfaces
 
@@ -530,6 +530,50 @@ Cookie-forwarding proxy at `web/src/app/api/playground/runs/route.ts`.
 Re-scoring the scoreboard at the top, the remaining ❌ / 🟡 cells
 break into five buckets. Ordered by leverage (visible gap × user
 demand ÷ implementation cost):
+
+## Loop iteration #5 — done (item #7)
+
+✅ **Migration importer** —
+`services/migrate-langsmith/tracebility_migrate_langsmith/cli.py`
+ships `tb-migrate-langsmith`, a thin CLI that streams a LangSmith
+export into a tracebility ingest host. The receiving end already
+understands the LangSmith `RunCreate` shape via the in-process shim
+(`services/ingest-api/.../langsmith_shim.py`), so the importer's job
+is just to stream + batch + POST to `/runs/batch` —
+the heavy lifting (translation → IngestBatch → Redis → ClickHouse)
+happens inside the worker, identical to the live shim path.
+
+Inputs:
+  - JSONL file (one JSON object per line)
+  - directory (recurses into `*.jsonl` and `*.json`)
+  - `-` for stdin
+
+Behavior:
+  - **Idempotent on the receive side**: the worker upserts by
+    `run_id`, so re-running an import is safe.
+  - **Never silent-drop** (ER-23): per-row parse failures are
+    logged with `<file>:<line>` and counted; the CLI exits non-zero
+    if any row failed to parse OR any batch returned ≥400 — even
+    in `--dry-run`.
+  - **Batches**: 100 rows per `/runs/batch` POST by default;
+    1–1000 via `--batch-size`.
+  - **Read-only** on the source: never deletes / mutates the
+    LangSmith data.
+
+Auth env: `--api-key` overrides; falls back to
+`TRACEBILITY_INGEST_KEY` then `LANGSMITH_API_KEY` so existing
+LangSmith ops env can be reused. Endpoint env: `--endpoint`
+overrides; falls back to `TRACEBILITY_INGEST_URL`,
+`LANGSMITH_ENDPOINT`, then `http://localhost:7080`.
+
+Smoke-tested:
+  - dirty file → parse failures logged, exit 1
+  - clean file → exit 0
+  - directory recurse picks up `.jsonl` + `.json`
+  - `--limit` caps the row stream cleanly
+
+Wired into `pyproject.toml` workspace members; entry point
+`tb-migrate-langsmith = "tracebility_migrate_langsmith.cli:main"`.
 
 ## Loop iteration #5 — done (item #6)
 

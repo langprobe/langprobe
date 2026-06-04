@@ -13,6 +13,7 @@ members = [
     "services/api",
     "services/ingest-worker",
     "services/eval-orchestrator",
+    "services/migrate-langsmith",
     "packages/sdk-python",
 ]
 
