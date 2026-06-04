@@ -1,0 +1,698 @@
+"use client";
+
+import { ExternalLink, Loader2, Play, Sparkles } from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useMemo, useState, useTransition } from "react";
+
+/**
+ * Interactive Playground canvas.
+ *
+ * The page server-fetches the prompt catalog and recent sessions; this
+ * component owns the live composer: pick a prompt + version (or paste
+ * raw), edit variables detected from {{ var }} substitution, pick a
+ * model, click Run, see the output + token counts + latency, deep-link
+ * to the trace at /runs/{run_id}.
+ *
+ * Mode is "single" by default; flip to "compare" for a side-by-side run
+ * of the same prompt against two models. Each Run is one POST -- we do
+ * not stream tokens in v1 (the server is sync; streaming wires next
+ * iteration without changing the storage shape).
+ */
+
+export interface PromptOption {
+  id: string;
+  slug: string;
+  name: string;
+  versions: { id: string; version: number; template: string }[];
+}
+
+export interface PlaygroundSessionOut {
+  id: string;
+  project_id: string;
+  prompt_version_id: string | null;
+  raw_template: string | null;
+  rendered_prompt: string;
+  variables: Record<string, unknown>;
+  provider: string;
+  model: string;
+  temperature: number | null;
+  max_tokens: number | null;
+  status: "queued" | "running" | "done" | "failed";
+  output_text: string | null;
+  prompt_tokens: number | null;
+  completion_tokens: number | null;
+  total_tokens: number | null;
+  cost_usd: number | null;
+  latency_ms: number | null;
+  run_id: string | null;
+  error: string | null;
+  created_at: string;
+  finished_at: string | null;
+}
+
+const VAR_RE = /\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}/g;
+
+const PRESET_MODELS: { value: string; label: string }[] = [
+  { value: "claude-opus-4-7", label: "claude-opus-4-7" },
+  { value: "claude-sonnet-4-6", label: "claude-sonnet-4-6" },
+  { value: "claude-haiku-4-5-20251001", label: "claude-haiku-4-5" },
+  { value: "gpt-4o", label: "gpt-4o" },
+  { value: "gpt-4o-mini", label: "gpt-4o-mini" },
+  { value: "stub-echo", label: "stub-echo (no api key)" },
+];
+
+function extractVariables(template: string): string[] {
+  const out = new Set<string>();
+  let match: RegExpExecArray | null;
+  const re = new RegExp(VAR_RE);
+  while ((match = re.exec(template)) !== null) {
+    out.add(match[1]);
+  }
+  return [...out];
+}
+
+export function PlaygroundComposer({
+  projectId,
+  prompts,
+}: {
+  projectId: string;
+  prompts: PromptOption[];
+}) {
+  const [mode, setMode] = useState<"single" | "compare">("single");
+  const [promptId, setPromptId] = useState<string>("");
+  const [versionId, setVersionId] = useState<string>("");
+  const [rawMode, setRawMode] = useState<boolean>(prompts.length === 0);
+  const [rawTemplate, setRawTemplate] = useState<string>(
+    "Summarize the following text in one sentence:\n\n{{ text }}",
+  );
+  const [variables, setVariables] = useState<Record<string, string>>({
+    text: "tracebility is a self-hosted LLM observability platform.",
+  });
+  const [model, setModel] = useState<string>("stub-echo");
+  const [modelB, setModelB] = useState<string>("claude-haiku-4-5-20251001");
+  const [temperature, setTemperature] = useState<string>("0.7");
+  const [maxTokens, setMaxTokens] = useState<string>("1024");
+  const [result, setResult] = useState<PlaygroundSessionOut | null>(null);
+  const [resultB, setResultB] = useState<PlaygroundSessionOut | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+  const router = useRouter();
+
+  const selectedPrompt = useMemo(
+    () => prompts.find((p) => p.id === promptId) ?? null,
+    [prompts, promptId],
+  );
+  const selectedVersion = useMemo(
+    () => selectedPrompt?.versions.find((v) => v.id === versionId) ?? null,
+    [selectedPrompt, versionId],
+  );
+  const effectiveTemplate = rawMode
+    ? rawTemplate
+    : selectedVersion?.template ?? "";
+
+  const detectedVars = useMemo(
+    () => extractVariables(effectiveTemplate),
+    [effectiveTemplate],
+  );
+
+  function setVariable(key: string, value: string) {
+    setVariables((prev) => ({ ...prev, [key]: value }));
+  }
+
+  async function runOne(modelChoice: string): Promise<PlaygroundSessionOut | null> {
+    const tempNum = temperature.trim() === "" ? null : Number(temperature);
+    if (tempNum !== null && (!Number.isFinite(tempNum) || tempNum < 0 || tempNum > 2)) {
+      setError("temperature must be a number in [0.0, 2.0]");
+      return null;
+    }
+    const maxNum = maxTokens.trim() === "" ? null : Number(maxTokens);
+    if (maxNum !== null && (!Number.isFinite(maxNum) || maxNum < 1 || maxNum > 8192)) {
+      setError("max_tokens must be 1..8192");
+      return null;
+    }
+    const body: Record<string, unknown> = {
+      project_id: projectId,
+      variables: Object.fromEntries(
+        Object.entries(variables).map(([k, v]) => [k, v]),
+      ),
+      model: modelChoice,
+      temperature: tempNum,
+      max_tokens: maxNum,
+    };
+    if (rawMode || !selectedVersion) {
+      if (!effectiveTemplate.trim()) {
+        setError("template is empty");
+        return null;
+      }
+      body.raw_template = effectiveTemplate;
+    } else {
+      body.prompt_version_id = selectedVersion.id;
+    }
+    const res = await fetch("/api/playground/runs", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok && res.status !== 201) {
+      let data: unknown;
+      try {
+        data = await res.json();
+      } catch {
+        data = null;
+      }
+      const detail =
+        data && typeof data === "object" && "detail" in data
+          ? String((data as { detail: unknown }).detail)
+          : `request failed (${res.status})`;
+      setError(detail);
+      return null;
+    }
+    return (await res.json()) as PlaygroundSessionOut;
+  }
+
+  function run() {
+    setError(null);
+    setResult(null);
+    setResultB(null);
+    startTransition(async () => {
+      if (mode === "single") {
+        const r = await runOne(model);
+        if (r) setResult(r);
+      } else {
+        const [r1, r2] = await Promise.all([runOne(model), runOne(modelB)]);
+        if (r1) setResult(r1);
+        if (r2) setResultB(r2);
+      }
+      router.refresh();
+    });
+  }
+
+  return (
+    <div style={{ display: "grid", gap: 16 }}>
+      <ModeToggle mode={mode} onChange={setMode} />
+      <PromptSourceCard
+        prompts={prompts}
+        rawMode={rawMode}
+        setRawMode={setRawMode}
+        promptId={promptId}
+        setPromptId={setPromptId}
+        versionId={versionId}
+        setVersionId={setVersionId}
+        rawTemplate={rawTemplate}
+        setRawTemplate={setRawTemplate}
+        selectedPrompt={selectedPrompt}
+        selectedVersion={selectedVersion}
+      />
+      <VariablesCard
+        keys={detectedVars}
+        values={variables}
+        onChange={setVariable}
+      />
+      <ModelCard
+        mode={mode}
+        model={model}
+        setModel={setModel}
+        modelB={modelB}
+        setModelB={setModelB}
+        temperature={temperature}
+        setTemperature={setTemperature}
+        maxTokens={maxTokens}
+        setMaxTokens={setMaxTokens}
+      />
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+        {error ? (
+          <span
+            className="mono"
+            style={{ color: "var(--danger)", fontSize: 12, alignSelf: "center" }}
+          >
+            {error}
+          </span>
+        ) : null}
+        <button
+          type="button"
+          className="btn btn-primary"
+          onClick={run}
+          disabled={pending || !effectiveTemplate.trim()}
+        >
+          {pending ? <Loader2 size={14} className="spin" /> : <Play size={14} />}
+          {pending ? "running…" : mode === "compare" ? "Run both" : "Run"}
+        </button>
+      </div>
+      {result ? <OutputCard result={result} /> : null}
+      {resultB ? <OutputCard result={resultB} /> : null}
+    </div>
+  );
+}
+
+function ModeToggle({
+  mode,
+  onChange,
+}: {
+  mode: "single" | "compare";
+  onChange: (m: "single" | "compare") => void;
+}) {
+  return (
+    <div style={{ display: "flex", gap: 4 }}>
+      <button
+        type="button"
+        className={mode === "single" ? "btn btn-primary" : "btn btn-ghost"}
+        onClick={() => onChange("single")}
+        style={{ fontSize: 12 }}
+      >
+        Single model
+      </button>
+      <button
+        type="button"
+        className={mode === "compare" ? "btn btn-primary" : "btn btn-ghost"}
+        onClick={() => onChange("compare")}
+        style={{ fontSize: 12 }}
+      >
+        <Sparkles size={13} /> Side-by-side
+      </button>
+    </div>
+  );
+}
+
+function PromptSourceCard({
+  prompts,
+  rawMode,
+  setRawMode,
+  promptId,
+  setPromptId,
+  versionId,
+  setVersionId,
+  rawTemplate,
+  setRawTemplate,
+  selectedPrompt,
+  selectedVersion,
+}: {
+  prompts: PromptOption[];
+  rawMode: boolean;
+  setRawMode: (b: boolean) => void;
+  promptId: string;
+  setPromptId: (s: string) => void;
+  versionId: string;
+  setVersionId: (s: string) => void;
+  rawTemplate: string;
+  setRawTemplate: (s: string) => void;
+  selectedPrompt: PromptOption | null;
+  selectedVersion: PromptOption["versions"][number] | null;
+}) {
+  return (
+    <section className="card card-pad-lg">
+      <div
+        style={{
+          display: "flex",
+          alignItems: "baseline",
+          justifyContent: "space-between",
+          marginBottom: 12,
+        }}
+      >
+        <h2 style={{ margin: 0 }}>Prompt</h2>
+        <div style={{ display: "flex", gap: 4 }}>
+          <button
+            type="button"
+            className={!rawMode ? "btn btn-primary" : "btn btn-ghost"}
+            onClick={() => setRawMode(false)}
+            disabled={prompts.length === 0}
+            style={{ fontSize: 12 }}
+            title={
+              prompts.length === 0
+                ? "create a prompt under /prompts to use the picker"
+                : undefined
+            }
+          >
+            From catalog
+          </button>
+          <button
+            type="button"
+            className={rawMode ? "btn btn-primary" : "btn btn-ghost"}
+            onClick={() => setRawMode(true)}
+            style={{ fontSize: 12 }}
+          >
+            Raw
+          </button>
+        </div>
+      </div>
+      {rawMode ? (
+        <textarea
+          value={rawTemplate}
+          onChange={(e) => setRawTemplate(e.target.value)}
+          rows={6}
+          placeholder="Type a template. Use {{ variable }} for substitutions."
+          style={{ width: "100%", fontFamily: "var(--font-mono)", fontSize: 12 }}
+        />
+      ) : (
+        <div style={{ display: "grid", gap: 12 }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "2fr 1fr",
+              gap: 12,
+            }}
+          >
+            <Field label="Prompt">
+              <select
+                value={promptId}
+                onChange={(e) => {
+                  setPromptId(e.target.value);
+                  setVersionId("");
+                }}
+              >
+                <option value="">— pick a prompt —</option>
+                {prompts.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.slug} — {p.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Version">
+              <select
+                value={versionId}
+                onChange={(e) => setVersionId(e.target.value)}
+                disabled={!selectedPrompt}
+              >
+                <option value="">— pick —</option>
+                {(selectedPrompt?.versions || [])
+                  .slice()
+                  .sort((a, b) => b.version - a.version)
+                  .map((v) => (
+                    <option key={v.id} value={v.id}>
+                      v{v.version}
+                    </option>
+                  ))}
+              </select>
+            </Field>
+          </div>
+          {selectedVersion ? (
+            <pre
+              style={{
+                margin: 0,
+                background: "var(--surface-2)",
+                padding: 12,
+                borderRadius: 8,
+                whiteSpace: "pre-wrap",
+                fontSize: 12,
+                maxHeight: 240,
+                overflow: "auto",
+              }}
+            >
+              {selectedVersion.template}
+            </pre>
+          ) : (
+            <p
+              style={{
+                color: "var(--text-3)",
+                fontSize: 13,
+                margin: 0,
+              }}
+            >
+              Pick a prompt and version to preview the template.
+            </p>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function VariablesCard({
+  keys,
+  values,
+  onChange,
+}: {
+  keys: string[];
+  values: Record<string, string>;
+  onChange: (key: string, value: string) => void;
+}) {
+  return (
+    <section className="card card-pad-lg">
+      <div
+        style={{
+          display: "flex",
+          alignItems: "baseline",
+          justifyContent: "space-between",
+          marginBottom: 12,
+        }}
+      >
+        <h2 style={{ margin: 0 }}>Variables</h2>
+        <span
+          className="mono"
+          style={{ fontSize: 11, color: "var(--text-3)" }}
+        >
+          detected from {"{{ var }}"} substitutions
+        </span>
+      </div>
+      {keys.length === 0 ? (
+        <p style={{ color: "var(--text-3)", margin: 0, fontSize: 13 }}>
+          No variables detected in the template.
+        </p>
+      ) : (
+        <div style={{ display: "grid", gap: 8 }}>
+          {keys.map((k) => (
+            <Field key={k} label={k} mono>
+              <textarea
+                value={values[k] ?? ""}
+                onChange={(e) => onChange(k, e.target.value)}
+                rows={2}
+                placeholder={`value for {{ ${k} }}`}
+                style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}
+              />
+            </Field>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ModelCard({
+  mode,
+  model,
+  setModel,
+  modelB,
+  setModelB,
+  temperature,
+  setTemperature,
+  maxTokens,
+  setMaxTokens,
+}: {
+  mode: "single" | "compare";
+  model: string;
+  setModel: (s: string) => void;
+  modelB: string;
+  setModelB: (s: string) => void;
+  temperature: string;
+  setTemperature: (s: string) => void;
+  maxTokens: string;
+  setMaxTokens: (s: string) => void;
+}) {
+  return (
+    <section className="card card-pad-lg">
+      <h2 style={{ margin: "0 0 12px" }}>Model</h2>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: mode === "compare" ? "1fr 1fr 1fr 1fr" : "1fr 1fr 1fr",
+          gap: 12,
+        }}
+      >
+        <Field label={mode === "compare" ? "Model A" : "Model"}>
+          <select value={model} onChange={(e) => setModel(e.target.value)}>
+            {PRESET_MODELS.map((m) => (
+              <option key={m.value} value={m.value}>
+                {m.label}
+              </option>
+            ))}
+          </select>
+        </Field>
+        {mode === "compare" ? (
+          <Field label="Model B">
+            <select value={modelB} onChange={(e) => setModelB(e.target.value)}>
+              {PRESET_MODELS.map((m) => (
+                <option key={m.value} value={m.value}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </Field>
+        ) : null}
+        <Field label="Temperature" hint="0.0..2.0 (blank = provider default)">
+          <input
+            value={temperature}
+            inputMode="decimal"
+            onChange={(e) => setTemperature(e.target.value)}
+            placeholder="0.7"
+          />
+        </Field>
+        <Field label="Max tokens">
+          <input
+            value={maxTokens}
+            inputMode="numeric"
+            onChange={(e) => setMaxTokens(e.target.value)}
+            placeholder="1024"
+          />
+        </Field>
+      </div>
+    </section>
+  );
+}
+
+function OutputCard({ result }: { result: PlaygroundSessionOut }) {
+  const tone =
+    result.status === "failed"
+      ? "danger"
+      : result.status === "done"
+        ? "success"
+        : "neutral";
+  return (
+    <section className="card card-pad-lg" style={{ display: "grid", gap: 12 }}>
+      <header
+        style={{
+          display: "flex",
+          alignItems: "baseline",
+          justifyContent: "space-between",
+          gap: 8,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+          <h3 style={{ margin: 0 }}>Output</h3>
+          <span
+            className="mono"
+            style={{ fontSize: 12, color: "var(--text-3)" }}
+          >
+            {result.model}
+          </span>
+          <StatusBadge status={result.status} tone={tone} />
+        </div>
+        {result.run_id ? (
+          <Link
+            href={`/runs/${result.run_id}`}
+            className="mono"
+            style={{ fontSize: 12, color: "var(--link)" }}
+          >
+            open in /runs <ExternalLink size={12} />
+          </Link>
+        ) : null}
+      </header>
+      {result.status === "failed" ? (
+        <pre
+          style={{
+            margin: 0,
+            color: "var(--danger)",
+            fontSize: 12,
+            whiteSpace: "pre-wrap",
+            wordBreak: "break-word",
+          }}
+        >
+          {result.error}
+        </pre>
+      ) : (
+        <pre
+          style={{
+            margin: 0,
+            background: "var(--surface-2)",
+            padding: 12,
+            borderRadius: 8,
+            whiteSpace: "pre-wrap",
+            wordBreak: "break-word",
+            fontSize: 13,
+            maxHeight: 360,
+            overflow: "auto",
+          }}
+        >
+          {result.output_text || "(empty)"}
+        </pre>
+      )}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+          gap: 12,
+          fontSize: 12,
+        }}
+      >
+        <Stat label="Latency" value={result.latency_ms != null ? `${result.latency_ms} ms` : "—"} />
+        <Stat label="Prompt tokens" value={String(result.prompt_tokens ?? "—")} />
+        <Stat label="Completion tokens" value={String(result.completion_tokens ?? "—")} />
+        <Stat label="Total" value={String(result.total_tokens ?? "—")} />
+      </div>
+    </section>
+  );
+}
+
+function StatusBadge({
+  status,
+  tone,
+}: {
+  status: string;
+  tone: "success" | "danger" | "neutral";
+}) {
+  const cls =
+    tone === "success"
+      ? "badge badge-success"
+      : tone === "danger"
+        ? "badge badge-danger"
+        : "badge badge-neutral";
+  return <span className={cls}>{status}</span>;
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div
+        style={{
+          fontSize: 11,
+          color: "var(--text-3)",
+          textTransform: "uppercase",
+          letterSpacing: 0.4,
+          marginBottom: 4,
+        }}
+      >
+        {label}
+      </div>
+      <div className="num" style={{ fontSize: 14, color: "var(--text-1)" }}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function Field({
+  label,
+  hint,
+  mono,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  mono?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <label style={{ display: "grid", gap: 4 }}>
+      <span
+        className={mono ? "mono" : undefined}
+        style={{
+          fontSize: 11,
+          color: "var(--text-3)",
+          textTransform: mono ? "none" : "uppercase",
+          letterSpacing: 0.4,
+        }}
+      >
+        {label}
+      </span>
+      {children}
+      {hint ? (
+        <span
+          className="mono"
+          style={{ fontSize: 11, color: "var(--text-3)" }}
+        >
+          {hint}
+        </span>
+      ) : null}
+    </label>
+  );
+}

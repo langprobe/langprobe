@@ -54,7 +54,7 @@ Generated 2026-06-03 after the first sidebar pass (8 LangSmith-equivalent surfac
 | Evals (PoLL multi-judge) | ❌ | not built |
 | Luna prompted-judges | ❌ | not built |
 | Comparisons (A/B experiments) | ✅ | postgres `comparison` lifecycle + clickhouse `eval_score` cmp:a/cmp:b rows; list + paired-diff detail UI (loop #4) |
-| Playground | 🟡 | roadmap page only |
+| Playground | ✅ | postgres `playground_session` + sync runner; anthropic/openai/stub providers; side-by-side compare mode; results write a real trace to ClickHouse with `sdk='playground'` (loop #5 item 1) |
 | Annotations queue | ✅ | postgres queue/item lifecycle + ClickHouse run sampling + reviewer UI; submissions write `eval_score` with `judge_name='human'` (loop #4) |
 | Feedback (end-user signal) | ✅ | `tbf_pub_*` public keys + `POST /v1/feedback`; same eval_score store as judges (loop #4) |
 | Replay (deterministic re-run) | ✅ | worker derives content-addressed captures per llm/tool/retrieval span; per-run index endpoint + run-detail panel (loop #4 item 8) |
@@ -487,5 +487,69 @@ about non-affiliation.
 
 All eleven items shipped. Next iteration begins with a fresh
 gap analysis at the top of this file.
+
+## Loop iteration #5 — done (item #1)
+
+✅ **Playground** —
+`schemas/postgres/migrations/0014_playground.sql` adds the
+`playground_session` table (project-scoped row that records the
+rendered prompt, variables jsonb, model + provider + temperature
++ max_tokens, lifecycle queued → running → done/failed, output
+text, token + latency, and the ClickHouse run_id of the resulting
+trace). One-of constraint: prompt_version_id OR raw_template must
+be present.
+
+`services/api/tracebility_api/routers/playground.py` exposes
+`GET /v1/playground/runs?project_id=&limit=`, `POST /v1/playground/runs`
+(the synchronous LLM invocation — renders `{{ var }}` substitutions,
+calls anthropic / openai / stub via stdlib urllib so we don't add
+a runtime dep on httpx, then writes a `run` + `span` row to
+ClickHouse with `sdk='playground'` so the result is visible at
+`/runs/{id}` like any other trace), and `GET /v1/playground/runs/{id}`.
+Provider routing is derived from the model string (`claude-*` →
+anthropic, `gpt-*`/`o*-*` → openai, `stub-*` → echo). Env-derived
+credentials (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY`) — per-workspace
+encrypted credentials slot in a later iteration without changing
+this URL surface. RBAC fail-closed; audit-fail-closed on every
+invocation (ER-10); 5xx from a provider writes status='failed'
+with the error text rather than dropping the attempt (ER-23).
+
+UI: `web/src/app/playground/page.tsx` rewritten from RoadmapSurface
+to a server-component composer + sticky recent-runs sidebar. Server
+fetches the prompt catalog + each prompt's versions + the most
+recent 20 sessions in parallel. `PlaygroundClient.tsx` is the
+interactive composer: catalog/raw toggle for prompt source,
+auto-detected `{{ var }}` variable form, model + temperature +
+max_tokens controls, **single vs side-by-side compare** mode (two
+parallel POSTs against different models), per-output card with
+latency + token stats + deep-link to the trace at `/runs/{id}`.
+Cookie-forwarding proxy at `web/src/app/api/playground/runs/route.ts`.
+
+## Loop iteration #5 — plan
+
+Re-scoring the scoreboard at the top, the remaining ❌ / 🟡 cells
+break into five buckets. Ordered by leverage (visible gap × user
+demand ÷ implementation cost):
+
+1. **Playground** ✅ shipped (item #1) — most visible LangSmith feature;
+   directly closes the "where do I iterate on a prompt?" gap.
+   Backend: prompt_version + workspace LLM creds + dispatcher.
+   UI: prompt picker → editor → run → side-by-side.
+2. **PoLL multi-judge evals** (❌) — multi-judge aggregation on
+   the existing `eval_score` store; the real eval-rigor wedge.
+3. **Saved filters / views on /runs** (❌) — quality-of-life on
+   the most-visited screen.
+4. **Bulk actions on runs** (❌) — pair with item 3: tag, add to
+   dataset, send to annotation queue.
+5. **`wrap_openai` / `wrap_anthropic`** convenience helpers on
+   `tracebility-langsmith-shim` (❌).
+6. **JS/TS LangSmith shim** (❌) — symmetric port of the Python shim.
+7. **Migration importer** (❌) — LangSmith export JSON → tracebility
+   ClickHouse runs; the unblocker for "we already have history".
+8. **Saved filters / dashboards on /monitoring** — extends item 3.
+9. **Helm chart** (❌) — self-host adoption surface.
+10. **Native Python SDK** (❌) — tracebility-shaped client (read +
+    write); the LangSmith shim covers write parity but the read
+    side needs its own surface.
 
 Each step ends with: commit, push, re-run gap analysis at top of this file, repeat.

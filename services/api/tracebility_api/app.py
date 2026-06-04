@@ -28,6 +28,7 @@ from .routers import (
     health,
     members,
     metrics,
+    playground,
     projects,
     prompts,
     replays,
@@ -125,6 +126,7 @@ def create_app() -> FastAPI:
     app.include_router(feedback_keys.router)
     app.include_router(feedback.router)
     app.include_router(studio.router)
+    app.include_router(playground.router)
     return app
 
 
