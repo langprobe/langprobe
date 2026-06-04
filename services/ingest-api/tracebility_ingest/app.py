@@ -20,7 +20,7 @@ from fastapi import FastAPI
 from . import config
 from .enqueue import IngestEnqueue
 from .redactor import redactor_from_env
-from .routers import health, langsmith_shim, runs
+from .routers import health, langsmith_shim, otel, runs
 
 log = structlog.get_logger("tracebility.ingest.app")
 
@@ -95,6 +95,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(runs.router)
     app.include_router(langsmith_shim.router)
+    app.include_router(otel.router)
     return app
 
 

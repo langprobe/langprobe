@@ -26,10 +26,10 @@ Generated 2026-06-03 after the first sidebar pass (8 LangSmith-equivalent surfac
 | Run/span ingest | ✅ | `/v1/runs` (api), ClickHouse `runs_and_spans` |
 | Run list view | ✅ | `/runs` page renders real data |
 | Run detail (3-pane debugger) | ✅ | spans tree + timeline + inspector |
-| OTel/OpenInference ingestion | ❌ | translation layer not built |
+| OTel/OpenInference ingestion | ✅ | `POST /v1/traces` accepts OTLP HTTP/JSON; translates OpenInference + OTel GenAI attributes to native run/span envelopes (loop #4 item 10) |
 | LangChain callback bridge | ❌ | shim package not built |
 | LangGraph callback bridge | ❌ | shim package not built |
-| OpenAI Agents SDK ingest | ❌ | shim package not built |
+| OpenAI Agents SDK ingest | 🟡 | works via OTel intake (loop #4 item 10); first-class adapter pending SDK launch |
 | `wrap_openai` / `wrap_anthropic` | ❌ | shim package not built |
 | Multipart `/runs/multipart` | ❌ | endpoint not built |
 | Migration importer (LS export → tb) | ❌ | tool not built |
@@ -406,9 +406,49 @@ Editor is frozen post-replay. Cookie-forwarding proxies under
 `web/src/app/api/studio/branches/[id]/replay/route.ts` (POST), and
 `web/src/app/api/studio/branches/[id]/promote/route.ts` (POST).
 
+## Loop iteration #4 — done (item #10)
+
+✅ **OpenInference / OTel ingest** —
+`services/ingest-api/tracebility_ingest/routers/otel.py` adds
+`POST /v1/traces` (the OTLP HTTP/JSON collector path). The router
+accepts the standard `resourceSpans` envelope every OTel SDK already
+emits, walks `scopeSpans[].spans[]`, and translates each span into a
+native `SpanIngest`. OpenInference's `openinference.span.kind`
+(LLM / TOOL / CHAIN / RETRIEVER / EMBEDDING / AGENT / RERANKER) is
+the primary kind signal with a fallback chain to OTel GenAI's
+`gen_ai.operation.name` and finally span-name heuristics. Model,
+temperature, token counts (prompt/completion/total), and IO read
+both OpenInference (`llm.model_name`, `llm.token_count.prompt`,
+`input.value`, `output.value`) and OTel GenAI (`gen_ai.request.model`,
+`gen_ai.usage.input_tokens`, `gen_ai.prompt`) attribute namespaces.
+
+Id mapping: OTel `traceId` is 32-hex → UUID directly; OTel `spanId`
+is 16-hex → left-padded to 32-hex → UUID (reversible, and we always
+pair with run_id on every write so the high-bit collision is
+harmless). `startTimeUnixNano`/`endTimeUnixNano` parse to UTC
+datetimes; missing start defaults to now() rather than dropping the
+span (ER-23).
+
+Per trace, we group spans by `traceId` and synthesize one root
+`RunIngest`: name + kind from the root span (first with
+`parentSpanId` empty, earliest start_time tiebreak); start/end bracket
+all spans; tokens aggregate LLM-kind spans; error if any span is
+status=ERROR. The synthesized run is enqueued onto the same Redis
+queue native ingest uses — the worker is path-agnostic. Skipped spans
+(missing trace_id / span_id) are logged not dropped silently;
+the 202 ack reports honest accepted counts. Wired in `app.py`
+alongside `langsmith_shim` and native `runs`.
+
+Drop-in usage:
+```
+export OTEL_EXPORTER_OTLP_ENDPOINT=https://your-tracebility-host
+export OTEL_EXPORTER_OTLP_HEADERS=authorization=Bearer\ tk_...
+# any OTel-instrumented agent (LlamaIndex, OpenAI Agents SDK,
+# Phoenix-compatible, custom) starts flowing without changing code.
+```
+
 ## Loop iteration #4 — plan (remaining)
 
-10. **OpenInference / OTel ingest** (interop layer)
 11. **LangSmith Python shim** (drop-in compat package)
 
 Each step ends with: commit, push, re-run gap analysis at top of this file, repeat.
