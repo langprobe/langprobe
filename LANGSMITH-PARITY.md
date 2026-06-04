@@ -76,7 +76,7 @@ Generated 2026-06-03 after the first sidebar pass (8 LangSmith-equivalent surfac
 
 | Feature | Status | Notes |
 |---|---|---|
-| Python SDK (native) | ❌ | not started |
+| Python SDK (native) | ✅ | `tracebility` package (separate from langsmith-shim); `IngestClient` + `ControlClient` namespaces (runs / threads / datasets / prompts / evals / poll / comparisons / playground); `@trace` + `with span()` decorator/context-manager surface (loop #5 item 10) |
 | JS/TS SDK (native) | ❌ | not started |
 | LangSmith-compatible Python shim | ✅ | `tracebility-langsmith-shim` ships `Client` + `@traceable` (sync+async) posting to ingest-api parity endpoints; one-line import migration (loop #4 item 11) |
 | LangSmith-compatible JS shim | ✅ | `packages/sdk-typescript/` ships `Client` + `traceable` (Proxy-free; `AsyncLocalStorage`-threaded parent ids) + `wrapOpenAI` / `wrapAnthropic`; one-line import migration; smoke-tested 8/8 (loop #5 item 6) |
@@ -531,6 +531,51 @@ Re-scoring the scoreboard at the top, the remaining ❌ / 🟡 cells
 break into five buckets. Ordered by leverage (visible gap × user
 demand ÷ implementation cost):
 
+## Loop iteration #5 — done (item #10)
+
+✅ **Native Python SDK** —
+`packages/sdk-python-native/tracebility/` is the tracebility-shaped
+client, distinct from the LangSmith-shim sibling. The shim mimics
+LangSmith's `Client` / `traceable`; this package's surface is
+"tracebility-native" — different naming, different ergonomics, no
+LangSmith concepts in the API.
+
+Two transports under one umbrella:
+  - `IngestClient` (write): `submit_run` / `submit_batch` →
+    `POST /v1/runs` against the ingest-api native envelope. Uses
+    the same OTel-GenAI-aligned shape the worker expects, so no
+    translation hop on the receive side.
+  - `ControlClient` (read + write): namespaced surfaces for
+    `runs / threads / datasets / prompts / evals / poll / comparisons
+    / playground` with method shapes that mirror the URL surface
+    (`runs.list(status=, kind=, search=, window_seconds=)`,
+    `runs.get(run_id)`, `runs.spans(run_id)`,
+    `runs.replay_captures(run_id)`, etc).
+
+`TracebilityClient` bundles both and aliases the most-used surfaces
+to `client.runs` / `client.datasets` / etc — so callers don't have
+to dig through `client.control.runs.list(...)` for the common case.
+Each transport is a context manager and releases its httpx pool on
+`close()`.
+
+Decorator + context manager: `@trace` wraps a function so each
+call emits one run; `with span(...)` opens a span inside the
+current trace (parent threading via `ContextVar`). Sync + async
+both supported. Inputs/outputs JSON-encoded with `default=str`
+fallback so user values that don't natively serialize still land
+on the wire.
+
+Methods return raw dicts (server pydantic JSON shape) — we
+intentionally don't impose a parallel typed model. The wire shape
+evolves and a generated client would slow that down. HTTP errors
+raise `TracebilityHTTPError` with `.status_code` / `.body` /
+`.url`.
+
+Runtime dep: `httpx` only. Smoke-tested 5/5: `submit_run`,
+`@trace` + `span` happy path, `@trace` error path, `runs.list`
+read, and the `TracebilityHTTPError` propagation path. Workspace
+member registered in the root pyproject.toml.
+
 ## Loop iteration #5 — done (item #9)
 
 ✅ **Helm chart** —
@@ -896,8 +941,7 @@ unchanged.
    ClickHouse runs; the unblocker for "we already have history".
 8. **Saved filters / dashboards on /monitoring** ✅ shipped (item #8).
 9. **Helm chart** ✅ shipped (item #9).
-10. **Native Python SDK** (❌) — tracebility-shaped client (read +
-    write); the LangSmith shim covers write parity but the read
-    side needs its own surface.
+10. **Native Python SDK** ✅ shipped (item #10) — tracebility-shaped
+    client (read + write).
 
 Each step ends with: commit, push, re-run gap analysis at top of this file, repeat.

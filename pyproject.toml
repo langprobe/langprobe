@@ -15,6 +15,7 @@ members = [
     "services/eval-orchestrator",
     "services/migrate-langsmith",
     "packages/sdk-python",
+    "packages/sdk-python-native",
 ]
 
 [tool.ruff]
