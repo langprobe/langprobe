@@ -16,6 +16,7 @@ members = [
     "services/migrate-langsmith",
     "packages/sdk-python",
     "packages/sdk-python-native",
+    "packages/sdk-python-langchain",
 ]
 
 [tool.ruff]
