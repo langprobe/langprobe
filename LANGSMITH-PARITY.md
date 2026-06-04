@@ -77,7 +77,7 @@ Generated 2026-06-03 after the first sidebar pass (8 LangSmith-equivalent surfac
 | Feature | Status | Notes |
 |---|---|---|
 | Python SDK (native) | ✅ | `tracebility` package (separate from langsmith-shim); `IngestClient` + `ControlClient` namespaces (runs / threads / datasets / prompts / evals / poll / comparisons / playground); `@trace` + `with span()` decorator/context-manager surface (loop #5 item 10) |
-| JS/TS SDK (native) | ❌ | not started |
+| JS/TS SDK (native) | ✅ | `packages/sdk-typescript-native/` ships `tracebility` package; `TracebilityClient` with ingest + control namespaces, `trace` + `span` (AsyncLocalStorage-threaded), zero-runtime-deps; smoke 7/7 (loop #6 item 2) |
 | LangSmith-compatible Python shim | ✅ | `tracebility-langsmith-shim` ships `Client` + `@traceable` (sync+async) posting to ingest-api parity endpoints; one-line import migration (loop #4 item 11) |
 | LangSmith-compatible JS shim | ✅ | `packages/sdk-typescript/` ships `Client` + `traceable` (Proxy-free; `AsyncLocalStorage`-threaded parent ids) + `wrapOpenAI` / `wrapAnthropic`; one-line import migration; smoke-tested 8/8 (loop #5 item 6) |
 | Public-key (browser) feedback SDK | ✅ | `tracebility-feedback-browser` zero-dep TS package; `init({key, endpoint})` + `submit/thumbsUp/thumbsDown`; `credentials: omit`, `keepalive: true`, never throws on net errors; smoke 8/8 (loop #6 item 1) |
@@ -525,6 +525,44 @@ parallel POSTs against different models), per-output card with
 latency + token stats + deep-link to the trace at `/runs/{id}`.
 Cookie-forwarding proxy at `web/src/app/api/playground/runs/route.ts`.
 
+## Loop iteration #6 — done (item #2)
+
+✅ **Native JS/TS SDK** —
+`packages/sdk-typescript-native/` ships the `tracebility` package
+(distinct from `tracebility-langsmith-shim` which targets compat).
+Mirrors the native Python SDK's surface in TypeScript:
+
+  - `IngestClient.submitBatch` / `submitRun` → `POST /v1/runs`
+    (native ingest envelope; no translation hop on the receive side).
+  - `ControlClient` with namespaces: `runs / threads / datasets /
+    prompts / evals / poll / comparisons / playground`. Method shapes
+    track the URL surface (`runs.list({status, kind, search,
+    window_seconds, limit, offset})`, `runs.spans(id)`,
+    `runs.replayCaptures(id)`, etc.).
+  - `TracebilityClient` bundles both transports under one object and
+    aliases the most-used surfaces (`client.runs`, `client.datasets`,
+    …) so callers don't dig through `client.control.runs.list(...)`
+    for the common case.
+
+`trace(fn, opts)` wraps a function so each call emits one run;
+`span.around(name, opts, fn)` records a sub-span inside the active
+trace. Parent threading uses `AsyncLocalStorage` (Node 18+) with a
+module-level fallback stack so browsers and exotic runtimes still
+work. Sync + async functions both supported; the error path emits
+the run with `status='error'`, `error_kind`, and `error_message`.
+
+Methods return raw response objects (server pydantic JSON shape) —
+we intentionally don't impose a parallel typed model. HTTP errors
+throw `TracebilityHTTPError` with `.statusCode` / `.body` / `.url`.
+Zero third-party runtime deps; uses global `fetch` and
+`crypto.randomUUID` (Node 18+, all modern browsers).
+
+Smoke-tested 7/7 against fake fetch + fake vendor responses:
+`IngestClient.submitRun`, `ControlClient.runs.list`,
+`TracebilityClient` alias, `trace` sync, `trace` + `span` async with
+parent-id threading, `trace` error path, and `TracebilityHTTPError`
+propagation on 403.
+
 ## Loop iteration #6 — done (last roadmap-stub eliminated)
 
 ✅ **/replay launcher + stub deletion** —
@@ -606,9 +644,8 @@ Ordered by leverage:
 1. **Public-key browser feedback SDK** — JS package that wraps the
    existing `tbf_pub_*` ingest endpoint; closes the loop from
    "user thumbs-up in production" to `eval_score` rows.
-2. **Native JS/TS SDK** — symmetric port of the native Python SDK
-   (`tracebility` package); the LangSmith JS shim covers compat,
-   but tracebility-shaped read+write needs its own surface.
+2. **Native JS/TS SDK** ✅ shipped (item #2) — symmetric port of the
+   native Python SDK.
 3. **LangChain / LangGraph callback bridges** — Python adapters that
    plug into LangChain's `BaseCallbackHandler` / LangGraph's
    `astream_events` so apps using those frameworks get traces
