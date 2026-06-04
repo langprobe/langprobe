@@ -525,6 +525,39 @@ parallel POSTs against different models), per-output card with
 latency + token stats + deep-link to the trace at `/runs/{id}`.
 Cookie-forwarding proxy at `web/src/app/api/playground/runs/route.ts`.
 
+## Loop iteration #6 — done (last roadmap-stub eliminated)
+
+✅ **/replay launcher + stub deletion** —
+The last `RoadmapSurface` page (`/replay`) is now a real launcher.
+`services/api/tracebility_api/routers/replays.py` adds
+`GET /v1/replays/runs?project_id=&limit=` — a cross-run aggregate
+over `replay_capture` (GROUP BY run_id, JOIN against `run` for
+name/status/start_time, ORDER BY most-recent-capture). Returns
+`{run_id, name, kind, status, start_time, capture_count,
+bytes_total, unique_hashes, by_kind}` per row. The router is split
+into `runs_router` (the existing per-run captures path under
+`/v1/runs/{run_id}/replay-captures`) and `catalog_router` (the new
+`/v1/replays/runs`) so the catalog endpoint doesn't collide with
+the parameterized `/{run_id}` route in `runs_query`.
+
+UI: `web/src/app/replay/page.tsx` rewritten from RoadmapSurface to
+a server-component launcher. KPI strip (replayable runs / captures
+/ unique hashes / bytes), runs table (status / id / name /
+kind-mix badges / capture totals / "open →" + "branch" actions),
+empty state, usage card explaining content-addressing. Cookie-
+forwarding proxy at `web/src/app/api/replays/runs/route.ts`.
+
+Studio deep-link wired: clicking "branch" on a run navigates to
+`/studio?source_run_id=<run_id>`; the page forwards
+`searchParams.source_run_id` into the `NewBranchButton` which
+auto-opens the modal with the source run pre-filled.
+
+Stub components deleted: `RoadmapSurface.tsx` and `ComingSoon.tsx`
+removed from the codebase. **No page in the app renders a
+"coming soon" surface anymore.** Every sidebar link routes to a
+real page backed by a real router. The product is now fully
+operational from a `docker-compose up` clean install.
+
 ## Loop iteration #6 — done (item #1)
 
 ✅ **Browser feedback SDK** —
