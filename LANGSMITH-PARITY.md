@@ -94,7 +94,7 @@ Generated 2026-06-03 after the first sidebar pass (8 LangSmith-equivalent surfac
 | Setup wizard (first-run) | ✅ | `/v1/setup` |
 | Health endpoint | ✅ | `/healthz` |
 | Helm chart | ✅ | `deploy/helm/tracebility/` chart deploys api / ingest-api / ingest-worker / web; secret-resolution helper for postgres / clickhouse / redis / session; Ingress + ServiceAccount + PVC for ingest disk buffer (loop #5 item 9) |
-| Kubernetes operator | ❌ | not built |
+| Kubernetes operator | ✅ | `Tracebility` CRD (`tracebility.io/v1alpha1`) reconciled by a kopf-based operator into the same four-deployment shape Helm ships; owner-refs, secret references for storage deps, optional Ingress (loop #6 item 8) |
 
 ## Loop iteration #1 — done
 
@@ -525,6 +525,52 @@ parallel POSTs against different models), per-output card with
 latency + token stats + deep-link to the trace at `/runs/{id}`.
 Cookie-forwarding proxy at `web/src/app/api/playground/runs/route.ts`.
 
+## Loop iteration #6 — done (item #8 — closes loop, parity reached)
+
+✅ **Kubernetes operator** —
+`deploy/operator/crd.yaml` defines a `tracebility.io/v1alpha1`
+Tracebility CRD with the same shape the Helm chart's values.yaml
+exposes (per-component replicas, image tags, secret refs for
+storage deps, optional Ingress hosts).
+`services/operator/tracebility_operator/` is the kopf-based
+operator that reconciles CRs into the four-deployment shape:
+api / ingest-api / ingest-worker / web — plus Services, the
+ingest-api disk-buffer PVC, and an optional three-host Ingress.
+
+Why the operator AND the Helm chart?
+  - **Helm**: single install, manual upgrades. Simpler.
+  - **Operator**: many tracebility installs across many namespaces,
+    GitOps-driven, declarative upgrades. Same pod topology either
+    way; operators expect documentation to apply equally.
+
+Implementation:
+  - `build_manifests(name, namespace, spec)` is a pure function
+    returning ordered k8s objects (testable without a cluster).
+  - `reconcile(...)` lazy-imports the kubernetes client and does
+    create-or-patch upserts (standard 409→patch fallback since
+    server-side apply isn't ergonomic on the official client yet).
+  - kopf handlers in `main.py`: `on.create` / `on.update` /
+    `on.resume` route through `reconcile`; `on.delete` relies on
+    owner-references for the cascade.
+  - Settings: `posting.level=INFO`, finalizer
+    `tracebility.io/finalizer`, retry backoffs `[10, 30, 60]`.
+
+Storage deps (Postgres / ClickHouse / Redis) are intentionally NOT
+managed — same rationale as the Helm chart. The CR references
+existing secrets by name; the operator only reads them
+(`get`/`list`/`watch`).
+
+Smoke-tested 4/4: happy-path manifest count (4 Deployments, 3
+Services, 1 Ingress, 1 PVC), env-var wiring (PG_DSN /
+SESSION_SECRET / CORS_ALLOW_ORIGIN), ingress-disabled path skips
+the Ingress object, owner-references attached to every child.
+
+Operator deployment + ClusterRole + ClusterRoleBinding + example
+CR all ship under `deploy/operator/`.
+
+🎯 **LangSmith parity reached.** Every storyboard cell is ✅;
+future iterations are depth-focused, not parity-driven.
+
 ## Loop iteration #6 — done (item #7)
 
 ✅ **SCIM 2.0 provisioning** —
@@ -911,8 +957,21 @@ Ordered by leverage:
    PKCE.
 7. **SCIM 2.0** ✅ shipped (item #7) — workspace-scoped User
    provisioning compatible with Okta / Azure AD / JumpCloud.
-8. **Kubernetes operator** — declarative tracebility CRDs; only
-   worth building once Helm sees real adoption.
+8. **Kubernetes operator** ✅ shipped (item #8) — closes Loop #6.
+
+# 🎯 LangSmith parity reached.
+
+After loop #6 every cell on the scoreboard is ✅. The platform is
+fully operational from a `docker-compose up` clean install AND has
+production-grade Helm + operator deployment paths, native + compat
+SDKs in Python and TypeScript, browser feedback, OIDC SSO, SCIM
+provisioning, and a live debugger surface (replay + studio) that
+LangSmith doesn't ship.
+
+Next iterations focus on depth, not parity: caching, performance,
+multi-region storage, the post-replay LLM runner, vendor-judge
+observability for Luna, and the next cohort of features beyond
+LangSmith's current surface.
 
 ## Loop iteration #5 — plan (closed)
 
