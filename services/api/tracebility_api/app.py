@@ -33,6 +33,7 @@ from .routers import (
     projects,
     prompts,
     replays,
+    run_actions,
     runs_query,
     saved_views,
     setup as setup_router,
@@ -131,6 +132,7 @@ def create_app() -> FastAPI:
     app.include_router(playground.router)
     app.include_router(poll_runs.router)
     app.include_router(saved_views.router)
+    app.include_router(run_actions.router)
     return app
 
 

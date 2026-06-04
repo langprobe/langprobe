@@ -42,7 +42,7 @@ Generated 2026-06-03 after the first sidebar pass (8 LangSmith-equivalent surfac
 | Monitoring dashboards | ✅ | `/v1/metrics/timeseries` + `/v1/metrics/by-model`; SVG charts UI (loop #3) |
 | Alerts | ✅ | postgres `alert_rule` + `alert_event` lifecycle; in-process evaluator scans ClickHouse every 60s; CRUD + history UI (loop #4) |
 | Saved filters / views | ✅ | postgres `saved_view` (personal + shared) on /runs; URL-as-source-of-truth filter state (status/kind/search/window) round-trips with chip clicks; pin + delete (loop #5 item 3) |
-| Bulk actions on runs | ❌ | not designed |
+| Bulk actions on runs | ✅ | checkbox column on /runs + sticky action bar; "add to dataset" (writes dataset_item rows with source_run_id) and "send to annotation queue" (writes annotation_item rows, dedup'd) (loop #5 item 4) |
 
 ### Eval + improvement
 
@@ -530,6 +530,52 @@ Cookie-forwarding proxy at `web/src/app/api/playground/runs/route.ts`.
 Re-scoring the scoreboard at the top, the remaining ❌ / 🟡 cells
 break into five buckets. Ordered by leverage (visible gap × user
 demand ÷ implementation cost):
+
+## Loop iteration #5 — done (item #4)
+
+✅ **Bulk actions on runs** —
+`services/api/tracebility_api/routers/run_actions.py` adds
+`POST /v1/runs/_actions/add-to-dataset` and
+`POST /v1/runs/_actions/add-to-annotation-queue`. Both accept a
+selection of up to 200 run_ids, resolve them against the run table
+in ClickHouse (`run_id IN ({...})` with positional UUID params),
+then either:
+
+  - write one `dataset_item` per resolved run (with
+    `source_run_id` so the dataset row points back to the trace)
+    in a single batched insert, then bump `dataset.item_count` in
+    one statement, OR
+  - upsert one `annotation_item` per resolved run via a single
+    `INSERT … SELECT FROM unnest(...) ON CONFLICT (queue_id, run_id)
+    DO NOTHING` and bump `annotation_queue.item_total` by the actual
+    insert count (dedup-aware — re-running a bulk add doesn't double
+    a queue's denominator). The queue flips back from `complete` to
+    `open` if items were added.
+
+Both paths are RBAC-fail-closed (owner/admin/member), audit-write
+the bulk operation with accepted/skipped totals (ER-10), and
+report per-run results so the UI can surface "this one was missing
+from ClickHouse" without dropping the rest of the batch (ER-23).
+Selection cap (200) is shared between server validation and the UI
+"select all visible" affordance.
+
+UI: `web/src/components/RunsBulkClient.tsx` ships
+  - `RunsBulkProvider` (React context for the selection set; lives
+    in component state, NOT URL — URL is the filter state)
+  - `RunCheckbox` per row
+  - `SelectAllVisibleCheckbox` in the table header
+  - `BulkActionBar` — sticky-bottom card that surfaces when ≥1 run
+    is selected; toggles between "Add to dataset" and "Send to
+    queue" modes with a dataset/queue picker; calls the cookie-
+    forwarding proxies under `web/src/app/api/runs/_actions/...`
+    and refreshes the page on success; shows accepted/skipped
+    summary inline.
+
+`web/src/app/runs/page.tsx` server-fetches the active project's
+datasets and annotation queues alongside runs + saved views (one
+parallel `Promise.all`), wraps the runs table in
+`RunsBulkProvider`, prepends a checkbox column, and renders the
+`BulkActionBar` after the table.
 
 ## Loop iteration #5 — done (item #3)
 

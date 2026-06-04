@@ -5,6 +5,14 @@ import {
   SavedViewsBar,
   type SavedViewRow,
 } from "@/components/SavedViewsClient";
+import {
+  type AnnotationQueueOption,
+  BulkActionBar,
+  type DatasetOption,
+  RunCheckbox,
+  RunsBulkProvider,
+  SelectAllVisibleCheckbox,
+} from "@/components/RunsBulkClient";
 import { apiGet } from "@/lib/api";
 import { resolveActiveProject, type Project } from "@/lib/projects";
 
@@ -120,14 +128,29 @@ export default async function TracesPage({
   }
 
   const filters = readFilters(searchParams);
-  const [runsRes, viewsRes] = await Promise.all([
+  const [runsRes, viewsRes, datasetsRes, queuesRes] = await Promise.all([
     apiGet<RunListResponse>(buildRunsQuery(active.id, filters)),
     apiGet<SavedViewRow[]>(
       `/v1/saved-views?project_id=${encodeURIComponent(active.id)}`,
     ),
+    apiGet<DatasetListItem[]>(
+      `/v1/datasets?project_id=${encodeURIComponent(active.id)}`,
+    ),
+    apiGet<QueueListItem[]>(
+      `/v1/annotations?project_id=${encodeURIComponent(active.id)}`,
+    ),
   ]);
   const runs = runsRes.data?.items ?? [];
   const views = viewsRes.data ?? [];
+  const datasets: DatasetOption[] = (datasetsRes.data ?? []).map((d) => ({
+    id: d.id,
+    slug: d.slug,
+    name: d.name,
+  }));
+  const queues: AnnotationQueueOption[] = (queuesRes.data ?? [])
+    .filter((q) => q.status !== "archived")
+    .map((q) => ({ id: q.id, name: q.name }));
+  const visibleRunIds = runs.map((r) => r.run_id);
 
   const hasFilter =
     filters.status || filters.kind || filters.search || filters.window_seconds;
@@ -143,10 +166,34 @@ export default async function TracesPage({
         />
         <SavedViewsBar projectId={active.id} views={views} />
         <FilterBar projectId={active.id} />
-        <RunsCard runs={runs} reason={runsRes.error} project={active} />
+        <RunsBulkProvider>
+          <RunsCard
+            runs={runs}
+            reason={runsRes.error}
+            project={active}
+            visibleRunIds={visibleRunIds}
+          />
+          <BulkActionBar
+            projectId={active.id}
+            datasets={datasets}
+            queues={queues}
+          />
+        </RunsBulkProvider>
       </PageInterior>
     </Shell>
   );
+}
+
+interface DatasetListItem {
+  id: string;
+  slug: string;
+  name: string;
+}
+
+interface QueueListItem {
+  id: string;
+  name: string;
+  status: string;
 }
 
 function PageInterior({ children }: { children: React.ReactNode }) {
@@ -200,10 +247,12 @@ function RunsCard({
   runs,
   reason,
   project,
+  visibleRunIds,
 }: {
   runs: Run[];
   reason: string | null;
   project: Project;
+  visibleRunIds: string[];
 }) {
   return (
     <section className="card" style={{ overflow: "hidden" }}>
@@ -222,6 +271,9 @@ function RunsCard({
           <table className="table">
             <thead>
               <tr>
+                <th style={{ width: 28 }}>
+                  <SelectAllVisibleCheckbox runIds={visibleRunIds} />
+                </th>
                 <th>ID</th>
                 <th>Name</th>
                 <th>Kind</th>
@@ -235,6 +287,9 @@ function RunsCard({
             <tbody>
               {runs.map((r) => (
                 <tr key={r.run_id}>
+                  <td style={{ width: 28 }}>
+                    <RunCheckbox runId={r.run_id} />
+                  </td>
                   <td>
                     <Link href={`/runs/${r.run_id}`} className="mono">
                       {r.run_id.slice(0, 8)}
