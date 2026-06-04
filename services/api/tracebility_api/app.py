@@ -37,6 +37,7 @@ from .routers import (
     run_actions,
     runs_query,
     saved_views,
+    scim,
     setup as setup_router,
     sso as sso_router,
     studio,
@@ -139,6 +140,8 @@ def create_app() -> FastAPI:
     app.include_router(run_actions.router)
     app.include_router(luna_judges.router)
     app.include_router(sso_router.router)
+    app.include_router(scim.router)
+    app.include_router(scim.admin_router)
     return app
 
 

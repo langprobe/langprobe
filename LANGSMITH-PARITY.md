@@ -69,7 +69,7 @@ Generated 2026-06-03 after the first sidebar pass (8 LangSmith-equivalent surfac
 | Members RBAC backend | ✅ | owner/admin/member enforced |
 | Members UI | ✅ | invite + role-change + revoke shipped (loop #1) |
 | SSO (OIDC) | ✅ | postgres `workspace_sso_config` (one IdP per workspace) + `sso_state` (PKCE round-trip); `/v1/auth/sso/<slug>/start` → IdP → `/v1/auth/sso/callback` → cookie session; auto-provision or match-only modes; UI at /workspace/sso (loop #6 item 6) |
-| SCIM 2.0 | ❌ | not built |
+| SCIM 2.0 | ✅ | `/scim/v2/Users` (list/create/get/PUT/PATCH/DELETE) + ServiceProviderConfig + ResourceTypes + Schemas; workspace-scoped `tbs_*` bearer tokens; `scim_user_mapping` keyed by `(workspace, externalId)` (loop #6 item 7) |
 | Audit log | ✅ | postgres `audit_log` table writes |
 
 ### SDK + integrations
@@ -525,6 +525,71 @@ parallel POSTs against different models), per-output card with
 latency + token stats + deep-link to the trace at `/runs/{id}`.
 Cookie-forwarding proxy at `web/src/app/api/playground/runs/route.ts`.
 
+## Loop iteration #6 — done (item #7)
+
+✅ **SCIM 2.0 provisioning** —
+`schemas/postgres/migrations/0020_scim.sql` adds two tables:
+
+  - `workspace_scim_token` — Argon2id-hashed `tbs_<public>.<secret>`
+    bearer tokens, workspace-scoped, mintable + revocable through
+    a small admin router.
+  - `scim_user_mapping` — keyed by `(workspace_id, external_id)` so
+    the same user can be provisioned into multiple workspaces by
+    multiple IdPs. Snapshots the last role assigned via SCIM and
+    an `active` flag (deactivation removes the
+    `workspace_member` row but keeps the mapping for re-activation).
+
+`services/api/tracebility_api/routers/scim.py` exposes the slice of
+SCIM 2.0 (RFC 7644) Okta / Azure AD / JumpCloud actually drive in
+their default User-sync configurations:
+
+  - `GET /scim/v2/ServiceProviderConfig` — capabilities (PATCH
+    supported, sort/etag/bulk not, OAuth bearer auth).
+  - `GET /scim/v2/ResourceTypes`, `GET /scim/v2/ResourceTypes/User`,
+    `GET /scim/v2/Schemas` — discovery endpoints with the User and
+    EnterpriseUser schemas (the latter carries the `role` extension
+    attribute so IdPs can drive owner/admin/member/viewer).
+  - `GET /scim/v2/Users` — pagination via `startIndex` + `count`
+    (cap 200), filter parser for `userName eq`, `externalId eq`,
+    and `id eq` (the three IdPs send by default; anything fancier
+    returns `400` with `scimType=invalidFilter` rather than
+    half-handling).
+  - `POST /scim/v2/Users` — match-or-create the underlying
+    `app_user` by email (so a user already in tracebility can be
+    attached to a SCIM-provisioned workspace without a duplicate
+    row), insert `scim_user_mapping`, upsert `workspace_member` if
+    `active=true`. Duplicate provisioning into the same workspace
+    returns `409` with `scimType=uniqueness`.
+  - `PUT /scim/v2/Users/{id}` — full replace (userName / role /
+    active / displayName).
+  - `PATCH /scim/v2/Users/{id}` — supports the `replace`/`add`/
+    `remove` ops on `userName`, `name.formatted`, `displayName`,
+    `emails`, `active`, and the enterprise `role` attribute.
+  - `DELETE /scim/v2/Users/{id}` — soft-delete (clears
+    `workspace_member`, marks the mapping inactive). Re-activation
+    via PATCH/PUT restores membership.
+
+Token admin: `GET/POST /v1/auth/scim-tokens?workspace_id=` and
+`DELETE /v1/auth/scim-tokens/{id}` — owner/admin only via cookie
+auth. POST returns the plaintext once (`tbs_<id>.<secret>`); the
+hash uses the same Argon2id pipeline as the user password store.
+
+Errors are SCIM-shaped:
+`{"schemas": ["…api:messages:2.0:Error"], "status": "...",
+"detail": "...", "scimType": "..."}`. Every write is audit-fail-
+closed (ER-10) and propagates failures rather than silently
+believing they shipped (ER-23).
+
+V1 honest scope:
+- Group provisioning (`/scim/v2/Groups`) is deferred. Most IdPs
+  default to user-only sync; the moment an operator hits the gap,
+  adding it is mechanical.
+- Per-token RBAC narrowing (e.g. "this token can only set
+  member-or-below") is deferred. v1 has one privilege level:
+  SCIM-admin scoped to the workspace.
+- We don't validate `meta.location` on PUT bodies — spec compliance
+  for that is operator-irrelevant.
+
 ## Loop iteration #6 — done (item #6)
 
 ✅ **SSO (OIDC)** —
@@ -844,8 +909,8 @@ Ordered by leverage:
    with user-authored rubric.
 6. **SSO (OIDC)** ✅ shipped (item #6) — workspace-scoped OIDC with
    PKCE.
-7. **SCIM 2.0** — enterprise; provisioning workspace members from
-   an IdP without each one self-signing-up.
+7. **SCIM 2.0** ✅ shipped (item #7) — workspace-scoped User
+   provisioning compatible with Okta / Azure AD / JumpCloud.
 8. **Kubernetes operator** — declarative tracebility CRDs; only
    worth building once Helm sees real adoption.
 
