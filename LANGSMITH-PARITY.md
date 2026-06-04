@@ -51,7 +51,7 @@ Generated 2026-06-03 after the first sidebar pass (8 LangSmith-equivalent surfac
 | Datasets | ✅ | postgres CRUD + clickhouse items; list/detail UI (loop #4) |
 | Prompts (versioning + tags) | ✅ | postgres CRUD + versions + aliases; list/detail UI (loop #4) |
 | Evals (single-judge) | ✅ | postgres `eval_run` lifecycle + clickhouse `eval_score` writes; built-in judges echo/contains/exact (loop #4) |
-| Evals (PoLL multi-judge) | ❌ | not built |
+| Evals (PoLL multi-judge) | ✅ | postgres `poll_run` lifecycle (queued → running → done/failed) + judges text[] + aggregation (mean/majority/min/max) + pairwise agreement metric; scores all (item × judge) pairs to `eval_score` (loop #5 item 2) |
 | Luna prompted-judges | ❌ | not built |
 | Comparisons (A/B experiments) | ✅ | postgres `comparison` lifecycle + clickhouse `eval_score` cmp:a/cmp:b rows; list + paired-diff detail UI (loop #4) |
 | Playground | ✅ | postgres `playground_session` + sync runner; anthropic/openai/stub providers; side-by-side compare mode; results write a real trace to ClickHouse with `sdk='playground'` (loop #5 item 1) |
@@ -530,6 +530,55 @@ Cookie-forwarding proxy at `web/src/app/api/playground/runs/route.ts`.
 Re-scoring the scoreboard at the top, the remaining ❌ / 🟡 cells
 break into five buckets. Ordered by leverage (visible gap × user
 demand ÷ implementation cost):
+
+## Loop iteration #5 — done (item #2)
+
+✅ **PoLL multi-judge evals** —
+`schemas/postgres/migrations/0015_poll_runs.sql` adds the `poll_run`
+table (project-scoped row with `judges text[]` of judge kinds —
+constraint enforces ≥2 — plus `aggregation` enum mean/majority/min/max,
+lifecycle queued → running → done/failed, counters, `consensus_avg`,
+and a pairwise `agreement` metric).
+`services/api/tracebility_api/routers/poll_runs.py` exposes
+`GET/POST /v1/poll-runs`, `GET /v1/poll-runs/{id}`, and
+`GET /v1/poll-runs/{id}/items?limit=`. POST validates ≥2 distinct
+judges (built-in echo / contains / exact in v1) + the aggregation
+enum, queues the row, and dispatches `_run_poll` via `BackgroundTasks`.
+
+The runner fetches dataset items once, scores each item with every
+judge, batches ONE ClickHouse insert with all (item × judge) rows
+tagged `eval_config_id=poll_run.id` and `judge_name=<kind>` (same
+shape as single-judge evals so analytic queries still work), then
+computes:
+  - `consensus_avg` per the chosen aggregation strategy
+  - `agreement` = pairwise binary-outcome match ratio across all
+    (item, judge_pair) cells, threshold at 0.5 (simpler than
+    Fleiss-kappa, conveys the same "do judges disagree?" signal)
+
+Per-item read computes consensus + per-judge breakdown via
+GROUP BY at query time — no denormalized per-item table; the
+single `eval_score` store remains the source of truth and existing
+dashboards inherit human + LLM + cmp:a/b + PoLL panel rows in one
+shelf.
+
+UI: new sidebar entry "PoLL panels" under /poll-runs.
+`web/src/app/poll-runs/page.tsx` is the server-component list with
+KPI strip (runs / in-flight / consensus avg / **agreement** —
+warn-toned below 70%) and a per-row table (judges as badges,
+strategy, consensus%, agreement%, items, created).
+`web/src/app/poll-runs/[id]/page.tsx` is the detail view: header
+with status + aggregation + judge badges; KPI strip including a
+**disputed** counter (items where judges split); items table
+sorted ascending by consensus so the most-disputed rows surface
+first, with one column per judge + a per-row "disputed" badge when
+judges disagree. `NewPollRunButton` (modal: dataset picker + judge
+multi-select + aggregation picker) posts to the cookie-forwarding
+proxy at `web/src/app/api/poll-runs/route.ts` and routes straight
+to the detail page.
+
+LLM judges (LLM-as-judge with rationale) slot in next iteration via
+the same dispatcher pattern as Playground; storage shape stays
+unchanged.
 
 1. **Playground** ✅ shipped (item #1) — most visible LangSmith feature;
    directly closes the "where do I iterate on a prompt?" gap.
