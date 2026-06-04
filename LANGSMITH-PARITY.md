@@ -68,7 +68,7 @@ Generated 2026-06-03 after the first sidebar pass (8 LangSmith-equivalent surfac
 | Workspace settings | ✅ | sample, PII, RCA mode, cost ceiling |
 | Members RBAC backend | ✅ | owner/admin/member enforced |
 | Members UI | ✅ | invite + role-change + revoke shipped (loop #1) |
-| SSO (OIDC) | ❌ | not built |
+| SSO (OIDC) | ✅ | postgres `workspace_sso_config` (one IdP per workspace) + `sso_state` (PKCE round-trip); `/v1/auth/sso/<slug>/start` → IdP → `/v1/auth/sso/callback` → cookie session; auto-provision or match-only modes; UI at /workspace/sso (loop #6 item 6) |
 | SCIM 2.0 | ❌ | not built |
 | Audit log | ✅ | postgres `audit_log` table writes |
 
@@ -525,6 +525,63 @@ parallel POSTs against different models), per-output card with
 latency + token stats + deep-link to the trace at `/runs/{id}`.
 Cookie-forwarding proxy at `web/src/app/api/playground/runs/route.ts`.
 
+## Loop iteration #6 — done (item #6)
+
+✅ **SSO (OIDC)** —
+`schemas/postgres/migrations/0019_sso_oidc.sql` adds two tables:
+
+  - `workspace_sso_config`: one row per workspace, partial-unique on
+    `enabled = true`. Stores issuer, client_id, client_secret, the
+    cached discovery endpoints (authorization/token/jwks), an
+    `auto_provision` enum (`auto` / `match-only`), and a default
+    role for auto-provisioned users. The secret column is named
+    `client_secret_encrypted` so a future KMS-backed envelope swap
+    is invisible to operator code.
+  - `sso_state`: short-lived (10-min TTL) PKCE state nonces that
+    survive the IdP redirect round-trip. Stored server-side because
+    cookies don't reliably cross the cross-site auth-callback hop.
+
+`services/api/tracebility_api/routers/sso.py` exposes:
+
+  - **Admin (cookie-auth, owner/admin only)**:
+    `GET/POST /v1/auth/sso/config?workspace_id=`,
+    `PATCH/DELETE /v1/auth/sso/config/{id}`. POST replaces
+    transactionally (disables prior enabled rows, keeps history).
+  - **Public (no auth)**:
+    `GET /v1/auth/sso/<workspace_slug>/start?return_to=` →
+    302 to IdP authorization with PKCE `S256`, scope=`openid email
+    profile`. `GET /v1/auth/sso/callback` → exchanges code at the
+    token endpoint, decodes the id_token, match-or-provisions the
+    `app_user` by email, attaches a `workspace_member` at the
+    configured default role (ON CONFLICT DO NOTHING — never
+    downgrades), mints a session cookie, redirects.
+
+Discovery is automatic on first sign-in (issuer's
+`/.well-known/openid-configuration` is fetched once, endpoints
+cached on the row). Issuer rotation forces re-discovery by clearing
+the cache columns on PATCH.
+
+V1 honest scope:
+  - id_token signature verification is **deferred** (TLS to a
+    configured issuer is the bootstrap; next iteration pulls JWKS
+    via `jwks_uri` and validates RS256).
+  - Plaintext `client_secret_encrypted` (column name is the
+    contract); KMS envelope encryption slots in next iteration.
+  - Email is the join key. Two IdPs issuing for the same email
+    can both sign that user in — expected for one-IdP-per-workspace.
+
+Also added `/v1/workspaces` (separate `workspaces_router` in
+`projects.py`) so the SSO config UI can resolve the workspace slug
+needed to render the public sign-in URL.
+
+UI: `web/src/app/workspace/sso/page.tsx` is the server-component
+config page. `SSOConfigForm` is the client form: write-only
+`client_secret` (rotated by typing; left blank to keep), enable/
+disable toggle, pause + delete affordances, and a "sign-in URL"
+callout that renders `<origin>/api/auth/sso/<slug>/start` for
+distribution. Cookie-forwarding proxies under
+`web/src/app/api/auth/sso/config/`.
+
 ## Loop iteration #6 — done (item #5)
 
 ✅ **Luna prompted-judges** —
@@ -785,8 +842,8 @@ Ordered by leverage:
    large multipart payloads with content-addressed attachments.
 5. **Luna prompted-judges** ✅ shipped (item #5) — LLM-as-judge
    with user-authored rubric.
-6. **SSO (OIDC)** — enterprise checkbox; auth_router already ships
-   the session machinery so this is a pluggable backend.
+6. **SSO (OIDC)** ✅ shipped (item #6) — workspace-scoped OIDC with
+   PKCE.
 7. **SCIM 2.0** — enterprise; provisioning workspace members from
    an IdP without each one self-signing-up.
 8. **Kubernetes operator** — declarative tracebility CRDs; only
