@@ -20,7 +20,7 @@ from fastapi import FastAPI
 from . import config
 from .enqueue import IngestEnqueue
 from .redactor import redactor_from_env
-from .routers import health, langsmith_shim, otel, runs
+from .routers import health, langsmith_shim, multipart, otel, runs
 
 log = structlog.get_logger("tracebility.ingest.app")
 
@@ -57,6 +57,7 @@ def create_app() -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        app.state.settings = settings
         app.state.pg = await asyncpg.create_pool(
             dsn=settings.postgres_dsn,
             min_size=2,
@@ -96,6 +97,7 @@ def create_app() -> FastAPI:
     app.include_router(runs.router)
     app.include_router(langsmith_shim.router)
     app.include_router(otel.router)
+    app.include_router(multipart.router)
     return app
 
 
