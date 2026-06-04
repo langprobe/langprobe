@@ -20,8 +20,40 @@ from .. import audit
 from ..auth import Principal, assert_workspace_role, require_user
 
 router = APIRouter(prefix="/v1/projects", tags=["projects"])
+workspaces_router = APIRouter(prefix="/v1/workspaces", tags=["workspaces"])
 
 RcaMode = Literal["off", "errors_only", "errors_and_poor", "all"]
+
+
+class WorkspaceOut(BaseModel):
+    id: UUID
+    slug: str
+    name: str
+
+
+@workspaces_router.get("", response_model=list[WorkspaceOut])
+async def list_workspaces(
+    request: Request,
+    principal: Principal = Depends(require_user),
+) -> list[WorkspaceOut]:
+    """List the workspaces the current user is a member of.
+
+    Used by the SSO config page to render the sign-in URL with the
+    workspace slug. Slug is otherwise hidden from the project shape;
+    surfacing it here keeps the projects router focused on projects.
+    """
+    pool: asyncpg.Pool = request.app.state.pg
+    rows = await pool.fetch(
+        """
+        select w.id, w.slug, w.name
+          from workspace w
+          join workspace_member wm on wm.workspace_id = w.id
+         where wm.user_id = $1
+         order by w.name asc
+        """,
+        principal.user_id,
+    )
+    return [WorkspaceOut(id=r["id"], slug=r["slug"], name=r["name"]) for r in rows]
 
 
 class ProjectOut(BaseModel):

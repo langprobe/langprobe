@@ -38,6 +38,7 @@ from .routers import (
     runs_query,
     saved_views,
     setup as setup_router,
+    sso as sso_router,
     studio,
     threads_query,
 )
@@ -115,6 +116,7 @@ def create_app() -> FastAPI:
     app.include_router(setup_router.router)
     app.include_router(auth_router.router)
     app.include_router(projects.router)
+    app.include_router(projects.workspaces_router)
     app.include_router(api_keys.router)
     app.include_router(members.router)
     app.include_router(runs_query.router)
@@ -136,6 +138,7 @@ def create_app() -> FastAPI:
     app.include_router(saved_views.router)
     app.include_router(run_actions.router)
     app.include_router(luna_judges.router)
+    app.include_router(sso_router.router)
     return app
 
 
