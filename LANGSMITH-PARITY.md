@@ -27,8 +27,8 @@ Generated 2026-06-03 after the first sidebar pass (8 LangSmith-equivalent surfac
 | Run list view | ✅ | `/runs` page renders real data |
 | Run detail (3-pane debugger) | ✅ | spans tree + timeline + inspector |
 | OTel/OpenInference ingestion | ✅ | `POST /v1/traces` accepts OTLP HTTP/JSON; translates OpenInference + OTel GenAI attributes to native run/span envelopes (loop #4 item 10) |
-| LangChain callback bridge | ❌ | shim package not built |
-| LangGraph callback bridge | ❌ | shim package not built |
+| LangChain callback bridge | ✅ | `tracebility-langchain.TracebilityCallbackHandler`; tree-aware (root flushes whole tree as one ingest envelope), thread-safe, swallows telemetry failures (loop #6 item 3) |
+| LangGraph callback bridge | ✅ | same handler — LangGraph emits the same callback shapes; pass `sdk="langgraph"` to distinguish in /runs (loop #6 item 3) |
 | OpenAI Agents SDK ingest | 🟡 | works via OTel intake (loop #4 item 10); first-class adapter pending SDK launch |
 | `wrap_openai` / `wrap_anthropic` | ✅ | duck-typed proxies on `tracebility-langsmith-shim`; one tracebility run per vendor SDK call with prompt+completion+token usage; vendor SDKs not transitive deps (loop #5 item 5) |
 | Multipart `/runs/multipart` | ❌ | endpoint not built |
@@ -525,6 +525,51 @@ parallel POSTs against different models), per-output card with
 latency + token stats + deep-link to the trace at `/runs/{id}`.
 Cookie-forwarding proxy at `web/src/app/api/playground/runs/route.ts`.
 
+## Loop iteration #6 — done (item #3)
+
+✅ **LangChain / LangGraph callback bridges** —
+`packages/sdk-python-langchain/` ships
+`TracebilityCallbackHandler` — a duck-typed handler (no
+`langchain-core` import at module load; handler is dispatched by
+LangChain's `getattr(handler, "on_*")` lookup, so a hard dep would
+just be friction).
+
+Tree topology: LangChain owns the run tree; each event carries a
+stable `run_id` and (sometimes) `parent_run_id`. The handler:
+
+  1. Records every `on_*_start` event as a node in an in-memory
+     tree keyed by the top-level run id.
+  2. Updates the matching node on `on_*_end`/`on_*_error` with
+     outputs/wall-time/error.
+  3. When the **root** node ends, the whole tree flushes as one
+     tracebility ingest envelope: root → `IngestRun`, every nested
+     node → `IngestSpan` under it. The tree is then dropped from
+     the handler.
+
+Surface: `on_chain_*`, `on_llm_*`, `on_chat_model_*`, `on_tool_*`,
+`on_retriever_*`, `on_agent_action`, `on_agent_finish`. LLM events
+extract `model` and `temperature` from the `invocation_params`
+kwarg (LangChain's standard shape) so the per-span fields land
+without manual wiring.
+
+Concurrency: tree dict guarded by a `threading.Lock`; smoke-tested
+with 8 parallel trees in flight.
+
+Telemetry failure handling (ER-23, never crash the caller): if the
+ingest POST fails, the handler logs and swallows. Out-of-order
+events (end without start) synthesize trees rather than dropping
+data — better to over-report than miss a trace.
+
+LangGraph: the same handler. LangGraph nodes emit the same
+callback shapes; pass `sdk="langgraph"` to distinguish the streams
+in `/runs` if you run both.
+
+Smoke-tested 5/5: happy-path 3-node tree (chain → llm → tool with
+model/temperature extraction), error path (status='error' +
+error_kind), out-of-order end, telemetry-failure swallow, and
+8-thread concurrency. Workspace member registered in root
+pyproject.toml.
+
 ## Loop iteration #6 — done (item #2)
 
 ✅ **Native JS/TS SDK** —
@@ -646,10 +691,9 @@ Ordered by leverage:
    "user thumbs-up in production" to `eval_score` rows.
 2. **Native JS/TS SDK** ✅ shipped (item #2) — symmetric port of the
    native Python SDK.
-3. **LangChain / LangGraph callback bridges** — Python adapters that
-   plug into LangChain's `BaseCallbackHandler` / LangGraph's
-   `astream_events` so apps using those frameworks get traces
-   without a `@traceable` rewrite.
+3. **LangChain / LangGraph callback bridges** ✅ shipped (item #3)
+   — duck-typed Python handler that maps callback events into
+   ingest runs/spans.
 4. **Multipart `/runs/multipart`** — accept large multipart payloads
    (file attachments, large tool I/O); LangSmith ships this and a
    handful of users will hit the JSON envelope size ceiling.
