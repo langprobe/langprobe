@@ -80,7 +80,7 @@ Generated 2026-06-03 after the first sidebar pass (8 LangSmith-equivalent surfac
 | JS/TS SDK (native) | ❌ | not started |
 | LangSmith-compatible Python shim | ✅ | `tracebility-langsmith-shim` ships `Client` + `@traceable` (sync+async) posting to ingest-api parity endpoints; one-line import migration (loop #4 item 11) |
 | LangSmith-compatible JS shim | ✅ | `packages/sdk-typescript/` ships `Client` + `traceable` (Proxy-free; `AsyncLocalStorage`-threaded parent ids) + `wrapOpenAI` / `wrapAnthropic`; one-line import migration; smoke-tested 8/8 (loop #5 item 6) |
-| Public-key (browser) feedback SDK | ❌ | not built |
+| Public-key (browser) feedback SDK | ✅ | `tracebility-feedback-browser` zero-dep TS package; `init({key, endpoint})` + `submit/thumbsUp/thumbsDown`; `credentials: omit`, `keepalive: true`, never throws on net errors; smoke 8/8 (loop #6 item 1) |
 
 ### Self-hosting + ops
 
@@ -525,7 +525,75 @@ parallel POSTs against different models), per-output card with
 latency + token stats + deep-link to the trace at `/runs/{id}`.
 Cookie-forwarding proxy at `web/src/app/api/playground/runs/route.ts`.
 
-## Loop iteration #5 — plan
+## Loop iteration #6 — done (item #1)
+
+✅ **Browser feedback SDK** —
+`packages/sdk-feedback-browser/` ships a zero-dep TS package
+(`tracebility-feedback-browser`) that wraps the existing
+`POST /v1/feedback` ingest endpoint. Module surface:
+
+```ts
+import { init, submit, FeedbackClient } from "tracebility-feedback-browser";
+
+init({ key: "tbf_pub_...", endpoint: "https://traces.example.com" });
+await submit({ run_id, score: 1, kind: "thumbs", comment: "👍" });
+```
+
+Plus `FeedbackClient.thumbsUp(runId)` / `.thumbsDown(runId)`
+convenience helpers.
+
+Design boundaries:
+  - **Never throws on network errors.** All failures resolve as
+    `{ok: false}` with `.retryable` set when retry is meaningful
+    (5xx, network), explicitly false on 4xx (bad key / revoked /
+    validation). Throwing inside a thumbs-up handler is bad UX;
+    crashing a click handler over a transient ingest blip is
+    worse.
+  - **Public-key auth, never carries cookies.** `credentials:
+    "omit"` so a misconfigured CORS allow-credentials doesn't
+    accidentally leak session state to the ingest host.
+  - `keepalive: true` so a `submit(...)` issued during page
+    unload has a fighting chance to complete.
+  - Constructor rejects keys not prefixed `tbf_pub_` early —
+    catches misconfiguration at boot, not at first user feedback.
+
+Smoke-tested 8/8: bad-key rejection, happy path body shape,
+score range validation, 5xx retryable, 4xx non-retryable, network
+error → retryable, thumbs convenience score correctness, and the
+process-global `init`/`submit`. Server-side allowed-origins
+allowlist remains the auth backstop; the SDK relies on it rather
+than re-implementing in the client.
+
+## Loop iteration #6 — plan
+
+Re-scoring after loop #5: the remaining ❌ cells fall into three
+buckets — interop shims, eval-rigor extensions, and enterprise.
+Ordered by leverage:
+
+1. **Public-key browser feedback SDK** — JS package that wraps the
+   existing `tbf_pub_*` ingest endpoint; closes the loop from
+   "user thumbs-up in production" to `eval_score` rows.
+2. **Native JS/TS SDK** — symmetric port of the native Python SDK
+   (`tracebility` package); the LangSmith JS shim covers compat,
+   but tracebility-shaped read+write needs its own surface.
+3. **LangChain / LangGraph callback bridges** — Python adapters that
+   plug into LangChain's `BaseCallbackHandler` / LangGraph's
+   `astream_events` so apps using those frameworks get traces
+   without a `@traceable` rewrite.
+4. **Multipart `/runs/multipart`** — accept large multipart payloads
+   (file attachments, large tool I/O); LangSmith ships this and a
+   handful of users will hit the JSON envelope size ceiling.
+5. **Luna prompted-judges** — an LLM-judge type that takes a
+   user-authored rubric prompt; rides the existing `eval_score`
+   shape so reads inherit.
+6. **SSO (OIDC)** — enterprise checkbox; auth_router already ships
+   the session machinery so this is a pluggable backend.
+7. **SCIM 2.0** — enterprise; provisioning workspace members from
+   an IdP without each one self-signing-up.
+8. **Kubernetes operator** — declarative tracebility CRDs; only
+   worth building once Helm sees real adoption.
+
+## Loop iteration #5 — plan (closed)
 
 Re-scoring the scoreboard at the top, the remaining ❌ / 🟡 cells
 break into five buckets. Ordered by leverage (visible gap × user
