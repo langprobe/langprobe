@@ -1,0 +1,32 @@
+tracebility is installed.
+
+1. Verify the four core services are healthy:
+
+   kubectl get pods -n {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }}
+
+2. Reach the web UI:
+
+{{- if .Values.ingress.enabled }}
+   {{- with .Values.ingress.hosts.web.host }}
+   open https://{{ . }}/
+   {{- end }}
+{{- else }}
+   kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "tracebility.web.fullname" . }} 7090:{{ .Values.web.service.port }}
+   open http://localhost:7090
+{{- end }}
+
+3. Reach the API directly (probes, Prometheus scrapers, etc):
+
+   kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "tracebility.api.fullname" . }} 7081:{{ .Values.api.service.port }}
+   curl http://localhost:7081/healthz
+
+Notes:
+- Stateful deps (Postgres, ClickHouse, Redis) are NOT bundled. Provide
+  DSN/URL via secrets in values:
+    postgres.existingSecret  + postgres.existingSecretKey  (key: dsn)
+    clickhouse.existingSecret + clickhouse.existingSecretKey (key: url)
+    redis.existingSecret     + redis.existingSecretKey      (key: url)
+    session.existingSecret   + session.existingSecretKey    (key: secret, >=32 chars)
+
+- Run database migrations once before pointing the api / ingest services at it.
+  See the project README for the canonical migration commands.

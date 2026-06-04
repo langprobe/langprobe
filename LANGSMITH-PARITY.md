@@ -93,7 +93,7 @@ Generated 2026-06-03 after the first sidebar pass (8 LangSmith-equivalent surfac
 | Ingest worker | ✅ | up |
 | Setup wizard (first-run) | ✅ | `/v1/setup` |
 | Health endpoint | ✅ | `/healthz` |
-| Helm chart | ❌ | not built |
+| Helm chart | ✅ | `deploy/helm/tracebility/` chart deploys api / ingest-api / ingest-worker / web; secret-resolution helper for postgres / clickhouse / redis / session; Ingress + ServiceAccount + PVC for ingest disk buffer (loop #5 item 9) |
 | Kubernetes operator | ❌ | not built |
 
 ## Loop iteration #1 — done
@@ -531,6 +531,49 @@ Re-scoring the scoreboard at the top, the remaining ❌ / 🟡 cells
 break into five buckets. Ordered by leverage (visible gap × user
 demand ÷ implementation cost):
 
+## Loop iteration #5 — done (item #9)
+
+✅ **Helm chart** —
+`deploy/helm/tracebility/` deploys the four tracebility services
+(`api`, `ingest-api`, `ingest-worker`, `web`) on Kubernetes.
+Deliberately does **not** bundle Postgres / ClickHouse / Redis —
+production deployments almost always want managed Postgres, and
+bundling those into the chart makes that worse, not better. For a
+one-command dev loop, `infra/docker-compose.yml` is the right shape.
+
+Secret resolution: each external dep takes
+`existingSecret + existingSecretKey`, with an `inline*` escape
+hatch for dev. The `tracebility.envFromSecret` helper in
+`_helpers.tpl` renders either a `secretKeyRef` or a literal
+`value` so the templates stay branch-free at the env-var site.
+Required secrets are documented in `NOTES.txt` (rendered after
+install) and in the chart's README.
+
+Topology specifics:
+  - `api` + `web` use rolling updates; both expose `/healthz`-style
+    probes.
+  - `ingest-api` mounts an optional RWO PVC for the disk buffer
+    (Redis is the source of truth; the buffer is best-effort), so
+    the deployment uses `strategy: Recreate` to dodge the multi-attach
+    constraint. Operators who want zero-downtime can flip to a
+    StatefulSet pattern in the next iteration without changing the
+    rest of the chart.
+  - `ingest-worker` has no probes (it's a Redis consumer; readiness
+    via consumer lag is a future PR).
+  - `Ingress` provisions three optional hosts (web / api / ingest)
+    behind one ingress object so a typical TLS setup is one secret
+    + three hostnames.
+
+Everything else (image registry/tag, replica counts, resources,
+nodeSelector / tolerations / affinity, podAnnotations, log level)
+is configurable from values.yaml. Image tag defaults to `latest`;
+the README explicitly recommends pinning a digest in production.
+
+Validated: values.yaml + Chart.yaml parse; every template's
+`.Values.X` reference resolves to a key declared in values.yaml;
+`helm` itself isn't installed in this env so the live render lands
+in CI.
+
 ## Loop iteration #5 — done (item #8)
 
 ✅ **Saved dashboards on /monitoring** —
@@ -852,7 +895,7 @@ unchanged.
 7. **Migration importer** (❌) — LangSmith export JSON → tracebility
    ClickHouse runs; the unblocker for "we already have history".
 8. **Saved filters / dashboards on /monitoring** ✅ shipped (item #8).
-9. **Helm chart** (❌) — self-host adoption surface.
+9. **Helm chart** ✅ shipped (item #9).
 10. **Native Python SDK** (❌) — tracebility-shaped client (read +
     write); the LangSmith shim covers write parity but the read
     side needs its own surface.
