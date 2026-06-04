@@ -1,0 +1,42 @@
+# Example Tracebility CR. Apply after the CRD + operator + the
+# four secret references already exist in the namespace:
+#
+#   kubectl create secret generic tracebility-postgres \
+#     --from-literal=dsn='postgres://user:pass@host:5432/tracebility'
+#   kubectl create secret generic tracebility-clickhouse \
+#     --from-literal=url='http://user:pass@host:8123/tracebility'
+#   kubectl create secret generic tracebility-redis \
+#     --from-literal=url='redis://host:6379/0'
+#   kubectl create secret generic tracebility-session \
+#     --from-literal=secret="$(openssl rand -hex 32)"
+---
+apiVersion: tracebility.io/v1alpha1
+kind: Tracebility
+metadata:
+  name: prod
+spec:
+  image:
+    registry: ghcr.io/tracebility-ai
+    tag: latest
+  api:
+    replicas: 2
+    publicApiBase: https://api.example.com
+  ingestApi:
+    replicas: 2
+  ingestWorker:
+    replicas: 2
+  web:
+    replicas: 2
+  secrets:
+    postgres:   { name: tracebility-postgres,   key: dsn }
+    clickhouse: { name: tracebility-clickhouse, key: url }
+    redis:      { name: tracebility-redis,      key: url }
+    session:    { name: tracebility-session,    key: secret }
+  ingress:
+    enabled: true
+    className: nginx
+    web:    { host: app.example.com }
+    api:    { host: api.example.com }
+    ingest: { host: ingest.example.com }
+  logging:
+    level: INFO

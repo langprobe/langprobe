@@ -1,0 +1,147 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: tracebilities.tracebility.io
+spec:
+  group: tracebility.io
+  scope: Namespaced
+  names:
+    kind: Tracebility
+    plural: tracebilities
+    singular: tracebility
+    shortNames:
+      - tb
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: [spec]
+          properties:
+            spec:
+              type: object
+              properties:
+                image:
+                  type: object
+                  description: Container image registry/tag.
+                  properties:
+                    registry:
+                      type: string
+                      default: ghcr.io/tracebility-ai
+                    tag:
+                      type: string
+                      default: latest
+                api:
+                  type: object
+                  description: Control-plane API deployment.
+                  properties:
+                    replicas: {type: integer, minimum: 0, default: 2}
+                    repository: {type: string, default: tracebility-api}
+                    publicApiBase: {type: string}
+                ingestApi:
+                  type: object
+                  description: Ingest API deployment.
+                  properties:
+                    replicas: {type: integer, minimum: 0, default: 2}
+                    repository: {type: string, default: tracebility-ingest-api}
+                ingestWorker:
+                  type: object
+                  description: Ingest worker deployment.
+                  properties:
+                    replicas: {type: integer, minimum: 0, default: 2}
+                    repository: {type: string, default: tracebility-ingest-worker}
+                web:
+                  type: object
+                  description: Web UI deployment.
+                  properties:
+                    replicas: {type: integer, minimum: 0, default: 2}
+                    repository: {type: string, default: tracebility-web}
+                secrets:
+                  type: object
+                  required: [postgres, clickhouse, redis, session]
+                  description: References to k8s secrets that hold external dep credentials.
+                  properties:
+                    postgres:
+                      type: object
+                      required: [name, key]
+                      properties:
+                        name: {type: string}
+                        key:  {type: string, default: dsn}
+                    clickhouse:
+                      type: object
+                      required: [name, key]
+                      properties:
+                        name: {type: string}
+                        key:  {type: string, default: url}
+                    redis:
+                      type: object
+                      required: [name, key]
+                      properties:
+                        name: {type: string}
+                        key:  {type: string, default: url}
+                    session:
+                      type: object
+                      required: [name, key]
+                      properties:
+                        name: {type: string}
+                        key:  {type: string, default: secret}
+                ingress:
+                  type: object
+                  description: Optional Ingress for web/api/ingest hosts.
+                  properties:
+                    enabled: {type: boolean, default: false}
+                    className: {type: string}
+                    web:
+                      type: object
+                      properties:
+                        host: {type: string}
+                    api:
+                      type: object
+                      properties:
+                        host: {type: string}
+                    ingest:
+                      type: object
+                      properties:
+                        host: {type: string}
+                logging:
+                  type: object
+                  properties:
+                    level: {type: string, default: INFO}
+            status:
+              type: object
+              properties:
+                phase:
+                  type: string
+                  enum: [Pending, Reconciling, Ready, Error]
+                message: {type: string}
+                lastReconciled: {type: string, format: date-time}
+                conditions:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      type: {type: string}
+                      status: {type: string}
+                      reason: {type: string}
+                      message: {type: string}
+                      lastTransitionTime: {type: string, format: date-time}
+      additionalPrinterColumns:
+        - name: Phase
+          type: string
+          jsonPath: .status.phase
+        - name: API
+          type: integer
+          jsonPath: .spec.api.replicas
+        - name: Ingest
+          type: integer
+          jsonPath: .spec.ingestApi.replicas
+        - name: Web
+          type: integer
+          jsonPath: .spec.web.replicas
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      subresources:
+        status: {}
