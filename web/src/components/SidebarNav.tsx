@@ -8,6 +8,7 @@ import {
   FlaskConical,
   GanttChart,
   GitCompare,
+  Gavel,
   Home,
   KeyRound,
   LineChart,
@@ -44,6 +45,7 @@ const SECTIONS: NavSection[] = [
     items: [
       { label: "Evals", href: "/evals", icon: <FlaskConical size={16} strokeWidth={1.5} /> },
       { label: "PoLL panels", href: "/poll-runs", icon: <GanttChart size={16} strokeWidth={1.5} /> },
+      { label: "Judges", href: "/judges", icon: <Gavel size={16} strokeWidth={1.5} /> },
       { label: "Comparisons", href: "/comparisons", icon: <GitCompare size={16} strokeWidth={1.5} /> },
       { label: "Datasets", href: "/datasets", icon: <Database size={16} strokeWidth={1.5} /> },
       { label: "Prompts", href: "/prompts", icon: <Library size={16} strokeWidth={1.5} /> },

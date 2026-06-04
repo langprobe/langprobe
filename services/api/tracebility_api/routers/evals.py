@@ -35,6 +35,7 @@ from pydantic import BaseModel, Field
 from .. import audit
 from ..auth import Principal, assert_workspace_role, require_user
 from ..clickhouse_client import ClickHouseQuery
+from . import luna_judges
 
 log = structlog.get_logger("tracebility.api.evals")
 
@@ -121,10 +122,22 @@ async def create_run(
         pool, body.project_id, principal,
         allowed=("owner", "admin", "member"),
     )
-    if body.judge_kind not in _JUDGE_KINDS:
+    # judge_kind accepts the built-in deterministic judges plus
+    # `luna:<slug>` references to a user-authored prompted judge.
+    # Validate luna refs at create-time so a stuck row isn't created
+    # for a missing/deleted judge.
+    base_kind, luna_slug = luna_judges.parse_judge_kind(body.judge_kind)
+    if luna_slug is not None:
+        judge_row = await luna_judges.resolve_judge(pool, body.project_id, luna_slug)
+        if judge_row is None:
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND,
+                f"luna judge '{luna_slug}' not found in this project",
+            )
+    elif base_kind not in _JUDGE_KINDS:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
-            f"judge_kind must be one of {sorted(_JUDGE_KINDS)}",
+            f"judge_kind must be one of {sorted(_JUDGE_KINDS)} or 'luna:<slug>'",
         )
     dataset = await pool.fetchrow(
         """
@@ -288,27 +301,55 @@ async def _run_eval(
             run_id, len(items),
         )
 
+        # Resolve luna judge once (if applicable) so per-item dispatch
+        # doesn't re-hit postgres on every iteration.
+        base_kind, luna_slug = luna_judges.parse_judge_kind(run["judge_kind"])
+        luna_row: dict[str, Any] | None = None
+        if luna_slug is not None:
+            luna_row = await luna_judges.resolve_judge(
+                pool, run["project_id"], luna_slug
+            )
+            if luna_row is None:
+                await _mark_failed(
+                    pool, run_id, f"luna judge '{luna_slug}' not found",
+                )
+                return
+
         rows: list[tuple[Any, ...]] = []
         score_sum = 0.0
         judged_at = datetime.utcnow()
         for item in items:
-            score, label, rationale = _judge(
-                run["judge_kind"], item["input"], item["expected"]
-            )
+            if luna_row is not None:
+                score, label, rationale, raw_output = (
+                    await luna_judges.apply_luna_judge(
+                        luna_row,
+                        input_text=item["input"],
+                        expected=item["expected"],
+                    )
+                )
+                judge_endpoint = luna_row["provider"]
+                outcome = "ok" if label != "error" else "failed"
+            else:
+                score, label, rationale = _judge(
+                    base_kind, item["input"], item["expected"]
+                )
+                raw_output = ""
+                judge_endpoint = "builtin"
+                outcome = "ok"
             score_sum += score
             rows.append((
                 str(run["project_id"]),
                 str(item["item_id"]),       # carry item_id in run_id slot
                 None,                       # span_id
                 str(run_id),                # eval_config_id = our run id
-                run["judge_kind"],          # judge_name
-                "builtin",                  # judge_endpoint
+                run["judge_kind"],          # judge_name (carries luna:slug)
+                judge_endpoint,             # judge_endpoint
                 "v1",                       # judge_version
                 float(score),
                 label,
                 rationale,
-                "",                         # raw_output (no LLM call)
-                "ok",
+                raw_output,                 # raw_output (LLM response, if any)
+                outcome,
                 judged_at,
                 0,                          # cost_usd
             ))

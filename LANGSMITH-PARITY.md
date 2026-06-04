@@ -52,7 +52,7 @@ Generated 2026-06-03 after the first sidebar pass (8 LangSmith-equivalent surfac
 | Prompts (versioning + tags) | ✅ | postgres CRUD + versions + aliases; list/detail UI (loop #4) |
 | Evals (single-judge) | ✅ | postgres `eval_run` lifecycle + clickhouse `eval_score` writes; built-in judges echo/contains/exact (loop #4) |
 | Evals (PoLL multi-judge) | ✅ | postgres `poll_run` lifecycle (queued → running → done/failed) + judges text[] + aggregation (mean/majority/min/max) + pairwise agreement metric; scores all (item × judge) pairs to `eval_score` (loop #5 item 2) |
-| Luna prompted-judges | ❌ | not built |
+| Luna prompted-judges | ✅ | postgres `luna_judge` (slug + rubric_prompt + provider/model + temperature/max_tokens); `luna:<slug>` accepted by /v1/eval-runs and /v1/poll-runs; runner dispatches to anthropic/openai/stub, parses `score:` + `rationale:` (or JSON); per-item rows write to `eval_score` (loop #6 item 5) |
 | Comparisons (A/B experiments) | ✅ | postgres `comparison` lifecycle + clickhouse `eval_score` cmp:a/cmp:b rows; list + paired-diff detail UI (loop #4) |
 | Playground | ✅ | postgres `playground_session` + sync runner; anthropic/openai/stub providers; side-by-side compare mode; results write a real trace to ClickHouse with `sdk='playground'` (loop #5 item 1) |
 | Annotations queue | ✅ | postgres queue/item lifecycle + ClickHouse run sampling + reviewer UI; submissions write `eval_score` with `judge_name='human'` (loop #4) |
@@ -525,6 +525,59 @@ parallel POSTs against different models), per-output card with
 latency + token stats + deep-link to the trace at `/runs/{id}`.
 Cookie-forwarding proxy at `web/src/app/api/playground/runs/route.ts`.
 
+## Loop iteration #6 — done (item #5)
+
+✅ **Luna prompted-judges** —
+`schemas/postgres/migrations/0018_luna_judges.sql` adds
+`luna_judge` (project-scoped, slug + name + rubric_prompt +
+output_format + provider/model + temperature/max_tokens, soft
+delete). Slug regex matches the prompt-versioning convention
+(`^[a-z0-9][a-z0-9_-]*$`); partial-unique-on-slug per project
+where `deleted_at is null` so re-creating after delete is fine.
+
+`services/api/tracebility_api/routers/luna_judges.py` exposes
+`GET/POST /v1/luna-judges`, `GET/PATCH/DELETE /v1/luna-judges/{id}`,
+plus three public dispatch helpers used by `evals.py` and
+`poll_runs.py`:
+
+  - `parse_judge_kind("luna:my-slug")` → `("luna", "my-slug")`;
+    everything else passes through unchanged.
+  - `resolve_judge(pool, project_id, slug)` → the judge row.
+  - `apply_luna_judge(judge_row, input, expected, output=None)` →
+    `(score, label, rationale, raw_output)`. Renders the rubric
+    with `{{ input }}` / `{{ expected }}` / `{{ output }}`
+    substitutions, dispatches via `_dispatch` (anthropic / openai /
+    stub stdlib HTTP), and parses the response per
+    `output_format` — `score-rationale` (default; expects
+    `score: 0.X\\nrationale: …`) or `json-object` (tolerant of
+    leading prose; finds the first `{...}` block, requires a
+    numeric `score` field).
+
+Runner integration: `evals._run_eval` and `poll_runs._run_poll`
+both resolve any `luna:<slug>` references once up-front (so per-
+item dispatch doesn't re-hit postgres) and substitute
+`luna_judges.apply_luna_judge` for the built-in `_judge` call. The
+`eval_score` row's `judge_name` carries `luna:<slug>` verbatim;
+`judge_endpoint` carries the provider; `raw_output` carries the
+LLM response (truncated to 2KB). Bad parses degrade gracefully:
+`score=0`, `label='parse-error'`, `outcome='ok'` so aggregates
+don't NaN. Provider errors return `(0.0, 'error', '<reason>',
+'<details>')` and write `outcome='failed'` (ER-23 — never silent-
+drop).
+
+Validation at create time on both `/v1/eval-runs` and
+`/v1/poll-runs`: a `luna:<slug>` reference 404s if the judge
+doesn't exist, before the postgres row is inserted. Stuck rows
+for missing judges are not allowed.
+
+UI: new sidebar entry "Judges" under the Improve section.
+`web/src/app/judges/page.tsx` is the server-component list with
+slug/name/provider/model/format/temp/max columns and per-row
+delete. `NewJudgeButton` (modal) authors the rubric with a sane
+default template, picks provider/model/format. Cookie-forwarding
+proxies under `web/src/app/api/luna-judges/` (POST + per-id
+PATCH/DELETE).
+
 ## Loop iteration #6 — done (item #4)
 
 ✅ **Multipart `/runs/multipart`** —
@@ -730,9 +783,8 @@ Ordered by leverage:
    ingest runs/spans.
 4. **Multipart `/runs/multipart`** ✅ shipped (item #4) — accepts
    large multipart payloads with content-addressed attachments.
-5. **Luna prompted-judges** — an LLM-judge type that takes a
-   user-authored rubric prompt; rides the existing `eval_score`
-   shape so reads inherit.
+5. **Luna prompted-judges** ✅ shipped (item #5) — LLM-as-judge
+   with user-authored rubric.
 6. **SSO (OIDC)** — enterprise checkbox; auth_router already ships
    the session machinery so this is a pluggable backend.
 7. **SCIM 2.0** — enterprise; provisioning workspace members from

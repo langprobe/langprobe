@@ -38,6 +38,7 @@ from pydantic import BaseModel, Field
 from .. import audit
 from ..auth import Principal, assert_workspace_role, require_user
 from ..clickhouse_client import ClickHouseQuery
+from . import luna_judges
 from .evals import _judge  # reuse the built-in deterministic judge bench
 
 log = structlog.get_logger("tracebility.api.poll_runs")
@@ -137,14 +138,24 @@ async def create_run(
             status.HTTP_400_BAD_REQUEST,
             f"need ≥{_MIN_JUDGES} distinct judges",
         )
+    pool: asyncpg.Pool = request.app.state.pg
     for j in unique_judges:
-        if j not in _JUDGE_KINDS:
+        base_kind, luna_slug = luna_judges.parse_judge_kind(j)
+        if luna_slug is not None:
+            judge_row = await luna_judges.resolve_judge(
+                pool, body.project_id, luna_slug
+            )
+            if judge_row is None:
+                raise HTTPException(
+                    status.HTTP_404_NOT_FOUND,
+                    f"luna judge '{luna_slug}' not found in this project",
+                )
+        elif base_kind not in _JUDGE_KINDS:
             raise HTTPException(
                 status.HTTP_400_BAD_REQUEST,
-                f"unknown judge_kind '{j}' (allowed: {sorted(_JUDGE_KINDS)})",
+                f"unknown judge_kind '{j}' (allowed: {sorted(_JUDGE_KINDS)} or 'luna:<slug>')",
             )
 
-    pool: asyncpg.Pool = request.app.state.pg
     workspace_id = await _assert_project_role(
         pool, principal, body.project_id, ("owner", "admin", "member")
     )
@@ -328,6 +339,24 @@ async def _run_poll(
             poll_id,
         )
 
+        # Resolve any luna judges once up-front; abort with an honest
+        # error if a slug went missing between create and run.
+        luna_rows: dict[str, dict[str, Any]] = {}
+        for judge in judges:
+            base, slug = luna_judges.parse_judge_kind(judge)
+            if slug is not None:
+                row = await luna_judges.resolve_judge(
+                    pool, poll["project_id"], slug
+                )
+                if row is None:
+                    await _mark_failed(
+                        pool,
+                        poll_id,
+                        f"luna judge '{slug}' not found at run time",
+                    )
+                    return
+                luna_rows[judge] = row
+
         items = await _fetch_dataset_items(
             ch, poll["project_id"], poll["dataset_id"]
         )
@@ -342,23 +371,38 @@ async def _run_poll(
         for item in items:
             scores_for_item: list[tuple[str, float]] = []
             for judge in judges:
-                score, label, rationale = _judge(
-                    judge, item["input"], item["expected"]
-                )
+                if judge in luna_rows:
+                    luna_row = luna_rows[judge]
+                    score, label, rationale, raw_output = (
+                        await luna_judges.apply_luna_judge(
+                            luna_row,
+                            input_text=item["input"],
+                            expected=item["expected"],
+                        )
+                    )
+                    judge_endpoint = luna_row["provider"]
+                    outcome = "ok" if label != "error" else "failed"
+                else:
+                    score, label, rationale = _judge(
+                        judge, item["input"], item["expected"]
+                    )
+                    raw_output = ""
+                    judge_endpoint = "builtin"
+                    outcome = "ok"
                 scores_for_item.append((judge, score))
                 rows.append((
                     str(poll["project_id"]),
                     str(item["item_id"]),     # carry item_id in run_id slot
                     None,                     # span_id
                     str(poll_id),             # eval_config_id = poll_run.id
-                    judge,                    # judge_name carries which judge
-                    "builtin",                # judge_endpoint
+                    judge,                    # judge_name (carries luna:slug)
+                    judge_endpoint,           # judge_endpoint
                     "v1",                     # judge_version
                     float(score),
                     label,
                     rationale,
-                    "",                       # raw_output (no LLM call)
-                    "ok",
+                    raw_output,               # raw_output (LLM response, if any)
+                    outcome,
                     judged_at,
                     0,                        # cost_usd
                 ))

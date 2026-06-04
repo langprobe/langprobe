@@ -26,6 +26,7 @@ from .routers import (
     feedback,
     feedback_keys,
     health,
+    luna_judges,
     members,
     metrics,
     playground,
@@ -134,6 +135,7 @@ def create_app() -> FastAPI:
     app.include_router(poll_runs.router)
     app.include_router(saved_views.router)
     app.include_router(run_actions.router)
+    app.include_router(luna_judges.router)
     return app
 
 
