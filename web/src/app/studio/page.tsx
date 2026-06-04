@@ -28,8 +28,13 @@ interface BranchList {
   items: StudioBranchRow[];
 }
 
-export default async function StudioPage() {
+export default async function StudioPage({
+  searchParams,
+}: {
+  searchParams?: { source_run_id?: string };
+}) {
   const { active, all, reason } = await resolveActiveProject();
+  const defaultSourceRunId = (searchParams?.source_run_id ?? "").trim();
 
   if (!active) {
     return (
@@ -57,7 +62,12 @@ export default async function StudioPage() {
         <PageHeader
           title="Studio"
           subtitle={`${active.slug} · ${branches.length} ${branches.length === 1 ? "branch" : "branches"}`}
-          right={<NewBranchButton projectId={active.id} />}
+          right={
+            <NewBranchButton
+              projectId={active.id}
+              defaultSourceRunId={defaultSourceRunId || undefined}
+            />
+          }
         />
         <KpiStrip
           total={branches.length}

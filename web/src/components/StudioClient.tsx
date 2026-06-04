@@ -63,12 +63,20 @@ const EDIT_FIELDS: { value: StudioEdit["field"]; label: string; hint: string }[]
 // New branch
 // ---------------------------------------------------------------------------
 
-export function NewBranchButton({ projectId }: { projectId: string }) {
+export function NewBranchButton({
+  projectId,
+  defaultSourceRunId,
+}: {
+  projectId: string;
+  defaultSourceRunId?: string;
+}) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
+  // Auto-open the modal when a deep-link arrives with a pre-filled
+  // source_run_id (e.g. clicking "branch" from /replay).
+  const [open, setOpen] = useState(Boolean(defaultSourceRunId));
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [sourceRunId, setSourceRunId] = useState("");
+  const [sourceRunId, setSourceRunId] = useState(defaultSourceRunId ?? "");
   const [sourceSpanId, setSourceSpanId] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -77,7 +85,7 @@ export function NewBranchButton({ projectId }: { projectId: string }) {
     setOpen(false);
     setName("");
     setDescription("");
-    setSourceRunId("");
+    setSourceRunId(defaultSourceRunId ?? "");
     setSourceSpanId("");
     setError(null);
   }
