@@ -1,23 +1,27 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 
 /**
- * /login + /signup form.
+ * Unified sign-in / sign-up form.
  *
- * One component for both because the inputs are identical; the
- * difference is which submit endpoint we hit and which OAuth intent
- * we pass. Email+password posts to /api/auth/login (the only
- * password-auth surface today — signup with password is not exposed
- * yet because /v1/setup is the operator-bootstrap path; OAuth is
- * the public signup path). When `mode='signup'` the email+password
- * card is hidden and the OAuth buttons are the primary action.
+ * Tab-toggled (Sign in | Create account); both tabs share the same
+ * OAuth buttons and the same email+password form. The tab only
+ * controls (a) which tab visually looks active, (b) which OAuth
+ * `intent=` is sent to the api so first-time vs returning is
+ * audited correctly, and (c) which submit copy ("Sign in" vs
+ * "Create account") on the password form.
  *
- * SSO (per-workspace OIDC) lives at /workspace/sso and is a
- * different surface — that's for a corporate IdP your workspace
- * admin configures. The OAuth buttons here are the personal-account
- * path.
+ * Email+password is wired to /api/auth/login for both tabs because
+ * v1 doesn't expose a self-service password-signup endpoint
+ * (operators bootstrap via /v1/setup; everyone else uses OAuth).
+ * Showing the password form on signup is a vestige worth keeping
+ * for the operator who wants to test their root account from /signup.
+ *
+ * `LAST USED` badge: records the last-clicked OAuth provider in
+ * localStorage so returning users see at a glance which one to
+ * pick. Pure UX nicety, no privacy concern (no email, no token).
  */
 
 export interface OAuthProviders {
@@ -25,141 +29,243 @@ export interface OAuthProviders {
   github: boolean;
 }
 
+type Tab = "login" | "signup";
+const LAST_USED_KEY = "tracebility:auth:last-provider";
+
 export function AuthClient({
-  mode,
+  initialTab,
   providers,
   returnTo,
 }: {
-  mode: "login" | "signup";
+  initialTab: Tab;
   providers: OAuthProviders;
   returnTo: string | null;
 }) {
-  const isSignup = mode === "signup";
-  const showPassword = !isSignup;
+  const [tab, setTab] = useState<Tab>(initialTab);
   const anyOAuth = providers.google || providers.github;
+
+  return (
+    <div style={{ display: "grid", gap: 20, width: "100%" }}>
+      <TabSwitch tab={tab} setTab={setTab} />
+
+      {anyOAuth ? (
+        <OAuthButtons tab={tab} providers={providers} returnTo={returnTo} />
+      ) : null}
+
+      {anyOAuth ? <Divider label="or continue with email" /> : null}
+
+      <PasswordForm tab={tab} />
+
+      <p
+        style={{
+          fontSize: 11,
+          color: "var(--text-3)",
+          margin: 0,
+          lineHeight: 1.55,
+        }}
+      >
+        By continuing, you agree to the{" "}
+        <a href="/terms" style={{ color: "var(--link)" }}>
+          terms of service
+        </a>{" "}
+        and{" "}
+        <a href="/privacy" style={{ color: "var(--link)" }}>
+          privacy policy
+        </a>
+        .
+      </p>
+
+      {!anyOAuth ? (
+        <p
+          className="mono"
+          style={{
+            margin: 0,
+            fontSize: 11,
+            color: "var(--text-3)",
+            lineHeight: 1.55,
+          }}
+        >
+          OAuth providers are not configured for this deployment. The
+          operator can enable them by setting{" "}
+          <code>OAUTH_GOOGLE_CLIENT_ID</code> /{" "}
+          <code>OAUTH_GITHUB_CLIENT_ID</code> on the api service.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Tab switcher
+// ---------------------------------------------------------------------------
+
+function TabSwitch({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
+  return (
+    <div
+      role="tablist"
+      style={{
+        display: "inline-flex",
+        gap: 16,
+        fontSize: 18,
+        fontWeight: 500,
+        letterSpacing: -0.01,
+      }}
+    >
+      <TabButton active={tab === "signup"} onClick={() => setTab("signup")}>
+        Create account
+      </TabButton>
+      <TabButton active={tab === "login"} onClick={() => setTab("login")}>
+        Sign in
+      </TabButton>
+    </div>
+  );
+}
+
+function TabButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      style={{
+        background: "none",
+        border: "none",
+        padding: "0 0 4px",
+        cursor: "pointer",
+        color: active ? "var(--text)" : "var(--text-3)",
+        borderBottom: active
+          ? "2px solid var(--accent)"
+          : "2px solid transparent",
+        fontSize: "inherit",
+        fontWeight: "inherit",
+        letterSpacing: "inherit",
+        transition: "color 120ms",
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// OAuth buttons
+// ---------------------------------------------------------------------------
+
+function OAuthButtons({
+  tab,
+  providers,
+  returnTo,
+}: {
+  tab: Tab;
+  providers: OAuthProviders;
+  returnTo: string | null;
+}) {
+  const [lastUsed, setLastUsed] = useState<string | null>(null);
+  useEffect(() => {
+    try {
+      setLastUsed(window.localStorage.getItem(LAST_USED_KEY));
+    } catch {
+      // localStorage unavailable (SSR / private mode); harmless
+    }
+  }, []);
+
+  const params = new URLSearchParams({ intent: tab });
+  if (returnTo) params.set("return_to", returnTo);
+  const apiBase = process.env.NEXT_PUBLIC_API_BASE || "";
+  const startUrl = (provider: string): string => {
+    const path = `/v1/auth/oauth/${provider}/start?${params.toString()}`;
+    return apiBase ? `${apiBase}${path}` : path;
+  };
+
+  function recordUsed(provider: string) {
+    try {
+      window.localStorage.setItem(LAST_USED_KEY, provider);
+    } catch {
+      // ignore
+    }
+  }
+
+  const buttons: Array<{
+    key: string;
+    label: string;
+    icon: React.ReactNode;
+  }> = [];
+  if (providers.google) {
+    buttons.push({ key: "google", label: "Google", icon: <GoogleMark /> });
+  }
+  if (providers.github) {
+    buttons.push({ key: "github", label: "GitHub", icon: <GithubMark /> });
+  }
 
   return (
     <div
       style={{
         display: "grid",
-        gap: 16,
-        maxWidth: 380,
-        width: "100%",
+        gridTemplateColumns: `repeat(${buttons.length}, minmax(0, 1fr))`,
+        gap: 8,
       }}
     >
-      {anyOAuth ? (
-        <OAuthButtons mode={mode} providers={providers} returnTo={returnTo} />
-      ) : null}
-
-      {anyOAuth && showPassword ? <Divider label="or" /> : null}
-
-      {showPassword ? <PasswordForm /> : null}
-
-      {isSignup ? (
-        <p style={{ fontSize: 12, color: "var(--text-3)", margin: 0 }}>
-          Already have an account?{" "}
-          <a href="/login" style={{ color: "var(--link)" }}>
-            Sign in
-          </a>
-          .
-        </p>
-      ) : (
-        <p style={{ fontSize: 12, color: "var(--text-3)", margin: 0 }}>
-          New here?{" "}
-          <a href="/signup" style={{ color: "var(--link)" }}>
-            Create an account
-          </a>
-          .
-        </p>
-      )}
-
-      {!anyOAuth && !showPassword ? (
-        <div className="card card-pad-lg" style={{ marginTop: 8 }}>
-          <p
-            style={{
-              margin: 0,
-              fontSize: 13,
-              color: "var(--text-2)",
-              lineHeight: 1.55,
-            }}
-          >
-            No public sign-in providers are configured for this deployment.
-            The operator can enable Google and/or GitHub by setting{" "}
-            <code className="mono">OAUTH_GOOGLE_CLIENT_ID</code> /{" "}
-            <code className="mono">OAUTH_GITHUB_CLIENT_ID</code> on the api
-            service. Existing accounts can still sign in at{" "}
-            <a href="/login" style={{ color: "var(--link)" }}>
-              /login
-            </a>
-            , and corporate users can use workspace SSO once their admin
-            configures it.
-          </p>
-        </div>
-      ) : null}
+      {buttons.map((b) => (
+        <a
+          key={b.key}
+          href={startUrl(b.key)}
+          onClick={() => recordUsed(b.key)}
+          className="btn"
+          style={{
+            position: "relative",
+            justifyContent: "center",
+            gap: 8,
+            padding: "10px 12px",
+            fontSize: 13,
+          }}
+        >
+          {b.icon}
+          {b.label}
+          {lastUsed === b.key ? <LastUsedBadge /> : null}
+        </a>
+      ))}
     </div>
   );
 }
 
-function OAuthButtons({
-  mode,
-  providers,
-  returnTo,
-}: {
-  mode: "login" | "signup";
-  providers: OAuthProviders;
-  returnTo: string | null;
-}) {
-  const intent = mode;
-  const params = new URLSearchParams({ intent });
-  if (returnTo) params.set("return_to", returnTo);
-  const apiBase = process.env.NEXT_PUBLIC_API_BASE || "";
-  // The /start endpoint issues a 302 to the IdP, so we need a
-  // top-level navigation. Falling back to a same-origin /v1/...
-  // path means we'd need a Next.js proxy that emits a 302 — easier
-  // and more correct to just navigate to the api directly when
-  // NEXT_PUBLIC_API_BASE is set, otherwise rely on the api being
-  // on the same host (single-port self-host).
-  const startUrl = (provider: string): string => {
-    const path = `/v1/auth/oauth/${provider}/start?${params.toString()}`;
-    return apiBase ? `${apiBase}${path}` : path;
-  };
+function LastUsedBadge() {
   return (
-    <div style={{ display: "grid", gap: 8 }}>
-      {providers.google ? (
-        <a
-          href={startUrl("google")}
-          className="btn"
-          style={{
-            justifyContent: "center",
-            gap: 8,
-            padding: "10px 16px",
-            fontSize: 13,
-          }}
-        >
-          <GoogleMark />
-          Continue with Google
-        </a>
-      ) : null}
-      {providers.github ? (
-        <a
-          href={startUrl("github")}
-          className="btn"
-          style={{
-            justifyContent: "center",
-            gap: 8,
-            padding: "10px 16px",
-            fontSize: 13,
-          }}
-        >
-          <GithubMark />
-          Continue with GitHub
-        </a>
-      ) : null}
-    </div>
+    <span
+      style={{
+        position: "absolute",
+        top: -8,
+        right: -8,
+        background: "var(--accent)",
+        color: "var(--accent-fg)",
+        fontSize: 9,
+        fontWeight: 600,
+        letterSpacing: 0.6,
+        textTransform: "uppercase",
+        padding: "2px 6px",
+        borderRadius: "var(--r-1)",
+        lineHeight: 1.2,
+        pointerEvents: "none",
+      }}
+    >
+      last used
+    </span>
   );
 }
 
-function PasswordForm() {
+// ---------------------------------------------------------------------------
+// Password form
+// ---------------------------------------------------------------------------
+
+function PasswordForm({ tab }: { tab: Tab }) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -185,7 +291,13 @@ function PasswordForm() {
           const body = (await res.json()) as { detail?: string };
           if (body.detail) detail = body.detail;
         } catch {
-          // ignore — keep generic message
+          // ignore
+        }
+        // Slightly nudge the message on signup tab so users know
+        // password signup isn't self-service today.
+        if (tab === "signup" && res.status === 401) {
+          detail =
+            "no account found. Use Google / GitHub to sign up — password signup is operator-only in v1.";
         }
         setError(detail);
         return;
@@ -196,7 +308,7 @@ function PasswordForm() {
   }
 
   return (
-    <form onSubmit={submit} style={{ display: "grid", gap: 8 }}>
+    <form onSubmit={submit} style={{ display: "grid", gap: 12 }}>
       <Field label="Email">
         <input
           type="email"
@@ -212,7 +324,9 @@ function PasswordForm() {
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          autoComplete="current-password"
+          autoComplete={
+            tab === "signup" ? "new-password" : "current-password"
+          }
           placeholder="••••••••"
           required
         />
@@ -231,7 +345,11 @@ function PasswordForm() {
         disabled={pending}
         style={{ justifyContent: "center", padding: "10px 16px" }}
       >
-        {pending ? "signing in…" : "Sign in"}
+        {pending
+          ? tab === "signup"
+            ? "creating account…"
+            : "signing in…"
+          : "Continue"}
       </button>
     </form>
   );
@@ -270,9 +388,7 @@ function Divider({ label }: { label: string }) {
         gap: 8,
         color: "var(--text-3)",
         fontSize: 11,
-        textTransform: "uppercase",
         letterSpacing: 0.4,
-        margin: "4px 0",
       }}
     >
       <span style={{ flex: 1, height: 1, background: "var(--border)" }} />
@@ -282,9 +398,11 @@ function Divider({ label }: { label: string }) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Provider marks
+// ---------------------------------------------------------------------------
+
 function GoogleMark() {
-  // Use the official 4-color G; rendered inline as svg so it
-  // doesn't pull in an icon dep. Sized to match Lucide icons (16px).
   return (
     <svg width="16" height="16" viewBox="0 0 48 48" aria-hidden>
       <path
@@ -317,6 +435,10 @@ function GithubMark() {
     </svg>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Logout
+// ---------------------------------------------------------------------------
 
 export function LogoutLink() {
   const router = useRouter();

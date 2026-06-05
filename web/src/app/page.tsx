@@ -369,7 +369,7 @@ function UnconfiguredState({
         ) : null}
         {isNotAuth ? (
           <>
-            <Link href="/signup" className="btn btn-primary">
+            <Link href="/login?tab=signup" className="btn btn-primary">
               Create account
             </Link>
             <Link href="/login" className="btn btn-ghost" style={{ fontSize: 12 }}>

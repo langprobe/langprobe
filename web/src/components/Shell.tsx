@@ -237,7 +237,7 @@ function SidebarFooter({ me }: { me: MeResponse | null }) {
           Sign in
         </Link>
         <Link
-          href="/signup"
+          href="/login?tab=signup"
           className="btn btn-ghost"
           style={{ fontSize: 12 }}
         >
