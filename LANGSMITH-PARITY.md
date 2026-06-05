@@ -30,7 +30,7 @@ Generated 2026-06-03 after the first sidebar pass (8 LangSmith-equivalent surfac
 | LangChain callback bridge | ✅ | `tracebility-langchain.TracebilityCallbackHandler`; tree-aware (root flushes whole tree as one ingest envelope), thread-safe, swallows telemetry failures (loop #6 item 3) |
 | LangGraph callback bridge | ✅ | same handler — LangGraph emits the same callback shapes; pass `sdk="langgraph"` to distinguish in /runs (loop #6 item 3) |
 | OpenAI Agents SDK ingest | 🟡 | works via OTel intake (loop #4 item 10); first-class adapter pending SDK launch |
-| `wrap_openai` / `wrap_anthropic` | ✅ | duck-typed proxies on `tracebility-langsmith-shim`; one tracebility run per vendor SDK call with prompt+completion+token usage; vendor SDKs not transitive deps (loop #5 item 5) |
+| `wrap_openai` / `wrap_anthropic` | ✅ | duck-typed proxies on `tracebility-langsmith`; one tracebility run per vendor SDK call with prompt+completion+token usage; vendor SDKs not transitive deps (loop #5 item 5) |
 | Multipart `/runs/multipart` | ✅ | `POST /v1/runs/multipart` accepts `multipart/form-data` (envelope + N attachments); attachments hashed (sha256), persisted content-addressed under `<disk_buffer>/attachments/<hh>/<hash>`; envelope refs `attachment://<hash>` (loop #6 item 4) |
 | Migration importer (LS export → tb) | ✅ | `tb-migrate-langsmith` CLI streams JSONL/dir/stdin → `/runs/batch` in batches of 100; dry-run validates without posting; per-row parse failures logged with `<file>:<line>` and counted; non-zero exit on any failure (loop #5 item 7) |
 
@@ -75,12 +75,17 @@ Generated 2026-06-03 after the first sidebar pass (8 LangSmith-equivalent surfac
 
 ### SDK + integrations
 
+> **SDKs live in two public sibling repos** — `github.com/tracebility-ai/sdk-python`
+> and `github.com/tracebility-ai/sdk-js`. Each repo holds the native + compat-shim
+> + adapter packages for that language. Versioned + published independently so
+> SDK iteration doesn't pin to core release cadence.
+
 | Feature | Status | Notes |
 |---|---|---|
 | Python SDK (native) | ✅ | `tracebility` package (separate from langsmith-shim); `IngestClient` + `ControlClient` namespaces (runs / threads / datasets / prompts / evals / poll / comparisons / playground); `@trace` + `with span()` decorator/context-manager surface (loop #5 item 10) |
-| JS/TS SDK (native) | ✅ | `packages/sdk-typescript-native/` ships `tracebility` package; `TracebilityClient` with ingest + control namespaces, `trace` + `span` (AsyncLocalStorage-threaded), zero-runtime-deps; smoke 7/7 (loop #6 item 2) |
-| LangSmith-compatible Python shim | ✅ | `tracebility-langsmith-shim` ships `Client` + `@traceable` (sync+async) posting to ingest-api parity endpoints; one-line import migration (loop #4 item 11) |
-| LangSmith-compatible JS shim | ✅ | `packages/sdk-typescript/` ships `Client` + `traceable` (Proxy-free; `AsyncLocalStorage`-threaded parent ids) + `wrapOpenAI` / `wrapAnthropic`; one-line import migration; smoke-tested 8/8 (loop #5 item 6) |
+| JS/TS SDK (native) | ✅ | `github.com/tracebility-ai/sdk-js (tracebility/) ` ships `tracebility` package; `TracebilityClient` with ingest + control namespaces, `trace` + `span` (AsyncLocalStorage-threaded), zero-runtime-deps; smoke 7/7 (loop #6 item 2) |
+| LangSmith-compatible Python shim | ✅ | `tracebility-langsmith` ships `Client` + `@traceable` (sync+async) posting to ingest-api parity endpoints; one-line import migration (loop #4 item 11) |
+| LangSmith-compatible JS shim | ✅ | `github.com/tracebility-ai/sdk-js (tracebility-langsmith/) ` ships `Client` + `traceable` (Proxy-free; `AsyncLocalStorage`-threaded parent ids) + `wrapOpenAI` / `wrapAnthropic`; one-line import migration; smoke-tested 8/8 (loop #5 item 6) |
 | Public-key (browser) feedback SDK | ✅ | `tracebility-feedback-browser` zero-dep TS package; `init({key, endpoint})` + `submit/thumbsUp/thumbsDown`; `credentials: omit`, `keepalive: true`, never throws on net errors; smoke 8/8 (loop #6 item 1) |
 
 ### Self-hosting + ops
@@ -451,10 +456,10 @@ export OTEL_EXPORTER_OTLP_HEADERS=authorization=Bearer\ tk_...
 ## Loop iteration #4 — done (item #11)
 
 ✅ **LangSmith Python shim** —
-`packages/sdk-python/tracebility_langsmith_shim/` ships a drop-in
+`github.com/tracebility-ai/sdk-python (tracebility-langsmith/tracebility_langsmith/) ` ships a drop-in
 compat layer for LangSmith's `Client` + `@traceable` write surface.
 One-line migration: `from langsmith import Client, traceable` →
-`from tracebility_langsmith_shim import Client, traceable`. The
+`from tracebility_langsmith import Client, traceable`. The
 shim honors `LANGSMITH_ENDPOINT` / `LANGCHAIN_ENDPOINT`,
 `LANGSMITH_API_KEY` / `LANGCHAIN_API_KEY`, and `LANGSMITH_PROJECT`
 / `LANGCHAIN_PROJECT` so existing deployments migrate without code
@@ -480,7 +485,7 @@ different shape and pretending otherwise would mask bugs. The
 native tracebility Python SDK (not this shim) is the right surface
 for queries.
 
-Legal/security: the package name is `tracebility-langsmith-shim`,
+Legal/security: the package name is `tracebility-langsmith`,
 NOT `langsmith` — nominative fair use only. The README is explicit
 about non-affiliation.
 
@@ -525,6 +530,55 @@ max_tokens controls, **single vs side-by-side compare** mode (two
 parallel POSTs against different models), per-output card with
 latency + token stats + deep-link to the trace at `/runs/{id}`.
 Cookie-forwarding proxy at `web/src/app/api/playground/runs/route.ts`.
+
+## Loop iteration #7 — done (item #5)
+
+✅ **SDK monorepo split into per-language public repos** —
+The six SDK packages that used to live under `packages/` in the
+core repo are now in two new public-from-day-one repos:
+
+  - `github.com/tracebility-ai/sdk-python` — Apache-2.0
+    - `tracebility` (native; was `sdk-python-native`)
+    - `tracebility-langsmith` (LangSmith compat shim; was
+      `sdk-python` shipping `tracebility-langsmith-shim` —
+      directory + package name aligned, `-shim` suffix
+      dropped because it read awkwardly in install commands)
+    - `tracebility-langchain` (LangChain/LangGraph bridge;
+      was `sdk-python-langchain`)
+  - `github.com/tracebility-ai/sdk-js` — Apache-2.0
+    - `tracebility` (native; was `sdk-typescript-native`)
+    - `tracebility-langsmith` (compat shim; was
+      `sdk-typescript`, `-shim` suffix dropped)
+    - `tracebility-feedback-browser` (was
+      `sdk-feedback-browser`)
+
+Why:
+
+  - **Independent versioning + release cadence.** Core ships
+    a bug fix; SDKs don't have to bump. SDK ships a new
+    method; core doesn't have to tag.
+  - **Public from day one for SDKs, private-by-default for
+    core.** Core stays in this monorepo (currently still
+    public; future-private), SDKs are the public surface.
+  - **Per-language CI.** Python repo only needs uv + ruff +
+    pytest; JS repo only needs pnpm + tsc + vitest. No
+    matrix that knows both toolchains.
+  - **Discoverable.** Anyone landing on
+    `github.com/tracebility-ai` sees `sdk-python` and
+    `sdk-js` as obvious-named siblings of the core. Each
+    has a top-level README mapping the three packages
+    inside.
+  - **Directory name == published package name.** No more
+    `sdk-python-native/` shipping as `tracebility`.
+
+Still in this monorepo: api / ingest-api / ingest-worker /
+operator / helm / migrations / web / docs. Those are the
+deployment artifacts; they're a unit.
+
+`pyproject.toml` workspace and `pnpm-workspace.yaml` no
+longer list any `packages/` members. Service code never
+imported the SDKs (verified by grep before removal), so
+the monorepo build keeps working.
 
 ## Loop iteration #7 — done (item #4)
 
@@ -1001,7 +1055,7 @@ move to `s3://...` without changing the URL or worker contract.
 ## Loop iteration #6 — done (item #3)
 
 ✅ **LangChain / LangGraph callback bridges** —
-`packages/sdk-python-langchain/` ships
+`github.com/tracebility-ai/sdk-python (tracebility-langchain/) ` ships
 `TracebilityCallbackHandler` — a duck-typed handler (no
 `langchain-core` import at module load; handler is dispatched by
 LangChain's `getattr(handler, "on_*")` lookup, so a hard dep would
@@ -1046,8 +1100,8 @@ pyproject.toml.
 ## Loop iteration #6 — done (item #2)
 
 ✅ **Native JS/TS SDK** —
-`packages/sdk-typescript-native/` ships the `tracebility` package
-(distinct from `tracebility-langsmith-shim` which targets compat).
+`github.com/tracebility-ai/sdk-js (tracebility/) ` ships the `tracebility` package
+(distinct from `tracebility-langsmith` which targets compat).
 Mirrors the native Python SDK's surface in TypeScript:
 
   - `IngestClient.submitBatch` / `submitRun` → `POST /v1/runs`
@@ -1117,7 +1171,7 @@ operational from a `docker-compose up` clean install.
 ## Loop iteration #6 — done (item #1)
 
 ✅ **Browser feedback SDK** —
-`packages/sdk-feedback-browser/` ships a zero-dep TS package
+`github.com/tracebility-ai/sdk-js (tracebility-feedback-browser/) ` ships a zero-dep TS package
 (`tracebility-feedback-browser`) that wraps the existing
 `POST /v1/feedback` ingest endpoint. Module surface:
 
@@ -1200,7 +1254,7 @@ demand ÷ implementation cost):
 ## Loop iteration #5 — done (item #10)
 
 ✅ **Native Python SDK** —
-`packages/sdk-python-native/tracebility/` is the tracebility-shaped
+`github.com/tracebility-ai/sdk-python (tracebility/) tracebility/` is the tracebility-shaped
 client, distinct from the LangSmith-shim sibling. The shim mimics
 LangSmith's `Client` / `traceable`; this package's surface is
 "tracebility-native" — different naming, different ergonomics, no
@@ -1366,7 +1420,7 @@ Wired into `pyproject.toml` workspace members; entry point
 ## Loop iteration #5 — done (item #6)
 
 ✅ **JS/TS LangSmith shim** —
-`packages/sdk-typescript/` is the symmetric port of the Python shim:
+`github.com/tracebility-ai/sdk-js (tracebility-langsmith/) ` is the symmetric port of the Python shim:
 `Client` with `createRun` / `updateRun` / `batchIngestRuns`,
 `traceable` wrapper for sync + async functions, and `wrapOpenAI` /
 `wrapAnthropic` Proxy-based vendor SDK wrappers. One-line import
@@ -1374,7 +1428,7 @@ migration:
 
 ```diff
 - import { Client, traceable } from "langsmith";
-+ import { Client, traceable } from "tracebility-langsmith-shim";
++ import { Client, traceable } from "tracebility-langsmith";
 ```
 
 Same env-var contract as the Python side (`LANGSMITH_ENDPOINT` /
@@ -1409,13 +1463,13 @@ vendor wrappers.
 ## Loop iteration #5 — done (item #5)
 
 ✅ **`wrap_openai` / `wrap_anthropic` helpers** —
-`packages/sdk-python/tracebility_langsmith_shim/wrappers.py` adds
+`github.com/tracebility-ai/sdk-python (tracebility-langsmith/tracebility_langsmith/) wrappers.py` adds
 two duck-typed proxies that wrap a vendor SDK client and emit one
 tracebility run per call. Usage:
 
 ```python
 from openai import OpenAI
-from tracebility_langsmith_shim import wrap_openai
+from tracebility_langsmith import wrap_openai
 client = wrap_openai(OpenAI())
 client.chat.completions.create(model="gpt-4o-mini", messages=[...])
 ```
@@ -1601,7 +1655,7 @@ unchanged.
 4. **Bulk actions on runs** (❌) — pair with item 3: tag, add to
    dataset, send to annotation queue.
 5. **`wrap_openai` / `wrap_anthropic`** convenience helpers on
-   `tracebility-langsmith-shim` (❌).
+   `tracebility-langsmith` (❌).
 6. **JS/TS LangSmith shim** (❌) — symmetric port of the Python shim.
 7. **Migration importer** (❌) — LangSmith export JSON → tracebility
    ClickHouse runs; the unblocker for "we already have history".
