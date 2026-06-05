@@ -3,6 +3,10 @@ import {
   ProjectSettingsForm,
   type ProjectSettings,
 } from "@/components/ProjectSettingsClient";
+import {
+  NewProjectButton,
+  type WorkspaceOption,
+} from "@/components/NewProjectButton";
 import { apiGet } from "@/lib/api";
 import { resolveActiveProject } from "@/lib/projects";
 
@@ -18,8 +22,12 @@ export const dynamic = "force-dynamic";
 
 export default async function WorkspacePage() {
   const { active, all, reason } = await resolveActiveProject();
-  const projectsRes = await apiGet<ProjectSettings[]>("/v1/projects");
+  const [projectsRes, wsRes] = await Promise.all([
+    apiGet<ProjectSettings[]>("/v1/projects"),
+    apiGet<WorkspaceOption[]>("/v1/workspaces"),
+  ]);
   const projects = projectsRes.data ?? [];
+  const workspaces = wsRes.data ?? [];
   const activeFull = active
     ? (projects.find((p) => p.id === active.id) ?? null)
     : null;
@@ -34,9 +42,14 @@ export default async function WorkspacePage() {
               ? `${activeFull.slug} · project settings`
               : "no project resolved"
           }
+          right={<NewProjectButton workspaces={workspaces} />}
         />
 
-        <ProjectListCard projects={projects} activeId={active?.id ?? null} />
+        <ProjectListCard
+          projects={projects}
+          activeId={active?.id ?? null}
+          workspaces={workspaces}
+        />
 
         {activeFull ? (
           <SettingsCard project={activeFull} />
@@ -70,18 +83,30 @@ function PageInterior({ children }: { children: React.ReactNode }) {
 function PageHeader({
   title,
   subtitle,
+  right,
 }: {
   title: string;
   subtitle?: string;
+  right?: React.ReactNode;
 }) {
   return (
-    <header style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
-      <h1>{title}</h1>
-      {subtitle ? (
-        <span className="mono" style={{ fontSize: 12, color: "var(--text-3)" }}>
-          {subtitle}
-        </span>
-      ) : null}
+    <header
+      style={{
+        display: "flex",
+        alignItems: "baseline",
+        justifyContent: "space-between",
+        gap: 16,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
+        <h1>{title}</h1>
+        {subtitle ? (
+          <span className="mono" style={{ fontSize: 12, color: "var(--text-3)" }}>
+            {subtitle}
+          </span>
+        ) : null}
+      </div>
+      {right}
     </header>
   );
 }
@@ -89,9 +114,11 @@ function PageHeader({
 function ProjectListCard({
   projects,
   activeId,
+  workspaces,
 }: {
   projects: ProjectSettings[];
   activeId: string | null;
+  workspaces: WorkspaceOption[];
 }) {
   return (
     <section className="card" style={{ overflow: "hidden" }}>
@@ -104,8 +131,19 @@ function ProjectListCard({
         </div>
       </div>
       {projects.length === 0 ? (
-        <div style={{ padding: 32, color: "var(--text-2)" }}>
-          No projects yet — run the setup wizard to create one.
+        <div
+          style={{
+            padding: 32,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "flex-start",
+            gap: 12,
+          }}
+        >
+          <p style={{ margin: 0, color: "var(--text-2)" }}>
+            No projects yet. Create one to start ingesting traces.
+          </p>
+          <NewProjectButton workspaces={workspaces} variant="empty-state" />
         </div>
       ) : (
         <table className="table">

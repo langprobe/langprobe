@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 import type { Project } from "@/lib/projects";
@@ -21,7 +22,17 @@ export function ProjectSwitcher({
 
   if (projects.length === 0) {
     return (
-      <span style={{ color: "var(--text-3)", fontSize: 13 }}>no projects</span>
+      <Link
+        href="/workspace"
+        style={{
+          color: "var(--link)",
+          fontSize: 13,
+          textDecoration: "none",
+        }}
+        title="create your first project"
+      >
+        + create project
+      </Link>
     );
   }
 

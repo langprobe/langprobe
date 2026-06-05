@@ -26,6 +26,7 @@ from .routers import (
     feedback,
     feedback_keys,
     health,
+    llm_credentials,
     luna_judges,
     members,
     metrics,
@@ -139,6 +140,7 @@ def create_app() -> FastAPI:
     app.include_router(saved_views.router)
     app.include_router(run_actions.router)
     app.include_router(luna_judges.router)
+    app.include_router(llm_credentials.router)
     app.include_router(sso_router.router)
     app.include_router(scim.router)
     app.include_router(scim.admin_router)

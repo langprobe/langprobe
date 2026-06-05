@@ -359,6 +359,7 @@ async def apply_luna_judge(
     input_text: str,
     expected: str,
     output_text: str | None = None,
+    api_key: str | None = None,
 ) -> tuple[float, str, str, str]:
     """Run the prompted judge once.
 
@@ -383,6 +384,7 @@ async def apply_luna_judge(
             prompt=rendered,
             temperature=judge_row.get("temperature"),
             max_tokens=int(judge_row.get("max_tokens") or 512),
+            api_key=api_key,
         )
     except Exception as exc:  # noqa: BLE001
         log.warning(
@@ -495,6 +497,7 @@ async def _dispatch(
     prompt: str,
     temperature: float | None,
     max_tokens: int,
+    api_key: str | None = None,
 ) -> dict[str, Any]:
     if provider == "stub":
         # Deterministic stub for tests + smoke. Returns "score: 1.0\n
@@ -506,11 +509,11 @@ async def _dispatch(
         }
     if provider == "anthropic":
         return await asyncio.to_thread(
-            _call_anthropic, model, prompt, temperature, max_tokens
+            _call_anthropic, model, prompt, temperature, max_tokens, api_key
         )
     if provider == "openai":
         return await asyncio.to_thread(
-            _call_openai, model, prompt, temperature, max_tokens
+            _call_openai, model, prompt, temperature, max_tokens, api_key
         )
     raise RuntimeError(f"unsupported provider {provider}")
 
@@ -520,10 +523,14 @@ def _call_anthropic(
     prompt: str,
     temperature: float | None,
     max_tokens: int,
+    api_key: str | None = None,
 ) -> dict[str, Any]:
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    api_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
-        raise RuntimeError("ANTHROPIC_API_KEY not configured on api service")
+        raise RuntimeError(
+            "no anthropic credential resolved "
+            "(workspace_llm_credential or ANTHROPIC_API_KEY)"
+        )
     body: dict[str, Any] = {
         "model": model.removeprefix("anthropic/"),
         "max_tokens": max_tokens,
@@ -567,10 +574,14 @@ def _call_openai(
     prompt: str,
     temperature: float | None,
     max_tokens: int,
+    api_key: str | None = None,
 ) -> dict[str, Any]:
-    api_key = os.environ.get("OPENAI_API_KEY")
+    api_key = api_key or os.environ.get("OPENAI_API_KEY")
     if not api_key:
-        raise RuntimeError("OPENAI_API_KEY not configured on api service")
+        raise RuntimeError(
+            "no openai credential resolved "
+            "(workspace_llm_credential or OPENAI_API_KEY)"
+        )
     body: dict[str, Any] = {
         "model": model.removeprefix("openai/"),
         "max_tokens": max_tokens,

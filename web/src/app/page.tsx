@@ -1,5 +1,9 @@
 import Link from "next/link";
 import { Shell } from "@/components/Shell";
+import {
+  NewProjectButton,
+  type WorkspaceOption,
+} from "@/components/NewProjectButton";
 import { apiGet } from "@/lib/api";
 import { resolveActiveProject, type Project } from "@/lib/projects";
 
@@ -50,11 +54,16 @@ const WINDOW_SECONDS = 3600;
 export default async function OverviewPage() {
   const { active, all, reason } = await resolveActiveProject();
   if (!active) {
+    // Pre-fetch workspaces so the "create your first project" CTA in
+    // the empty state actually has somewhere to put the project.
+    // Falls back to an empty list if the user isn't authenticated yet.
+    const wsRes = await apiGet<WorkspaceOption[]>("/v1/workspaces");
+    const workspaces = wsRes.data ?? [];
     return (
       <Shell active={null} projects={all}>
         <PageInterior>
           <PageHeader title="Overview" subtitle="last 1h" />
-          <UnconfiguredState reason={reason} />
+          <UnconfiguredState reason={reason} workspaces={workspaces} />
         </PageInterior>
       </Shell>
     );
@@ -302,21 +311,79 @@ function RunsCard({
   );
 }
 
-function UnconfiguredState({ reason }: { reason: string | null }) {
+function UnconfiguredState({
+  reason,
+  workspaces,
+}: {
+  reason: string | null;
+  workspaces: WorkspaceOption[];
+}) {
+  // Three distinct cases land here, and each needs a different CTA:
+  //   1) Not authenticated → reason='not authenticated'; we send to login.
+  //   2) Authenticated, no workspaces → wizard / invite path.
+  //   3) Authenticated with a workspace, no projects → CREATE project here.
+  // Most pre-launch users hit case 3; that's the path that makes the
+  // app usable end-to-end without the operator running curl.
+  const isNotAuth = reason === "not authenticated";
+  const hasWorkspace = workspaces.length > 0;
+
   return (
-    <div className="card card-pad-lg">
-      <h2 style={{ marginBottom: 8 }}>No project resolved</h2>
-      <p style={{ color: "var(--text-2)", lineHeight: 1.55, margin: 0 }}>
-        Run the setup wizard, then point your SDK at this API. See{" "}
-        <a href="https://github.com/gaurav0107/tracebility/blob/main/docs/getting-started.md">
-          docs/getting-started.md
-        </a>
-        .
-      </p>
+    <div className="card card-pad-lg" style={{ display: "grid", gap: 16 }}>
+      <div>
+        <h2 style={{ marginBottom: 8 }}>
+          {isNotAuth
+            ? "Sign in to start"
+            : hasWorkspace
+              ? "Create your first project"
+              : "Run the setup wizard"}
+        </h2>
+        <p style={{ color: "var(--text-2)", lineHeight: 1.55, margin: 0 }}>
+          {isNotAuth ? (
+            <>
+              tracebility uses a session cookie. Run the setup wizard if
+              you haven't already, then sign in.
+            </>
+          ) : hasWorkspace ? (
+            <>
+              A project is the unit of tenancy: every trace, eval, and
+              dataset belongs to one. Create one to start ingesting data.
+              You can add more later from <Link href="/workspace">workspace settings</Link>.
+            </>
+          ) : (
+            <>
+              Run the setup wizard to create the root account and
+              workspace. See{" "}
+              <a href="https://github.com/gaurav0107/tracebility/blob/main/docs/getting-started.md">
+                docs/getting-started.md
+              </a>
+              .
+            </>
+          )}
+        </p>
+      </div>
+
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        {hasWorkspace && !isNotAuth ? (
+          <NewProjectButton workspaces={workspaces} variant="empty-state" />
+        ) : null}
+        {isNotAuth ? (
+          <Link href="/login" className="btn btn-primary">
+            Sign in
+          </Link>
+        ) : null}
+        <Link
+          href="https://github.com/gaurav0107/tracebility/blob/main/docs/getting-started.md"
+          className="btn btn-ghost"
+          style={{ fontSize: 12 }}
+        >
+          Getting started →
+        </Link>
+      </div>
+
       {reason ? (
         <p
           className="mono"
-          style={{ marginTop: 12, fontSize: 11, color: "var(--text-3)" }}
+          style={{ marginTop: 0, fontSize: 11, color: "var(--text-3)" }}
         >
           ({reason})
         </p>

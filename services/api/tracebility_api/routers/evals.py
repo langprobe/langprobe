@@ -35,7 +35,7 @@ from pydantic import BaseModel, Field
 from .. import audit
 from ..auth import Principal, assert_workspace_role, require_user
 from ..clickhouse_client import ClickHouseQuery
-from . import luna_judges
+from . import llm_credentials, luna_judges
 
 log = structlog.get_logger("tracebility.api.evals")
 
@@ -305,6 +305,7 @@ async def _run_eval(
         # doesn't re-hit postgres on every iteration.
         base_kind, luna_slug = luna_judges.parse_judge_kind(run["judge_kind"])
         luna_row: dict[str, Any] | None = None
+        luna_api_key: str | None = None
         if luna_slug is not None:
             luna_row = await luna_judges.resolve_judge(
                 pool, run["project_id"], luna_slug
@@ -314,6 +315,13 @@ async def _run_eval(
                     pool, run_id, f"luna judge '{luna_slug}' not found",
                 )
                 return
+            ws_id = await pool.fetchval(
+                "select workspace_id from project where id = $1",
+                run["project_id"],
+            )
+            luna_api_key = await llm_credentials.resolve_secret(
+                pool, workspace_id=ws_id, provider=luna_row["provider"]
+            )
 
         rows: list[tuple[Any, ...]] = []
         score_sum = 0.0
@@ -325,6 +333,7 @@ async def _run_eval(
                         luna_row,
                         input_text=item["input"],
                         expected=item["expected"],
+                        api_key=luna_api_key,
                     )
                 )
                 judge_endpoint = luna_row["provider"]

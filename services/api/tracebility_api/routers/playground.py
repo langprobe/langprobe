@@ -49,6 +49,7 @@ from pydantic import BaseModel, Field
 from .. import audit
 from ..auth import Principal, assert_workspace_role, require_user
 from ..clickhouse_client import ClickHouseQuery
+from . import llm_credentials
 
 log = structlog.get_logger("tracebility.api.playground")
 
@@ -216,6 +217,12 @@ async def create_session(
     )
 
     # Execute the LLM call. Failure modes captured into the session row.
+    # Resolve the api key from the workspace credential store first
+    # (falls back to env in resolve_secret); pass it through so the
+    # provider call sites stay free of env/db lookup logic.
+    api_key = await llm_credentials.resolve_secret(
+        pool, workspace_id=workspace_id, provider=provider
+    )
     try:
         result = await _dispatch(
             provider=provider,
@@ -223,6 +230,7 @@ async def create_session(
             prompt=rendered,
             temperature=body.temperature,
             max_tokens=body.max_tokens or _DEFAULT_MAX_TOKENS,
+            api_key=api_key,
         )
         latency_ms = int((time.monotonic() - started) * 1000)
         run_id = str(uuid.uuid4())
@@ -394,6 +402,7 @@ async def _dispatch(
     prompt: str,
     temperature: float | None,
     max_tokens: int,
+    api_key: str | None = None,
 ) -> dict[str, Any]:
     if provider == "stub":
         return {
@@ -403,11 +412,11 @@ async def _dispatch(
         }
     if provider == "anthropic":
         return await asyncio.to_thread(
-            _call_anthropic, model, prompt, temperature, max_tokens
+            _call_anthropic, model, prompt, temperature, max_tokens, api_key
         )
     if provider == "openai":
         return await asyncio.to_thread(
-            _call_openai, model, prompt, temperature, max_tokens
+            _call_openai, model, prompt, temperature, max_tokens, api_key
         )
     raise HTTPException(
         status.HTTP_400_BAD_REQUEST, f"unsupported provider {provider}"
@@ -426,10 +435,14 @@ def _call_anthropic(
     prompt: str,
     temperature: float | None,
     max_tokens: int,
+    api_key: str | None = None,
 ) -> dict[str, Any]:
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    api_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
-        raise RuntimeError("ANTHROPIC_API_KEY not configured on api service")
+        raise RuntimeError(
+            "no anthropic credential resolved "
+            "(workspace_llm_credential or ANTHROPIC_API_KEY)"
+        )
     body = {
         "model": model.removeprefix("anthropic/"),
         "max_tokens": max_tokens,
@@ -473,10 +486,14 @@ def _call_openai(
     prompt: str,
     temperature: float | None,
     max_tokens: int,
+    api_key: str | None = None,
 ) -> dict[str, Any]:
-    api_key = os.environ.get("OPENAI_API_KEY")
+    api_key = api_key or os.environ.get("OPENAI_API_KEY")
     if not api_key:
-        raise RuntimeError("OPENAI_API_KEY not configured on api service")
+        raise RuntimeError(
+            "no openai credential resolved "
+            "(workspace_llm_credential or OPENAI_API_KEY)"
+        )
     body: dict[str, Any] = {
         "model": model.removeprefix("openai/"),
         "max_tokens": max_tokens,
