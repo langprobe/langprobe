@@ -64,6 +64,7 @@ Generated 2026-06-03 after the first sidebar pass (8 LangSmith-equivalent surfac
 
 | Feature | Status | Notes |
 |---|---|---|
+| Public OAuth signup (Google + GitHub) | ✅ | `/v1/auth/oauth/{google,github}/{start,callback}` — PKCE round-trip via `oauth_state`; auto-provisions `app_user` + personal `org` + `workspace` + `default` project on first signup; configured at deploy via `OAUTH_*_CLIENT_ID/SECRET`; `/login` + `/signup` UI (loop #7 item 4) |
 | API keys (list/create/revoke) | ✅ | full CRUD + reveal-once + audit |
 | Workspace settings | ✅ | sample, PII, RCA mode, cost ceiling |
 | Members RBAC backend | ✅ | owner/admin/member enforced |
@@ -524,6 +525,82 @@ max_tokens controls, **single vs side-by-side compare** mode (two
 parallel POSTs against different models), per-output card with
 latency + token stats + deep-link to the trace at `/runs/{id}`.
 Cookie-forwarding proxy at `web/src/app/api/playground/runs/route.ts`.
+
+## Loop iteration #7 — done (item #4)
+
+✅ **Public OAuth signup/login (Google + GitHub)** —
+End-user-onboarding path that closes the gap between "operator
+runs `/v1/setup` from a curl" and "anyone can self-onboard from
+the UI". Intentionally separate from the existing per-workspace
+OIDC SSO (which is corporate-IdP, workspace-admin-controlled);
+this is operator-config-controlled at the env-var level.
+
+Backend:
+
+  - `schemas/postgres/migrations/0022_oauth_signup.sql` adds
+    `oauth_state` (state + provider + PKCE verifier + redirect_uri
+    + intent + return_to + expires_at). Mirrors the storage shape
+    of `sso_state` so a future provider that reuses the same
+    pattern (Microsoft/Apple/etc.) slots in without a new table.
+  - `services/api/tracebility_api/routers/oauth_signup.py`
+    exposes `/v1/auth/oauth/{providers,google/start,google/callback,
+    github/start,github/callback}`. PKCE-S256 generated even where
+    not strictly required (GitHub) so the storage shape is uniform.
+    Token exchange + userinfo are stdlib `urllib` (no httpx dep).
+  - User resolution: match by email first; if matched, refresh
+    `external_idp` and `last_login_at` (only when password_hash is
+    null — we don't downgrade password accounts to OAuth-only).
+    If no match, auto-provision: insert `app_user` + create a
+    personal `org` ("`<display>`'s workspace") + `workspace` +
+    `default` project, with the user as owner/admin. Slug is
+    derived from the email local-part with a short hash if taken.
+  - `app_user.external_idp = 'oauth:google'` / `'oauth:github'`
+    distinguishes from the per-workspace OIDC SSO path which sets
+    `external_idp = 'oidc'`.
+  - Audit-fail-closed (ER-10): `oauth.signup` for first-time, or
+    `oauth.login` for returning, with the provider + email +
+    intent on the payload.
+  - Settings: `OAUTH_GOOGLE_CLIENT_ID/SECRET`,
+    `OAUTH_GITHUB_CLIENT_ID/SECRET`, `OAUTH_REDIRECT_BASE`,
+    `TRACEBILITY_WEB_BASE_URL`. All optional; missing
+    client_id/secret → that provider 503s and the UI hides the
+    button.
+
+Frontend:
+
+  - `web/src/app/login/page.tsx` and `web/src/app/signup/page.tsx`
+    are server components that hit `/v1/auth/oauth/providers` and
+    render only the configured "Continue with X" buttons.
+    `/login` also exposes the email + password form for the root
+    account from the setup wizard. `/signup` exposes only OAuth
+    (no self-service password signup yet — that's later).
+  - `web/src/components/AuthClient.tsx` has the form + buttons +
+    a `LogoutLink` (used by `Shell.tsx` once a user is signed in).
+  - `web/src/components/Shell.tsx` is now an async server
+    component that fetches `/v1/auth/me`. The sidebar footer
+    shows the real email + role + a "sign out" button when
+    signed-in, or `Sign in / Sign up` links when not.
+  - Cookie-forwarding proxies at `/api/auth/login`,
+    `/api/auth/logout`, `/api/auth/oauth/providers`. The OAuth
+    `start` flow is a top-level navigation directly to the api
+    (302 to the IdP), so it intentionally does NOT go through
+    a Next.js proxy.
+
+Why this matters: until now the only way to create an account on
+a self-hosted tracebility was the operator hitting `/v1/setup`.
+That works for single-tenant self-host but not for "share a
+deployment with the team". OAuth signup is the bridge: anyone
+with a Google or GitHub account can self-onboard, lands on a
+provisioned personal workspace, and starts ingesting traces in
+minutes. Workspace SSO (the existing OIDC path at
+`/workspace/sso`) is left as scope for later corporate rollouts.
+
+Out of scope (deliberate, scope-for-later):
+  - SAML — workspace_sso_config could grow it, deferred.
+  - Magic-link email — needs SMTP wiring.
+  - MFA / passkeys — deferred behind real account-management UX.
+  - Self-service email+password signup — `/v1/setup` stays the
+    bootstrap path; password reset / change-email flow not yet.
 
 ## Loop iteration #7 — done (item #3)
 

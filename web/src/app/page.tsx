@@ -332,7 +332,7 @@ function UnconfiguredState({
       <div>
         <h2 style={{ marginBottom: 8 }}>
           {isNotAuth
-            ? "Sign in to start"
+            ? "Create your account"
             : hasWorkspace
               ? "Create your first project"
               : "Run the setup wizard"}
@@ -340,8 +340,9 @@ function UnconfiguredState({
         <p style={{ color: "var(--text-2)", lineHeight: 1.55, margin: 0 }}>
           {isNotAuth ? (
             <>
-              tracebility uses a session cookie. Run the setup wizard if
-              you haven't already, then sign in.
+              Sign up with Google or GitHub — we&apos;ll auto-provision a
+              personal workspace and first project so you can start sending
+              traces in minutes. Already have an account? Sign in.
             </>
           ) : hasWorkspace ? (
             <>
@@ -367,9 +368,14 @@ function UnconfiguredState({
           <NewProjectButton workspaces={workspaces} variant="empty-state" />
         ) : null}
         {isNotAuth ? (
-          <Link href="/login" className="btn btn-primary">
-            Sign in
-          </Link>
+          <>
+            <Link href="/signup" className="btn btn-primary">
+              Create account
+            </Link>
+            <Link href="/login" className="btn btn-ghost" style={{ fontSize: 12 }}>
+              Sign in
+            </Link>
+          </>
         ) : null}
         <Link
           href="https://github.com/gaurav0107/tracebility/blob/main/docs/getting-started.md"

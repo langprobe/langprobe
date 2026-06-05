@@ -93,6 +93,18 @@ services:
       TRACEBILITY_API_BIND_PORT: "7081"
       TRACEBILITY_CORS_ALLOW_ORIGIN: ${WEB_ORIGIN:-http://localhost:7090}
       TRACEBILITY_LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      TRACEBILITY_WEB_BASE_URL: ${WEB_ORIGIN:-http://localhost:7090}
+      # Public OAuth signup (Google + GitHub). All four are optional; if
+      # the {provider}_CLIENT_ID + _CLIENT_SECRET pair is unset, that
+      # provider's "Continue with X" button is hidden in the UI and
+      # the start endpoint 503s. OAUTH_REDIRECT_BASE is the
+      # externally-reachable origin of the api service (callback URL
+      # the IdP receives is `<base>/v1/auth/oauth/<provider>/callback`).
+      OAUTH_GOOGLE_CLIENT_ID: ${OAUTH_GOOGLE_CLIENT_ID:-}
+      OAUTH_GOOGLE_CLIENT_SECRET: ${OAUTH_GOOGLE_CLIENT_SECRET:-}
+      OAUTH_GITHUB_CLIENT_ID: ${OAUTH_GITHUB_CLIENT_ID:-}
+      OAUTH_GITHUB_CLIENT_SECRET: ${OAUTH_GITHUB_CLIENT_SECRET:-}
+      OAUTH_REDIRECT_BASE: ${OAUTH_REDIRECT_BASE:-http://localhost:7081}
     ports:
       - "7081:7081"
     depends_on:

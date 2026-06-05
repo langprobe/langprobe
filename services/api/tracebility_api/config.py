@@ -22,6 +22,20 @@ class Settings:
     bind_port: int = 7081
     log_level: str = "INFO"
     cors_allow_origin: str = "http://localhost:7090"
+    # Public OAuth signup (Google + GitHub) — separate from
+    # per-workspace OIDC SSO. Either provider unset → that "Continue
+    # with X" button is hidden in the UI and the start endpoint 503s.
+    # `oauth_redirect_base` is the externally-reachable origin of the
+    # api service; the callback URL given to the IdP is
+    # `<oauth_redirect_base>/v1/auth/oauth/<provider>/callback`. In
+    # docker-compose dev, this is http://localhost:7081; behind a
+    # reverse proxy, set it to the public https origin.
+    oauth_google_client_id: str | None = None
+    oauth_google_client_secret: str | None = None
+    oauth_github_client_id: str | None = None
+    oauth_github_client_secret: str | None = None
+    oauth_redirect_base: str = "http://localhost:7081"
+    web_base_url: str = "http://localhost:7090"
 
 
 def load() -> Settings:
@@ -48,5 +62,15 @@ def load() -> Settings:
         log_level=os.environ.get("TRACEBILITY_LOG_LEVEL", "INFO"),
         cors_allow_origin=os.environ.get(
             "TRACEBILITY_CORS_ALLOW_ORIGIN", "http://localhost:7090"
+        ),
+        oauth_google_client_id=os.environ.get("OAUTH_GOOGLE_CLIENT_ID") or None,
+        oauth_google_client_secret=os.environ.get("OAUTH_GOOGLE_CLIENT_SECRET") or None,
+        oauth_github_client_id=os.environ.get("OAUTH_GITHUB_CLIENT_ID") or None,
+        oauth_github_client_secret=os.environ.get("OAUTH_GITHUB_CLIENT_SECRET") or None,
+        oauth_redirect_base=os.environ.get(
+            "OAUTH_REDIRECT_BASE", "http://localhost:7081"
+        ),
+        web_base_url=os.environ.get(
+            "TRACEBILITY_WEB_BASE_URL", "http://localhost:7090"
         ),
     )

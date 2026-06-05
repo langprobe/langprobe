@@ -15,11 +15,19 @@
 import { Search } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { LogoutLink } from "@/components/AuthClient";
+import { apiGet } from "@/lib/api";
 import type { Project } from "@/lib/projects";
 import { ProjectSwitcher } from "./ProjectSwitcher";
 import { SidebarNav } from "./SidebarNav";
 
-export function Shell({
+interface MeResponse {
+  user_id: string;
+  email: string;
+  is_root: boolean;
+}
+
+export async function Shell({
   children,
   active,
   projects,
@@ -32,6 +40,8 @@ export function Shell({
   crumbs?: ReactNode;
   inspector?: ReactNode;
 }) {
+  const meRes = await apiGet<MeResponse>("/v1/auth/me");
+  const me = meRes.data;
   return (
     <div
       style={{
@@ -44,7 +54,7 @@ export function Shell({
       }}
     >
       <Topbar crumbs={crumbs} active={active} />
-      <Sidebar active={active} projects={projects} />
+      <Sidebar active={active} projects={projects} me={me} />
       <main
         style={{
           gridArea: "main",
@@ -157,9 +167,11 @@ function SearchBox() {
 function Sidebar({
   active,
   projects,
+  me,
 }: {
   active: Project | null;
   projects: Project[];
+  me: MeResponse | null;
 }) {
   return (
     <aside
@@ -200,12 +212,41 @@ function Sidebar({
 
       <div style={{ flex: 1 }} />
 
-      <SidebarFooter />
+      <SidebarFooter me={me} />
     </aside>
   );
 }
 
-function SidebarFooter() {
+function SidebarFooter({ me }: { me: MeResponse | null }) {
+  if (me === null) {
+    return (
+      <div
+        style={{
+          padding: 12,
+          borderTop: "1px solid var(--border)",
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+        }}
+      >
+        <Link
+          href="/login"
+          className="btn btn-primary"
+          style={{ fontSize: 12, flex: 1, justifyContent: "center" }}
+        >
+          Sign in
+        </Link>
+        <Link
+          href="/signup"
+          className="btn btn-ghost"
+          style={{ fontSize: 12 }}
+        >
+          Sign up
+        </Link>
+      </div>
+    );
+  }
+  const initial = (me.email || "?").charAt(0).toLowerCase();
   return (
     <div
       style={{
@@ -231,23 +272,38 @@ function SidebarFooter() {
           fontWeight: 500,
         }}
       >
-        m
+        {initial}
       </span>
-      <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
-        <span style={{ fontSize: 13, color: "var(--text)" }}>self-hosted</span>
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          minWidth: 0,
+          flex: 1,
+        }}
+      >
         <span
-          className="mono"
           style={{
-            fontSize: 11,
-            color: "var(--text-3)",
+            fontSize: 13,
+            color: "var(--text)",
             overflow: "hidden",
             textOverflow: "ellipsis",
             whiteSpace: "nowrap",
           }}
         >
-          tracability.local
+          {me.email}
+        </span>
+        <span
+          className="mono"
+          style={{
+            fontSize: 11,
+            color: "var(--text-3)",
+          }}
+        >
+          {me.is_root ? "root" : "member"}
         </span>
       </div>
+      <LogoutLink />
     </div>
   );
 }
