@@ -1,0 +1,407 @@
+"use client";
+
+import { Copy, Plus, Trash2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useState, useTransition } from "react";
+
+/**
+ * Workspace LLM credentials — list, create (reveal-once), revoke.
+ *
+ * Reveal-once: the server only echoes the plaintext on the POST
+ * response. We render a one-shot reveal modal after creation so the
+ * operator can copy the secret; navigating away or re-opening the
+ * page never shows it again. Same pattern as api_keys.
+ *
+ * Provider routing: every LLM-dispatching surface (playground,
+ * luna prompted-judges, comparisons, studio) reads from this store
+ * via `resolve_secret(workspace_id, provider)` with env fallback.
+ * So once you save an anthropic key here, the playground stops
+ * needing ANTHROPIC_API_KEY in the api service env.
+ */
+
+export interface LLMCredentialRow {
+  id: string;
+  workspace_id: string;
+  provider: "anthropic" | "openai";
+  name: string;
+  secret_last4: string;
+  created_at: string;
+  updated_at: string;
+  revoked_at: string | null;
+}
+
+const PROVIDERS: { value: LLMCredentialRow["provider"]; label: string; hint: string }[] = [
+  { value: "anthropic", label: "Anthropic", hint: "sk-ant-* keys for Claude" },
+  { value: "openai", label: "OpenAI", hint: "sk-proj-* / sk-* keys for GPT and o-series" },
+];
+
+// ---------------------------------------------------------------------------
+// New-credential modal
+// ---------------------------------------------------------------------------
+
+export function NewLLMCredentialButton({
+  workspaceId,
+}: {
+  workspaceId: string;
+}) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [provider, setProvider] = useState<LLMCredentialRow["provider"]>("anthropic");
+  const [name, setName] = useState("default");
+  const [secret, setSecret] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+  const [revealed, setRevealed] = useState<{
+    plaintext: string;
+    provider: string;
+    name: string;
+  } | null>(null);
+
+  function reset() {
+    setOpen(false);
+    setProvider("anthropic");
+    setName("default");
+    setSecret("");
+    setError(null);
+  }
+
+  function submit() {
+    setError(null);
+    if (!secret.trim()) {
+      setError("paste the provider key first");
+      return;
+    }
+    startTransition(async () => {
+      const res = await fetch(
+        `/api/llm-credentials?workspace_id=${encodeURIComponent(workspaceId)}`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            provider,
+            name: name.trim() || "default",
+            secret,
+          }),
+        },
+      );
+      if (!res.ok && res.status !== 201) {
+        let body: unknown;
+        try {
+          body = await res.json();
+        } catch {
+          body = null;
+        }
+        const detail =
+          body && typeof body === "object" && "detail" in body
+            ? String((body as { detail: unknown }).detail)
+            : `request failed (${res.status})`;
+        setError(detail);
+        return;
+      }
+      try {
+        const json = (await res.json()) as {
+          plaintext?: string;
+          provider?: string;
+          name?: string;
+        };
+        if (json.plaintext) {
+          setRevealed({
+            plaintext: json.plaintext,
+            provider: json.provider ?? provider,
+            name: json.name ?? name,
+          });
+        }
+      } catch {
+        // server didn't return the plaintext shape — recover by just
+        // closing; the row exists, the operator can revoke + re-create.
+      }
+      reset();
+      router.refresh();
+    });
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        className="btn btn-primary"
+        onClick={() => setOpen(true)}
+      >
+        <Plus size={14} /> Add credential
+      </button>
+      {open ? (
+        <div
+          role="dialog"
+          aria-modal
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(10,10,10,0.40)",
+            display: "flex",
+            alignItems: "flex-start",
+            justifyContent: "center",
+            padding: "8vh 16px",
+            zIndex: 50,
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) reset();
+          }}
+        >
+          <div
+            className="card card-pad-lg"
+            style={{ width: "min(560px, 100%)", display: "grid", gap: 12 }}
+          >
+            <header
+              style={{
+                display: "flex",
+                alignItems: "baseline",
+                justifyContent: "space-between",
+              }}
+            >
+              <h2 style={{ margin: 0 }}>Add LLM credential</h2>
+              <button type="button" className="btn btn-ghost" onClick={reset}>
+                cancel
+              </button>
+            </header>
+            <Field label="Provider">
+              <select
+                value={provider}
+                onChange={(e) =>
+                  setProvider(e.target.value as LLMCredentialRow["provider"])
+                }
+              >
+                {PROVIDERS.map((p) => (
+                  <option key={p.value} value={p.value}>
+                    {p.label} — {p.hint}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Name" hint="e.g. 'prod', 'staging'; lets you have multiple keys per provider">
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="default"
+              />
+            </Field>
+            <Field
+              label="Secret"
+              hint="paste the full key — we hash + store, then reveal once on save"
+            >
+              <input
+                value={secret}
+                onChange={(e) => setSecret(e.target.value)}
+                placeholder={
+                  provider === "anthropic" ? "sk-ant-…" : "sk-proj-…"
+                }
+                type="password"
+              />
+            </Field>
+            {error ? (
+              <p
+                className="mono"
+                style={{ color: "var(--danger)", margin: 0, fontSize: 12 }}
+              >
+                {error}
+              </p>
+            ) : null}
+            <footer
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: 8,
+                marginTop: 4,
+              }}
+            >
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={submit}
+                disabled={pending}
+              >
+                {pending ? "saving…" : "Save credential"}
+              </button>
+            </footer>
+          </div>
+        </div>
+      ) : null}
+      {revealed ? (
+        <RevealOnceModal
+          revealed={revealed}
+          onClose={() => setRevealed(null)}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function RevealOnceModal({
+  revealed,
+  onClose,
+}: {
+  revealed: { plaintext: string; provider: string; name: string };
+  onClose: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div
+      role="dialog"
+      aria-modal
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(10,10,10,0.40)",
+        display: "flex",
+        alignItems: "flex-start",
+        justifyContent: "center",
+        padding: "8vh 16px",
+        zIndex: 60,
+      }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        className="card card-pad-lg"
+        style={{ width: "min(560px, 100%)", display: "grid", gap: 12 }}
+      >
+        <header>
+          <h2 style={{ margin: 0 }}>Credential saved</h2>
+          <p
+            style={{
+              color: "var(--text-2)",
+              margin: "4px 0 0",
+              fontSize: 13,
+              lineHeight: 1.55,
+            }}
+          >
+            <strong>{revealed.provider}</strong> credential{" "}
+            <span className="mono">{revealed.name}</span> is now active. The
+            server stores a hash; this is the last time you'll see the
+            plaintext. Copy it now.
+          </p>
+        </header>
+        <pre
+          className="mono"
+          style={{
+            margin: 0,
+            padding: 12,
+            background: "var(--surface-2)",
+            borderRadius: 8,
+            fontSize: 12,
+            wordBreak: "break-all",
+            whiteSpace: "pre-wrap",
+          }}
+        >
+          {revealed.plaintext}
+        </pre>
+        <footer style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(revealed.plaintext);
+                setCopied(true);
+                setTimeout(() => setCopied(false), 1500);
+              } catch {
+                // clipboard denied; user can select the pre block manually
+              }
+            }}
+            style={{ fontSize: 12 }}
+          >
+            <Copy size={13} /> {copied ? "copied" : "copy"}
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={onClose}
+            style={{ fontSize: 12 }}
+          >
+            done
+          </button>
+        </footer>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Per-row revoke button
+// ---------------------------------------------------------------------------
+
+export function RevokeLLMCredentialButton({
+  credentialId,
+  label,
+}: {
+  credentialId: string;
+  label: string;
+}) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  function submit() {
+    setError(null);
+    const ok = window.confirm(
+      `Revoke ${label}? Existing in-flight calls keep their key; ` +
+        "new dispatches use the next active credential or env fallback.",
+    );
+    if (!ok) return;
+    startTransition(async () => {
+      const res = await fetch(`/api/llm-credentials/${credentialId}`, {
+        method: "DELETE",
+      });
+      if (!res.ok && res.status !== 204) {
+        setError(`revoke failed (${res.status})`);
+        return;
+      }
+      router.refresh();
+    });
+  }
+
+  return (
+    <button
+      type="button"
+      className="btn btn-ghost"
+      style={{ fontSize: 12, gap: 4, color: "var(--danger)" }}
+      onClick={submit}
+      disabled={pending}
+      title={error ?? "revoke credential"}
+    >
+      <Trash2 size={14} />
+      {pending ? "…" : "revoke"}
+    </button>
+  );
+}
+
+function Field({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label style={{ display: "grid", gap: 4 }}>
+      <span
+        style={{
+          fontSize: 11,
+          color: "var(--text-3)",
+          textTransform: "uppercase",
+          letterSpacing: 0.4,
+        }}
+      >
+        {label}
+      </span>
+      {children}
+      {hint ? (
+        <span className="mono" style={{ fontSize: 11, color: "var(--text-3)" }}>
+          {hint}
+        </span>
+      ) : null}
+    </label>
+  );
+}

@@ -38,7 +38,7 @@ from pydantic import BaseModel, Field
 from .. import audit
 from ..auth import Principal, assert_workspace_role, require_user
 from ..clickhouse_client import ClickHouseQuery
-from . import luna_judges
+from . import llm_credentials, luna_judges
 from .evals import _judge  # reuse the built-in deterministic judge bench
 
 log = structlog.get_logger("tracebility.api.poll_runs")
@@ -342,6 +342,8 @@ async def _run_poll(
         # Resolve any luna judges once up-front; abort with an honest
         # error if a slug went missing between create and run.
         luna_rows: dict[str, dict[str, Any]] = {}
+        luna_keys: dict[str, str | None] = {}
+        ws_id_for_creds: Any = None
         for judge in judges:
             base, slug = luna_judges.parse_judge_kind(judge)
             if slug is not None:
@@ -356,6 +358,16 @@ async def _run_poll(
                     )
                     return
                 luna_rows[judge] = row
+                if ws_id_for_creds is None:
+                    ws_id_for_creds = await pool.fetchval(
+                        "select workspace_id from project where id = $1",
+                        poll["project_id"],
+                    )
+                luna_keys[judge] = await llm_credentials.resolve_secret(
+                    pool,
+                    workspace_id=ws_id_for_creds,
+                    provider=row["provider"],
+                )
 
         items = await _fetch_dataset_items(
             ch, poll["project_id"], poll["dataset_id"]
@@ -378,6 +390,7 @@ async def _run_poll(
                             luna_row,
                             input_text=item["input"],
                             expected=item["expected"],
+                            api_key=luna_keys.get(judge),
                         )
                     )
                     judge_endpoint = luna_row["provider"]

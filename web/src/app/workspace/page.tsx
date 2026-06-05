@@ -57,6 +57,7 @@ export default async function WorkspacePage() {
           <UnconfiguredState reason={reason} />
         )}
 
+        <SubpageLinksCard />
         <RetentionCard />
         <DangerCard />
       </PageInterior>
@@ -240,6 +241,85 @@ function RetentionCard() {
         the UI to prevent accidental data loss.
       </p>
     </section>
+  );
+}
+
+function SubpageLinksCard() {
+  return (
+    <section className="card card-pad-lg">
+      <h2 style={{ marginBottom: 8 }}>Workspace settings</h2>
+      <p
+        style={{
+          color: "var(--text-2)",
+          fontSize: 13,
+          lineHeight: 1.55,
+          margin: "0 0 12px",
+        }}
+      >
+        Cross-project settings live on dedicated pages.
+      </p>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+          gap: 12,
+        }}
+      >
+        <SubpageLink
+          href="/workspace/credentials"
+          title="LLM credentials"
+          desc="Anthropic / OpenAI keys used by playground, prompted-judges, and comparisons."
+        />
+        <SubpageLink
+          href="/workspace/sso"
+          title="SSO (OIDC)"
+          desc="Configure an IdP so workspace members can sign in via your identity provider."
+        />
+        <SubpageLink
+          href="/members"
+          title="Members"
+          desc="Invite, promote, or remove workspace members and pending invitations."
+        />
+        <SubpageLink
+          href="/api-keys"
+          title="API keys"
+          desc="Tokens that SDKs and ingest clients use to authenticate."
+        />
+      </div>
+    </section>
+  );
+}
+
+function SubpageLink({
+  href,
+  title,
+  desc,
+}: {
+  href: string;
+  title: string;
+  desc: string;
+}) {
+  return (
+    <a
+      href={href}
+      className="card"
+      style={{
+        padding: 12,
+        textDecoration: "none",
+        color: "inherit",
+        display: "grid",
+        gap: 4,
+      }}
+    >
+      <span style={{ fontSize: 14, fontWeight: 500, color: "var(--link)" }}>
+        {title} →
+      </span>
+      <span
+        style={{ fontSize: 12, color: "var(--text-3)", lineHeight: 1.45 }}
+      >
+        {desc}
+      </span>
+    </a>
   );
 }
 
