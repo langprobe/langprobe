@@ -58,7 +58,7 @@ Generated 2026-06-03 after the first sidebar pass (8 LangSmith-equivalent surfac
 | Annotations queue | ✅ | postgres queue/item lifecycle + ClickHouse run sampling + reviewer UI; submissions write `eval_score` with `judge_name='human'` (loop #4) |
 | Feedback (end-user signal) | ✅ | `tbf_pub_*` public keys + `POST /v1/feedback`; same eval_score store as judges (loop #4) |
 | Replay (deterministic re-run) | ✅ | worker derives content-addressed captures per llm/tool/retrieval span; per-run index endpoint + run-detail panel (loop #4 item 8) |
-| Studio (visual canvas) | ✅ | postgres `studio_branch` lifecycle (draft → replayed → promoted) + edits jsonb + canvas UI; v1 replay synthesizes diff_summary, real LLM runner slots in next iteration (loop #4 item 9) |
+| Studio (visual canvas) | ✅ | postgres `studio_branch` lifecycle (draft → replayed → promoted) + edits jsonb + canvas UI; replay runner re-executes the branch-point span via shared `playground._dispatch` and writes a real `sdk='studio'` trace + sets `replay_run_id` (loop #4 item 9 + loop #7 item 2) |
 
 ### Workspace + identity
 
@@ -524,6 +524,99 @@ max_tokens controls, **single vs side-by-side compare** mode (two
 parallel POSTs against different models), per-output card with
 latency + token stats + deep-link to the trace at `/runs/{id}`.
 Cookie-forwarding proxy at `web/src/app/api/playground/runs/route.ts`.
+
+## Loop iteration #7 — done (item #2)
+
+✅ **Real Studio replay runner** —
+`services/api/tracebility_api/routers/studio.py` `replay_branch`
+no longer just stamps `diff_summary` and flips status to `replayed`.
+It now actually re-executes the branch-point span:
+
+  1. `_resolve_source_span(...)` reads the source run's branch-point
+     span from ClickHouse (the explicit `source_span_id` if present,
+     else the root span where `parent_span_id IS NULL`).
+  2. Edits with `target_span_id == source_span_id` (or all of them
+     when replaying the root) are applied to a working copy of the
+     span — `prompt`, `model`, `temperature`, `tool_args` are
+     supported. `tool_args` edits are recorded as
+     `tool_args(metadata-only)` in the replay manifest because v1
+     does not re-execute tool calls.
+  3. Provider routing reuses `playground._resolve_provider(model)`
+     (anthropic / openai / stub) so the canon used by `/playground`
+     and Studio cannot drift.
+  4. The api key is resolved through `llm_credentials.resolve_secret`
+     (the same workspace-credential helper introduced in loop #7
+     item #1) — so the env-var fallback for self-host single-tenant
+     keeps working without changing this URL surface.
+  5. The dispatch goes through `playground._dispatch(...)`. Output,
+     latency, token counts come back the same shape playground writes.
+  6. A new `run` row + `span` row are written to ClickHouse with
+     `sdk='studio'`, `kind='llm'`, and metadata containing
+     `branch_id`, `source_run_id`, `applied_edits`, `skipped_edits`.
+     The new run id is then upserted onto the branch row via
+     `replay_run_id = coalesce($4, replay_run_id)` so a failed
+     re-replay does not clobber a prior successful replay.
+
+Failure handling: if `_execute_replay` raises before dispatch (e.g.
+no source span found, no api key resolved, provider error), the
+branch row still flips to `replayed` but `diff_summary` records
+`replay failed: <error>; <edit summary>` and `replay_run_id` is
+left unchanged (or untouched, depending on whether a previous run
+existed). Operators see the failure on the row and re-trigger.
+
+Audit payload extended with `replay_run_id` and `ok` so the audit
+log distinguishes successful replays from recorded-but-failed ones
+(ER-10 fail-closed; we still audit the failure).
+
+Why this matters: Studio's value pitch ("clone a run, change a
+thing, see what happens") needed the runner to actually run.
+With this change, the canvas now reaches end-to-end: edit → replay
+→ inspect the new trace → promote — without any stand-in.
+
+## Loop iteration #7 — done (item #1)
+
+✅ **Per-workspace LLM credentials** —
+`schemas/postgres/migrations/0021_llm_credentials.sql` adds
+`workspace_llm_credential` (workspace-scoped, provider in
+`{anthropic, openai}`, hashed `secret_encrypted`, `secret_last4`
+for visual disambiguation, soft-revocable via `revoked_at`).
+Partial-unique constraint on `(workspace_id, provider, name)
+WHERE revoked_at IS NULL` so the operator can rotate by revoking
+the old row and creating a new one with the same name.
+
+`services/api/tracebility_api/routers/llm_credentials.py` exposes
+`GET/POST/DELETE /v1/llm-credentials?workspace_id=`. Reveal-once
+on POST (matches api_keys + sso patterns); revoke is a soft
+DELETE. Owner/admin RBAC fail-closed for writes; member read.
+The router also exports the public helper:
+
+```python
+async def resolve_secret(
+    pool: asyncpg.Pool, *, workspace_id: UUID, provider: str
+) -> str | None
+```
+
+Resolution order:
+  1. The most-recently-created **active** workspace credential
+     for `(workspace_id, provider)`.
+  2. The api service's env (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY`)
+     — kept for self-host single-tenant.
+  3. `None` — the dispatch fails with `no <provider> credential
+     resolved` and the calling surface records the failure.
+
+Every LLM-dispatching surface was rewritten to use this helper:
+`playground.create_session`, `evals._run_eval`, `poll_runs._run_poll`,
+`luna_judges.apply_luna_judge`, and (loop #7 item #2)
+`studio._execute_replay`. The `_dispatch` / `_call_anthropic` /
+`_call_openai` functions now accept `api_key: str | None` directly
+and only consult env as a fallback — so once a workspace credential
+exists, `ANTHROPIC_API_KEY` no longer needs to be set.
+
+UI: `web/src/app/workspace/credentials/page.tsx` renders a list +
+status (active / revoked) + a `+ Add credential` button (provider
+dropdown / name / paste secret) with a one-shot reveal modal for
+the plaintext, plus a usage card explaining the resolution order.
+Linked from `/workspace` via the new SubpageLinksCard.
 
 ## Loop iteration #6 — done (item #8 — closes loop, parity reached)
 

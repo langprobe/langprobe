@@ -26,6 +26,8 @@ of cascading delete.
 from __future__ import annotations
 
 import json as _json
+import time
+import uuid as _uuid
 from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
@@ -37,6 +39,8 @@ from pydantic import BaseModel, Field
 
 from .. import audit
 from ..auth import Principal, assert_workspace_role, require_user
+from ..clickhouse_client import ClickHouseQuery
+from . import llm_credentials, playground as playground_module
 
 log = structlog.get_logger("tracebility.api.studio")
 
@@ -298,15 +302,22 @@ async def replay_branch(
     branch_id: UUID,
     principal: Principal = Depends(require_user),
 ) -> StudioBranchOut:
-    """Stand-in replay action.
+    """Replay a branched run with edits applied.
 
-    V1 doesn't yet re-execute the run with edits applied — that needs
-    a real LLM runner with model adapters. What we DO ship is the
-    contract: flip the branch from `draft` to `replayed`, synthesize
-    a `diff_summary` describing how the edits would diverge from the
-    source, stamp `replayed_at`. When the runner lands it slots in
-    here without changing the storage shape (same way `_render_for_variant`
-    is the seam in comparisons.py).
+    Real runner. Steps:
+      1) Resolve the source run + branch-point span from ClickHouse.
+      2) Apply edits (prompt / model / temperature / tool_args) to the
+         span being replaced. v1 replays the **single** branch-point
+         span (or root) — multi-span replay is a future iteration.
+      3) Dispatch the LLM via playground._dispatch (which honors the
+         workspace LLM credential store with env fallback).
+      4) Write a new run + span to ClickHouse with sdk='studio' so it
+         shows up under /runs.
+      5) Stamp `replay_run_id` on the branch and flip status to
+         'replayed'. `diff_summary` records the divergence.
+
+    A branch with zero edits replays the source verbatim (still useful
+    as a smoke test that captures match the original).
     """
     pool: asyncpg.Pool = request.app.state.pg
     row = await _fetch_branch(pool, branch_id)
@@ -321,13 +332,34 @@ async def replay_branch(
         )
 
     edits = _parse_edits(row["edits"])
-    diff_summary = _summarize_edits(edits) or "no edits applied"
+    edit_summary = _summarize_edits(edits) or "no edits applied"
+
+    # Execute the replay; failures are recorded on the branch row but
+    # don't crash the request — operators see the failure and retry.
+    new_run_id, dispatch_summary, dispatch_error = await _execute_replay(
+        request,
+        pool=pool,
+        project_id=project_id,
+        workspace_id=workspace_id,
+        branch_id=branch_id,
+        source_run_id=row["source_run_id"],
+        source_span_id=row["source_span_id"],
+        edits=edits,
+    )
+
+    if dispatch_error is not None:
+        diff_summary = f"replay failed: {dispatch_error}; {edit_summary}"
+    elif dispatch_summary:
+        diff_summary = f"{edit_summary}; {dispatch_summary}"
+    else:
+        diff_summary = edit_summary
 
     updated = await pool.fetchrow(
         """
         update studio_branch
            set status = 'replayed',
                diff_summary = $2,
+               replay_run_id = coalesce($4, replay_run_id),
                replayed_at = $3
          where id = $1
         returning id, project_id, name, description, source_run_id,
@@ -337,6 +369,7 @@ async def replay_branch(
         branch_id,
         diff_summary,
         datetime.now(timezone.utc),
+        new_run_id,
     )
     assert updated is not None
 
@@ -346,7 +379,12 @@ async def replay_branch(
         action="studio_branch.replay",
         target_kind="studio_branch",
         target_id=branch_id,
-        payload={"edit_count": len(edits), "diff_summary": diff_summary},
+        payload={
+            "edit_count": len(edits),
+            "diff_summary": diff_summary,
+            "replay_run_id": new_run_id,
+            "ok": dispatch_error is None,
+        },
         request=request,
         workspace_id=workspace_id,
         project_id=project_id,
@@ -519,6 +557,291 @@ def _branch_out(row: asyncpg.Record) -> StudioBranchOut:
         updated_at=row["updated_at"],
         replayed_at=row["replayed_at"],
     )
+
+
+async def _execute_replay(
+    request: Request,
+    *,
+    pool: asyncpg.Pool,
+    project_id: UUID,
+    workspace_id: UUID,
+    branch_id: UUID,
+    source_run_id: str,
+    source_span_id: str | None,
+    edits: list[StudioEdit],
+) -> tuple[str | None, str, str | None]:
+    """Re-execute the source run with edits applied.
+
+    Returns ``(new_run_id, dispatch_summary, error)``. On success
+    the new run is written to ClickHouse and ``new_run_id`` is the
+    UUID we wrote. On failure ``new_run_id`` is None, ``error``
+    carries a short reason, and the branch row records the failure
+    in its diff_summary.
+
+    v1 scope: replays the **single** branch-point span (or the run's
+    root span if `source_span_id` is None). Multi-span replay is a
+    future iteration. Tool calls inside the replayed span are NOT
+    re-executed — we just record the new prompt + new model output.
+    The Replay panel on /runs already surfaces the captures so an
+    operator can see how the boundary I/O would have differed.
+    """
+    ch: ClickHouseQuery | None = getattr(
+        request.app.state, "clickhouse", None
+    )
+    if ch is None:
+        return None, "", "clickhouse not configured"
+
+    # 1) Resolve the source span we're replacing. If source_span_id
+    #    is unset, pick the run root (parent_span_id is null).
+    source_data = await _resolve_source_span(
+        ch, project_id, source_run_id, source_span_id
+    )
+    if source_data is None:
+        return None, "", "source span not found in clickhouse"
+
+    base_prompt = source_data.get("inputs") or ""
+    base_model = source_data.get("model") or ""
+    base_temperature = source_data.get("temperature")
+
+    # 2) Apply edits. v1 only honors edits whose target_span_id
+    #    matches our branch-point span (or the root if no target
+    #    was given). Other edits are recorded in the metadata but
+    #    don't fire — keeps the contract honest.
+    target_id = source_span_id or str(source_data.get("span_id") or "")
+    new_prompt = base_prompt
+    new_model = base_model
+    new_temperature = base_temperature
+    applied: list[str] = []
+    skipped: list[str] = []
+    for edit in edits:
+        if edit.target_span_id and edit.target_span_id != target_id:
+            skipped.append(f"{edit.field}@{edit.target_span_id[:8]}")
+            continue
+        if edit.field == "prompt":
+            new_prompt = str(edit.value or "")
+            applied.append("prompt")
+        elif edit.field == "model":
+            new_model = str(edit.value or "")
+            applied.append("model")
+        elif edit.field == "temperature":
+            try:
+                new_temperature = float(edit.value)
+                applied.append("temperature")
+            except (TypeError, ValueError):
+                skipped.append("temperature(invalid)")
+        elif edit.field == "tool_args":
+            # Tool args don't dispatch in v1 — we still record them
+            # in the new run's metadata so the diff is visible.
+            applied.append("tool_args(metadata-only)")
+
+    if not new_prompt.strip():
+        return None, "", "rendered prompt is empty"
+
+    # 3) Resolve provider + credential.
+    try:
+        provider = playground_module._resolve_provider(  # type: ignore[attr-defined]
+            new_model
+        )
+    except HTTPException as exc:
+        return None, "", f"provider routing failed: {exc.detail}"
+
+    api_key = await llm_credentials.resolve_secret(
+        pool, workspace_id=workspace_id, provider=provider
+    )
+
+    # 4) Dispatch the LLM. Errors land on the branch as `replay
+    #    failed: <reason>`; the branch still flips to `replayed`
+    #    so the operator can see the failure inline.
+    started = time.monotonic()
+    try:
+        result = await playground_module._dispatch(  # type: ignore[attr-defined]
+            provider=provider,
+            model=new_model,
+            prompt=new_prompt,
+            temperature=new_temperature,
+            max_tokens=1024,
+            api_key=api_key,
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning(
+            "studio replay dispatch failed",
+            branch_id=str(branch_id),
+            provider=provider,
+            error=str(exc),
+        )
+        return None, "", f"{type(exc).__name__}: {exc}"
+
+    latency_ms = int((time.monotonic() - started) * 1000)
+    new_run_id = str(_uuid.uuid4())
+    new_span_id = str(_uuid.uuid4())
+    output_text = str(result.get("text") or "")
+    prompt_tokens = int(result.get("prompt_tokens") or 0)
+    completion_tokens = int(result.get("completion_tokens") or 0)
+    total_tokens = prompt_tokens + completion_tokens
+
+    # 5) Write the new run + its single replay span to ClickHouse.
+    now = datetime.now(timezone.utc)
+    inputs_json = _json.dumps({"prompt": new_prompt})
+    outputs_json = _json.dumps({"output": output_text})
+    metadata = {
+        "studio": True,
+        "branch_id": str(branch_id),
+        "source_run_id": source_run_id,
+        "source_span_id": target_id,
+        "applied_edits": applied,
+        "skipped_edits": skipped,
+    }
+    try:
+        await ch.insert(
+            "run",
+            [(
+                str(project_id),
+                new_run_id,
+                None,
+                "studio_replay",
+                "llm",
+                "ok",
+                "studio",
+                now,
+                now,
+                now,
+                inputs_json,
+                outputs_json,
+                None,
+                None,
+                prompt_tokens,
+                completion_tokens,
+                total_tokens,
+                0,
+                str(branch_id),
+                "",
+                ["studio", "replay"],
+                _json.dumps(metadata),
+                "",
+                "",
+                1,
+            )],
+            column_names=[
+                "project_id", "run_id", "parent_run_id", "name", "kind",
+                "status", "sdk", "start_time", "end_time", "received_at",
+                "inputs", "outputs", "inputs_obj_ref", "outputs_obj_ref",
+                "prompt_tokens", "completion_tokens", "total_tokens",
+                "cost_usd", "session_id", "user_id", "tags", "metadata",
+                "error_kind", "error_message", "schema_version",
+            ],
+        )
+        await ch.insert(
+            "span",
+            [(
+                str(project_id),
+                new_run_id,
+                new_span_id,
+                None,
+                f"replay:{new_model}",
+                "llm",
+                "ok",
+                now,
+                now,
+                now,
+                new_model,
+                new_temperature,
+                inputs_json,
+                outputs_json,
+                None,
+                None,
+                prompt_tokens,
+                completion_tokens,
+                total_tokens,
+                0,
+                _json.dumps(metadata),
+                "",
+                "",
+                1,
+            )],
+            column_names=[
+                "project_id", "run_id", "span_id", "parent_span_id",
+                "name", "kind", "status", "start_time", "end_time",
+                "received_at", "model", "temperature", "inputs",
+                "outputs", "inputs_obj_ref", "outputs_obj_ref",
+                "prompt_tokens", "completion_tokens", "total_tokens",
+                "cost_usd", "attributes", "error_kind",
+                "error_message", "schema_version",
+            ],
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning(
+            "studio replay clickhouse write failed",
+            branch_id=str(branch_id),
+            error=str(exc),
+        )
+        return None, "", f"clickhouse write failed: {exc}"
+
+    summary_parts = [
+        f"replay_run_id={new_run_id[:8]}…",
+        f"latency={latency_ms}ms",
+    ]
+    if applied:
+        summary_parts.append(f"applied=[{', '.join(applied)}]")
+    if skipped:
+        summary_parts.append(f"skipped=[{', '.join(skipped)}]")
+    return new_run_id, " ".join(summary_parts), None
+
+
+async def _resolve_source_span(
+    ch: ClickHouseQuery,
+    project_id: UUID,
+    source_run_id: str,
+    source_span_id: str | None,
+) -> dict[str, Any] | None:
+    """Find the span we're replacing in the source run.
+
+    With a span_id, we look it up directly. Without one, we pick the
+    span with no parent (the run's root). Returns None if neither
+    resolves; the caller surfaces an honest error.
+    """
+    try:
+        if source_span_id:
+            rows = await ch.query(
+                """
+                select span_id, name, model, temperature, inputs, outputs
+                  from span final
+                 where project_id = {project_id:UUID}
+                   and run_id = {run_id:UUID}
+                   and toString(span_id) = {span_id:String}
+                 limit 1
+                """,
+                parameters={
+                    "project_id": str(project_id),
+                    "run_id": source_run_id,
+                    "span_id": source_span_id,
+                },
+            )
+        else:
+            rows = await ch.query(
+                """
+                select span_id, name, model, temperature, inputs, outputs
+                  from span final
+                 where project_id = {project_id:UUID}
+                   and run_id = {run_id:UUID}
+                   and parent_span_id is null
+                 order by start_time asc
+                 limit 1
+                """,
+                parameters={
+                    "project_id": str(project_id),
+                    "run_id": source_run_id,
+                },
+            )
+    except Exception as exc:  # noqa: BLE001
+        log.warning(
+            "studio source-span resolve failed",
+            run_id=source_run_id,
+            error=str(exc),
+        )
+        return None
+    if not rows:
+        return None
+    return rows[0]
 
 
 def _parse_edits(raw: Any) -> list[StudioEdit]:
