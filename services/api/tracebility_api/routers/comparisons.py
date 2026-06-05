@@ -27,7 +27,10 @@ Boundaries:
 
 from __future__ import annotations
 
-from datetime import datetime
+import json as _json
+import re
+import uuid as _uuid
+from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
@@ -39,6 +42,10 @@ from pydantic import BaseModel, Field
 from .. import audit
 from ..auth import Principal, assert_workspace_role, require_user
 from ..clickhouse_client import ClickHouseQuery
+from . import llm_credentials, playground as playground_module
+
+_VAR_RE = re.compile(r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}")
+_DEFAULT_MAX_TOKENS = 1024
 
 log = structlog.get_logger("tracebility.api.comparisons")
 
@@ -220,7 +227,7 @@ async def create_comparison(
     if ch is None:
         await _mark_failed(pool, cmp_row.id, "clickhouse not configured")
     else:
-        background.add_task(_run_comparison, pool, ch, cmp_row.id)
+        background.add_task(_run_comparison, pool, ch, cmp_row.id, workspace_id)
     return cmp_row
 
 
@@ -314,15 +321,25 @@ async def list_items(
 # ----- background runner ---------------------------------------------------
 
 async def _run_comparison(
-    pool: asyncpg.Pool, ch: ClickHouseQuery, comparison_id: UUID
+    pool: asyncpg.Pool,
+    ch: ClickHouseQuery,
+    comparison_id: UUID,
+    workspace_id: UUID,
 ) -> None:
     """Score every dataset item on both sides, write paired ClickHouse rows.
 
-    V1: no real LLM call yet — `_render_for_variant` returns the prompt
-    template body unchanged, so the template itself is the "model output"
-    being scored. This makes the storage shape and pairing logic real;
-    swap `_render_for_variant` for actual generation when LLM execution
-    lands and nothing else changes.
+    Real LLM dispatch: each variant's prompt template is rendered with the
+    dataset item's `input` (parsed as JSON, or wrapped as `{"input": "..."}`
+    when not JSON), dispatched via the shared `playground._dispatch` against
+    the variant's `prompt_version.model_params.model` + temperature +
+    max_tokens. The dispatched output text is what the judge scores.
+
+    Each successful dispatch writes a real ClickHouse `run` + `span` row with
+    `sdk='comparison'` so both sides are visible at `/runs` and the trace
+    can be inspected just like any other run. The eval_score row carries
+    the new run_id in the run_id slot (instead of the dataset item_id) so
+    the pairing query joins paired runs, not paired item rows. The
+    item_id is preserved on `metadata` for cross-reference.
     """
     try:
         cmp_row = await pool.fetchrow(
@@ -341,17 +358,28 @@ async def _run_comparison(
             comparison_id,
         )
 
-        templates = await pool.fetch(
+        versions = await pool.fetch(
             """
-            select id, template
+            select id, template, model_params
             from prompt_version
             where id = any($1::uuid[])
             """,
             [cmp_row["prompt_version_id_a"], cmp_row["prompt_version_id_b"]],
         )
-        tpl_by_id = {r["id"]: (r["template"] or "") for r in templates}
-        template_a = tpl_by_id.get(cmp_row["prompt_version_id_a"], "")
-        template_b = tpl_by_id.get(cmp_row["prompt_version_id_b"], "")
+        ver_by_id = {r["id"]: r for r in versions}
+        variant_a = _build_variant("a", ver_by_id.get(cmp_row["prompt_version_id_a"]))
+        variant_b = _build_variant("b", ver_by_id.get(cmp_row["prompt_version_id_b"]))
+
+        # Resolve api keys per provider once. Both sides may use the same
+        # provider; resolve_secret is cheap but no reason to call it twice.
+        api_keys: dict[str, str | None] = {}
+        for variant in (variant_a, variant_b):
+            if variant.provider not in api_keys:
+                api_keys[variant.provider] = (
+                    await llm_credentials.resolve_secret(
+                        pool, workspace_id=workspace_id, provider=variant.provider
+                    )
+                )
 
         items = await _fetch_dataset_items(
             ch, cmp_row["project_id"], cmp_row["dataset_id"]
@@ -366,23 +394,65 @@ async def _run_comparison(
         score_sum_b = 0.0
         judged_at = datetime.utcnow()
         for item in items:
-            output_a = _render_for_variant(template_a, item)
-            output_b = _render_for_variant(template_b, item)
+            output_a, run_id_a, err_a = await _dispatch_variant(
+                variant_a, item, api_keys[variant_a.provider]
+            )
+            output_b, run_id_b, err_b = await _dispatch_variant(
+                variant_b, item, api_keys[variant_b.provider]
+            )
             score_a, label_a, rationale_a = _judge(
                 cmp_row["judge_kind"], output_a, item["expected"]
             )
             score_b, label_b, rationale_b = _judge(
                 cmp_row["judge_kind"], output_b, item["expected"]
             )
+            # If dispatch failed, override the score → 0 / fail and prepend
+            # the error to the rationale; we never silently drop (ER-23).
+            if err_a is not None:
+                score_a, label_a = 0.0, "fail"
+                rationale_a = f"dispatch failed: {err_a}; {rationale_a}"
+            if err_b is not None:
+                score_b, label_b = 0.0, "fail"
+                rationale_b = f"dispatch failed: {err_b}; {rationale_b}"
             score_sum_a += score_a
             score_sum_b += score_b
+
+            # Write the per-side trace before the eval_score row so the
+            # run exists when reviewers click through.
+            if run_id_a is not None:
+                await _write_comparison_trace(
+                    ch,
+                    project_id=cmp_row["project_id"],
+                    run_id=run_id_a,
+                    variant=variant_a,
+                    rendered=variant_a.last_rendered,
+                    output=output_a,
+                    item=item,
+                    comparison_id=comparison_id,
+                    error=err_a,
+                )
+            if run_id_b is not None:
+                await _write_comparison_trace(
+                    ch,
+                    project_id=cmp_row["project_id"],
+                    run_id=run_id_b,
+                    variant=variant_b,
+                    rendered=variant_b.last_rendered,
+                    output=output_b,
+                    item=item,
+                    comparison_id=comparison_id,
+                    error=err_b,
+                )
+
             rows.append(_score_row(
                 cmp_row["project_id"], item["item_id"], comparison_id,
                 "cmp:a", score_a, label_a, rationale_a, output_a, judged_at,
+                run_id=run_id_a, ok=err_a is None,
             ))
             rows.append(_score_row(
                 cmp_row["project_id"], item["item_id"], comparison_id,
                 "cmp:b", score_b, label_b, rationale_b, output_b, judged_at,
+                run_id=run_id_b, ok=err_b is None,
             ))
 
         if rows:
@@ -434,35 +504,309 @@ def _score_row(
     rationale: str,
     raw_output: str,
     judged_at: datetime,
+    *,
+    run_id: str | None = None,
+    ok: bool = True,
 ) -> tuple[Any, ...]:
+    # If a real run was dispatched, carry its id in the run_id slot so
+    # the FULL OUTER JOIN in /items pairs the dispatched runs (the
+    # paired item_id is preserved on the rationale for cross-ref).
+    # When dispatch was skipped (no items / fall-through) we keep the
+    # legacy item_id-as-run_id shape.
     return (
         str(project_id),
-        str(item_id),               # carry item_id in run_id slot
+        run_id if run_id is not None else str(item_id),
         None,                       # span_id
         str(comparison_id),         # eval_config_id = our comparison id
         side,                       # 'cmp:a' or 'cmp:b'
-        "builtin",                  # judge_endpoint
-        "v1",                       # judge_version
+        "comparison",               # judge_endpoint
+        "v2",                       # judge_version (v2 = real dispatch)
         float(score),
         label,
         rationale,
         raw_output[:8000],          # cap raw_output
-        "ok",
+        "ok" if ok else "failed",
         judged_at,
-        0,                          # cost_usd
+        0,                          # cost_usd (model cost is on run row)
     )
 
 
-def _render_for_variant(template: str, item: dict[str, Any]) -> str:
-    """V1 stand-in for prompt execution.
+# ---- variant + dispatch ---------------------------------------------------
 
-    Returns the prompt template body so the template itself becomes the
-    "model output" we judge against the dataset's `expected`. Real LLM
-    generation lands here in the next iteration without changing the
-    storage shape or pairing logic.
+
+class _Variant:
+    """Materialized per-side dispatch config, populated from prompt_version."""
+
+    __slots__ = (
+        "side",
+        "version_id",
+        "template",
+        "model",
+        "provider",
+        "temperature",
+        "max_tokens",
+        "last_rendered",
+    )
+
+    def __init__(
+        self,
+        *,
+        side: str,
+        version_id: UUID | None,
+        template: str,
+        model: str,
+        provider: str,
+        temperature: float | None,
+        max_tokens: int,
+    ) -> None:
+        self.side = side
+        self.version_id = version_id
+        self.template = template
+        self.model = model
+        self.provider = provider
+        self.temperature = temperature
+        self.max_tokens = max_tokens
+        self.last_rendered = ""
+
+
+def _build_variant(side: str, row: asyncpg.Record | None) -> _Variant:
+    """Pull (template, model, temperature, max_tokens) from a prompt_version
+    row. Falls back to a stub provider when `model_params.model` is missing
+    so a malformed prompt version doesn't crash the run — the dispatch
+    still produces an output we can score (echo of the rendered prompt)
+    and the operator sees the fallback in the trace metadata.
     """
-    _ = item
-    return template or ""
+    template = ""
+    model = "stub-comparison"
+    temperature: float | None = None
+    max_tokens = _DEFAULT_MAX_TOKENS
+    version_id: UUID | None = None
+    if row is not None:
+        version_id = row["id"]
+        template = row["template"] or ""
+        params = row["model_params"]
+        if isinstance(params, str):
+            try:
+                params = _json.loads(params)
+            except (TypeError, ValueError):
+                params = None
+        if isinstance(params, dict):
+            if isinstance(params.get("model"), str) and params["model"]:
+                model = params["model"]
+            t = params.get("temperature")
+            if isinstance(t, (int, float)):
+                temperature = float(t)
+            mt = params.get("max_tokens")
+            if isinstance(mt, int) and mt > 0:
+                max_tokens = mt
+    try:
+        provider = playground_module._resolve_provider(model)
+    except HTTPException:
+        # Unknown model prefix: fall back to stub so the comparison still
+        # finishes. The trace metadata records why.
+        model = f"stub-{model}"
+        provider = "stub"
+    return _Variant(
+        side=side,
+        version_id=version_id,
+        template=template,
+        model=model,
+        provider=provider,
+        temperature=temperature,
+        max_tokens=max_tokens,
+    )
+
+
+def _render_template(template: str, variables: dict[str, Any]) -> str:
+    def _repl(match: re.Match[str]) -> str:
+        key = match.group(1)
+        if key not in variables:
+            return match.group(0)
+        value = variables[key]
+        if isinstance(value, str):
+            return value
+        try:
+            return _json.dumps(value)
+        except (TypeError, ValueError):
+            return str(value)
+
+    return _VAR_RE.sub(_repl, template)
+
+
+def _item_variables(item: dict[str, Any]) -> dict[str, Any]:
+    """Coerce dataset_item.input into a {{var}}-substitutable dict.
+
+    Inputs are stored as opaque JSON strings; we try to parse first so
+    `{"question": "..."}` substitutes naturally. Non-JSON or non-dict
+    inputs become `{"input": "<raw>"}` so the template can reference
+    `{{input}}`. `expected` is exposed too in case the prompt wants to
+    reference it (rare but harmless).
+    """
+    raw = item.get("input") or ""
+    parsed: Any = None
+    if isinstance(raw, str) and raw:
+        try:
+            parsed = _json.loads(raw)
+        except (TypeError, ValueError):
+            parsed = None
+    variables: dict[str, Any] = {"input": raw, "expected": item.get("expected") or ""}
+    if isinstance(parsed, dict):
+        for k, v in parsed.items():
+            if isinstance(k, str):
+                variables[k] = v
+    return variables
+
+
+async def _dispatch_variant(
+    variant: _Variant,
+    item: dict[str, Any],
+    api_key: str | None,
+) -> tuple[str, str, str | None]:
+    """Render template + dispatch the LLM. Returns (output, run_id, error).
+
+    On dispatch failure we still return a `run_id` (the new uuid we
+    generated) and a non-None error so the trace + score row record the
+    failure attempt rather than silent-drop (ER-23).
+    """
+    rendered = _render_template(variant.template, _item_variables(item))
+    variant.last_rendered = rendered
+    run_id = str(_uuid.uuid4())
+    try:
+        result = await playground_module._dispatch(
+            provider=variant.provider,
+            model=variant.model,
+            prompt=rendered,
+            temperature=variant.temperature,
+            max_tokens=variant.max_tokens,
+            api_key=api_key,
+        )
+        output = result.get("text") or ""
+        return output, run_id, None
+    except Exception as exc:  # noqa: BLE001
+        log.warning(
+            "comparison dispatch failed",
+            side=variant.side,
+            provider=variant.provider,
+            model=variant.model,
+            error=str(exc),
+        )
+        return "", run_id, f"{type(exc).__name__}: {exc}"
+
+
+async def _write_comparison_trace(
+    ch: ClickHouseQuery,
+    *,
+    project_id: UUID,
+    run_id: str,
+    variant: _Variant,
+    rendered: str,
+    output: str,
+    item: dict[str, Any],
+    comparison_id: UUID,
+    error: str | None,
+) -> None:
+    """Write a real `run` + `span` row with `sdk='comparison'`.
+
+    Best-effort: a ClickHouse blip shouldn't fail the whole comparison.
+    Failures here are logged; the score row still goes in via the
+    batched insert downstream.
+    """
+    now = datetime.now(timezone.utc)
+    inputs_json = _json.dumps({"prompt": rendered})
+    outputs_json = _json.dumps({"output": output})
+    metadata = _json.dumps({
+        "comparison": True,
+        "comparison_id": str(comparison_id),
+        "comparison_side": variant.side,
+        "dataset_item_id": str(item.get("item_id")) if item.get("item_id") else None,
+        "prompt_version_id": str(variant.version_id) if variant.version_id else None,
+        "fallback_provider": variant.provider == "stub" and variant.model.startswith("stub-"),
+    })
+    status_str = "ok" if error is None else "error"
+    error_kind = "" if error is None else "DispatchError"
+    error_message = "" if error is None else error[:2000]
+    try:
+        await ch.insert(
+            "run",
+            [(
+                str(project_id),
+                run_id,
+                None,
+                f"comparison:{variant.side}:{variant.model}",
+                "llm",
+                status_str,
+                now,
+                now,
+                now,
+                inputs_json,
+                outputs_json,
+                None,
+                None,
+                0,
+                0,
+                0,
+                0,
+                "comparison",
+                str(comparison_id),
+                "",
+                ["comparison", f"side:{variant.side}"],
+                metadata,
+                error_kind,
+                error_message,
+                1,
+            )],
+            column_names=[
+                "project_id", "run_id", "parent_run_id", "name", "kind",
+                "status", "start_time", "end_time", "received_at",
+                "inputs", "outputs", "inputs_obj_ref", "outputs_obj_ref",
+                "prompt_tokens", "completion_tokens", "total_tokens",
+                "cost_usd", "sdk", "session_id", "user_id", "tags",
+                "metadata", "error_kind", "error_message", "schema_version",
+            ],
+        )
+        await ch.insert(
+            "span",
+            [(
+                str(project_id),
+                run_id,
+                str(_uuid.uuid4()),
+                None,
+                f"comparison:{variant.model}",
+                "llm",
+                status_str,
+                now,
+                now,
+                now,
+                variant.model,
+                variant.temperature,
+                inputs_json,
+                outputs_json,
+                None,
+                None,
+                0,
+                0,
+                0,
+                0,
+                metadata,
+                error_kind,
+                error_message,
+                1,
+            )],
+            column_names=[
+                "project_id", "run_id", "span_id", "parent_span_id",
+                "name", "kind", "status", "start_time", "end_time",
+                "received_at", "model", "temperature", "inputs",
+                "outputs", "inputs_obj_ref", "outputs_obj_ref",
+                "prompt_tokens", "completion_tokens", "total_tokens",
+                "cost_usd", "attributes", "error_kind",
+                "error_message", "schema_version",
+            ],
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning(
+            "comparison trace write failed",
+            run_id=run_id, error=str(exc),
+        )
 
 
 async def _fetch_dataset_items(

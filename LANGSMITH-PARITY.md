@@ -53,7 +53,7 @@ Generated 2026-06-03 after the first sidebar pass (8 LangSmith-equivalent surfac
 | Evals (single-judge) | ✅ | postgres `eval_run` lifecycle + clickhouse `eval_score` writes; built-in judges echo/contains/exact (loop #4) |
 | Evals (PoLL multi-judge) | ✅ | postgres `poll_run` lifecycle (queued → running → done/failed) + judges text[] + aggregation (mean/majority/min/max) + pairwise agreement metric; scores all (item × judge) pairs to `eval_score` (loop #5 item 2) |
 | Luna prompted-judges | ✅ | postgres `luna_judge` (slug + rubric_prompt + provider/model + temperature/max_tokens); `luna:<slug>` accepted by /v1/eval-runs and /v1/poll-runs; runner dispatches to anthropic/openai/stub, parses `score:` + `rationale:` (or JSON); per-item rows write to `eval_score` (loop #6 item 5) |
-| Comparisons (A/B experiments) | ✅ | postgres `comparison` lifecycle + clickhouse `eval_score` cmp:a/cmp:b rows; list + paired-diff detail UI (loop #4) |
+| Comparisons (A/B experiments) | ✅ | postgres `comparison` lifecycle + real LLM dispatch per side via shared `playground._dispatch` (model + temperature + max_tokens from `prompt_version.model_params`); writes `sdk='comparison'` runs/spans, scores joined by run_id (loop #4 + loop #7 item 3) |
 | Playground | ✅ | postgres `playground_session` + sync runner; anthropic/openai/stub providers; side-by-side compare mode; results write a real trace to ClickHouse with `sdk='playground'` (loop #5 item 1) |
 | Annotations queue | ✅ | postgres queue/item lifecycle + ClickHouse run sampling + reviewer UI; submissions write `eval_score` with `judge_name='human'` (loop #4) |
 | Feedback (end-user signal) | ✅ | `tbf_pub_*` public keys + `POST /v1/feedback`; same eval_score store as judges (loop #4) |
@@ -524,6 +524,54 @@ max_tokens controls, **single vs side-by-side compare** mode (two
 parallel POSTs against different models), per-output card with
 latency + token stats + deep-link to the trace at `/runs/{id}`.
 Cookie-forwarding proxy at `web/src/app/api/playground/runs/route.ts`.
+
+## Loop iteration #7 — done (item #3)
+
+✅ **Real LLM dispatch in comparisons** —
+`services/api/tracebility_api/routers/comparisons.py` `_run_comparison`
+no longer renders the prompt template as the "model output". The
+v1 stand-in `_render_for_variant` is gone; in its place:
+
+  1. Each variant materializes from its `prompt_version` row into a
+     `_Variant` (template + model + provider + temperature +
+     max_tokens). `model_params` is parsed for `model`/`temperature`/
+     `max_tokens`; provider is resolved through the canonical
+     `playground._resolve_provider` (so model→provider routing stays
+     single-source). Unknown model prefixes fall back to a stub
+     provider with the original model name preserved in metadata so
+     the comparison still finishes.
+  2. Per-side api keys are resolved once via
+     `llm_credentials.resolve_secret(workspace_id, provider)` — the
+     same workspace-credentials seam loop #7 item 1 introduced.
+     If both sides use the same provider, we resolve once.
+  3. Per dataset item: render the variant's template with the item's
+     input (parsed as JSON if possible, otherwise wrapped as
+     `{{input}}`); dispatch via `playground._dispatch`; the dispatched
+     output text is what the judge scores. A failed dispatch records
+     a `score=0/label=fail/rationale="dispatch failed: …"` row
+     instead of silent-dropping (ER-23).
+  4. For every dispatch (success or failure) we write a real
+     ClickHouse `run` + `span` row with `sdk='comparison'`, a name of
+     `comparison:<side>:<model>`, and metadata recording
+     `comparison_id` + `comparison_side` + `dataset_item_id` +
+     `prompt_version_id`. The runs are visible at `/runs` and
+     individually inspectable.
+  5. The `eval_score` row's `run_id` slot now carries the dispatched
+     run id (was the dataset item id). Pairing in the FULL OUTER JOIN
+     joins paired runs, not paired item rows — so distinct runs from
+     the same item correctly appear as one paired row per
+     dispatch-pass.
+
+Why this matters: A/B experiments are the eval-rigor surface that
+distinguishes a real eval platform from a JSON-diff tool. Without
+real dispatch, "compare prompt A vs prompt B" was scoring the
+template text — a useless tautology. Now the comparison answers
+the actual question: "does this prompt produce better outputs from
+the model than that one, on this dataset?".
+
+The judge_kind is unchanged (built-in echo / contains / exact in
+v1). Luna prompted-judges + LLM-as-judge inside comparisons is a
+follow-up — the dispatch seam is now in place to plug them in.
 
 ## Loop iteration #7 — done (item #2)
 
