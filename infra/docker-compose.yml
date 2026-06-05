@@ -104,7 +104,10 @@ services:
       OAUTH_GOOGLE_CLIENT_SECRET: ${OAUTH_GOOGLE_CLIENT_SECRET:-}
       OAUTH_GITHUB_CLIENT_ID: ${OAUTH_GITHUB_CLIENT_ID:-}
       OAUTH_GITHUB_CLIENT_SECRET: ${OAUTH_GITHUB_CLIENT_SECRET:-}
-      OAUTH_REDIRECT_BASE: ${OAUTH_REDIRECT_BASE:-http://localhost:7081}
+      # OAuth redirect points at the WEB origin so the cookie set by
+      # the api can be relayed by the web's /api/auth/oauth/<provider>/callback
+      # route handler back to the same origin the browser sees.
+      OAUTH_REDIRECT_BASE: ${OAUTH_REDIRECT_BASE:-http://localhost:7090}
     ports:
       - "7081:7081"
     depends_on:

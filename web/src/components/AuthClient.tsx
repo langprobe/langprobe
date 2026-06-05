@@ -184,11 +184,12 @@ function OAuthButtons({
 
   const params = new URLSearchParams({ intent: tab });
   if (returnTo) params.set("return_to", returnTo);
-  const apiBase = process.env.NEXT_PUBLIC_API_BASE || "";
-  const startUrl = (provider: string): string => {
-    const path = `/v1/auth/oauth/${provider}/start?${params.toString()}`;
-    return apiBase ? `${apiBase}${path}` : path;
-  };
+  // Always same-origin. The route handler at /api/auth/oauth/<provider>/start
+  // 302s to the api's /v1/auth/oauth/<provider>/start, which 302s to the
+  // IdP. This avoids depending on NEXT_PUBLIC_API_BASE being baked into
+  // the client bundle at build time.
+  const startUrl = (provider: string): string =>
+    `/api/auth/oauth/${provider}/start?${params.toString()}`;
 
   function recordUsed(provider: string) {
     try {

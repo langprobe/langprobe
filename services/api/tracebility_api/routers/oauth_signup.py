@@ -607,8 +607,20 @@ def _pkce_challenge(verifier: str) -> str:
 
 
 def _redirect_uri(provider: str, settings: Settings) -> str:
+    """The URI we hand to Google / GitHub.
+
+    Points at the *web* origin (not the api), because the web's
+    /api/auth/oauth/<provider>/callback route handler relays the
+    Set-Cookie back to its own origin. If we pointed at the api,
+    the cookie would land on the api origin and the user's browser
+    on the web origin would then have no session.
+
+    `OAUTH_REDIRECT_BASE` env var must therefore be the
+    externally-reachable WEB origin (e.g. http://localhost:7090 in
+    dev, https://app.tracebility.example in prod).
+    """
     base = settings.oauth_redirect_base.rstrip("/")
-    return f"{base}/v1/auth/oauth/{provider}/callback"
+    return f"{base}/api/auth/oauth/{provider}/callback"
 
 
 def _safe_return_to(value: str | None, settings: Settings) -> str | None:
