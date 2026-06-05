@@ -1,21 +1,16 @@
 /**
  * PulseBeams — animated trace lines converging on the central brand mark.
  *
- * The visual metaphor: every run, span, eval, replay, and feedback signal
- * flows from the edges of the data plane into one observability surface.
- * That's literally what tracebility does, so we lean into it as the
- * marketing-side imagery on /login.
+ * v2: bright glowing beams + data-packet circles physically traversing
+ * each path. Visibility was the v1 problem — gradient pulses on a noisy
+ * dark canvas read as printer-toner streaks. This version fixes that.
  *
- * Implementation note: this is a port of the typical "pulse-beams" pattern
- * from the framer-motion ecosystem, BUT we don't use framer-motion. The
- * gradient endpoints animate via SVG SMIL <animate> elements — zero
- * runtime deps, ships with the browser, and respects prefers-reduced-motion
- * because we gate the <animate> elements on a CSS class that the
- * @media query toggles off.
+ * Tools (all native SVG, zero JS deps):
+ *  - <filter><feGaussianBlur> for the soft glow on every line
+ *  - <animateMotion> for the data-packet dots that traverse each path
+ *  - <animate> for fade-in/-out cycling on the packets
  *
- * Palette: monochrome (white→transparent over a near-black canvas) per
- * DESIGN.md. No purple/cyan/rainbow gradients. The whole effect reads as
- * "data flowing" without ever drifting from the brand.
+ * Palette: monochrome (white over near-black). DESIGN.md compliance.
  */
 
 import type { ReactNode } from "react";
@@ -25,13 +20,9 @@ interface BeamPath {
   path: string;
   /** Connection points (endpoints + central node). r controls dot size. */
   connectionPoints: Array<{ cx: number; cy: number; r: number }>;
-  /** Starting position of the gradient (along the path, 0% = endpoint). */
-  initial: { x1: string; x2: string; y1: string; y2: string };
-  /** Final position (100% = central node). */
-  animate: { x1: string; x2: string; y1: string; y2: string };
-  /** Animation timing. SMIL syntax: e.g. "2s" for duration, "indefinite" for repeat. */
+  /** SMIL duration string (e.g. "3.6s"). */
   duration: string;
-  /** Stagger so the beams don't all pulse together. */
+  /** SMIL begin offset for stagger (e.g. "0.6s"). */
   delay: string;
 }
 
@@ -44,10 +35,6 @@ interface PulseBeamsProps {
   beams: BeamPath[];
   /** Background colour for the surface. Defaults to var(--accent). */
   background?: string;
-  /** Base stroke (the static line under the moving gradient). */
-  baseStroke?: string;
-  /** The pulse-line gradient stops. Monochrome by default. */
-  pulseColor?: string;
 }
 
 export function PulseBeams({
@@ -56,8 +43,6 @@ export function PulseBeams({
   height = 434,
   beams,
   background = "var(--accent)",
-  baseStroke = "rgba(255, 255, 255, 0.08)",
-  pulseColor = "rgba(255, 255, 255, 0.95)",
 }: PulseBeamsProps) {
   return (
     <div
@@ -72,13 +57,29 @@ export function PulseBeams({
         justifyContent: "center",
       }}
     >
-      {/* Subtle noise texture so the dark canvas doesn't read as flat
-          black. SVG inline so there's no extra request. */}
-      <NoiseLayer />
+      {/* Decorative radial glow behind the centre — gives the entity
+          a literal aura that anchors the composition. */}
+      <div
+        aria-hidden
+        style={{
+          position: "absolute",
+          width: "60%",
+          height: "60%",
+          borderRadius: "50%",
+          background:
+            "radial-gradient(circle at 50% 50%, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.02) 35%, transparent 65%)",
+          pointerEvents: "none",
+          filter: "blur(20px)",
+        }}
+      />
 
-      {/* Centered content (brand mark + wordmark + tagline) sits above
+      {/* Subtle dotted grid texture so the dark canvas reads as
+          a "data plane" rather than just a dark rectangle. */}
+      <GridLayer />
+
+      {/* Centred content (brand mark + wordmark + tagline) sits above
           the SVG so the beams visually connect to it. */}
-      <div style={{ position: "relative", zIndex: 2 }}>{children}</div>
+      <div style={{ position: "relative", zIndex: 3 }}>{children}</div>
 
       <svg
         width={width}
@@ -93,115 +94,166 @@ export function PulseBeams({
           transform: "translate(-50%, -50%)",
           maxWidth: "100%",
           maxHeight: "100%",
+          zIndex: 1,
         }}
         aria-hidden
       >
+        <defs>
+          {/* Glow filter — the secret sauce. Wraps any <path> or
+              <circle> that references it in a soft halo. We render
+              the glow underneath the original element by using a
+              separate <use> reference. */}
+          <filter id="pb-glow" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="3" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+          <filter id="pb-glow-strong" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="6" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
+
+        {/* Each beam renders three layers, bottom to top:
+            (1) faint static line so the path is always visible
+            (2) the data-packet circle that travels the path
+            (3) source/target connection dots with their own glow */}
         {beams.map((beam, i) => (
           <g key={i}>
-            {/* Base line — always visible, very low contrast. */}
-            <path d={beam.path} stroke={baseStroke} strokeWidth="1" fill="none" />
-            {/* Animated pulse — the moving gradient draws a "comet" along
-                the path. */}
+            {/* (1) static base line — bright enough to be visible
+                without the moving packet. */}
             <path
               d={beam.path}
-              stroke={`url(#pb-grad-${i})`}
-              strokeWidth="1.5"
-              strokeLinecap="round"
+              stroke="rgba(255, 255, 255, 0.18)"
+              strokeWidth="1"
               fill="none"
+              strokeLinecap="round"
             />
+
+            {/* (2) data packet — a glowing circle that physically
+                traverses the path via <animateMotion>. The fade-in/-out
+                <animate> on opacity makes it feel like a packet
+                "appearing" at the source and "absorbed" at the centre
+                rather than just looping. */}
+            <g filter="url(#pb-glow-strong)">
+              <circle r="2.5" fill="rgba(255, 255, 255, 1)">
+                <animateMotion
+                  dur={beam.duration}
+                  begin={beam.delay}
+                  repeatCount="indefinite"
+                  rotate="auto"
+                  path={beam.path}
+                />
+                <animate
+                  attributeName="opacity"
+                  values="0; 1; 1; 0.6; 0"
+                  keyTimes="0; 0.05; 0.85; 0.95; 1"
+                  dur={beam.duration}
+                  begin={beam.delay}
+                  repeatCount="indefinite"
+                />
+              </circle>
+            </g>
+
+            {/* Smaller trailing packet — a "second wave" so each beam
+                has two packets on the wire at once, reading more like
+                continuous flow than a one-shot pulse. Offset by half
+                the duration. */}
+            <g filter="url(#pb-glow)">
+              <circle r="1.6" fill="rgba(255, 255, 255, 0.7)">
+                <animateMotion
+                  dur={beam.duration}
+                  begin={`${parseFloat(beam.delay) + parseFloat(beam.duration) / 2}s`}
+                  repeatCount="indefinite"
+                  rotate="auto"
+                  path={beam.path}
+                />
+                <animate
+                  attributeName="opacity"
+                  values="0; 0.7; 0.7; 0.4; 0"
+                  keyTimes="0; 0.05; 0.85; 0.95; 1"
+                  dur={beam.duration}
+                  begin={`${parseFloat(beam.delay) + parseFloat(beam.duration) / 2}s`}
+                  repeatCount="indefinite"
+                />
+              </circle>
+            </g>
           </g>
         ))}
 
-        {/* Connection dots: endpoints (data sources) + central node.
-            We render after paths so they sit on top. */}
-        {beams.flatMap((beam, i) =>
-          beam.connectionPoints.map((p, j) => (
-            <circle
-              key={`pt-${i}-${j}`}
-              cx={p.cx}
-              cy={p.cy}
-              r={p.r}
-              fill={background}
-              stroke="rgba(255, 255, 255, 0.35)"
-              strokeWidth="1"
-            />
-          )),
-        )}
-
-        <defs>
-          {beams.map((beam, i) => (
-            <linearGradient
-              key={i}
-              id={`pb-grad-${i}`}
-              gradientUnits="userSpaceOnUse"
-              x1={beam.initial.x1}
-              y1={beam.initial.y1}
-              x2={beam.initial.x2}
-              y2={beam.initial.y2}
-            >
-              {/* The four-stop monochrome pulse. Outside the bright
-                  middle, the stroke fades to fully transparent so the
-                  comet head is the only visible signal. */}
-              <stop offset="0%" stopColor={pulseColor} stopOpacity="0" />
-              <stop offset="20%" stopColor={pulseColor} stopOpacity="0.2" />
-              <stop offset="50%" stopColor={pulseColor} stopOpacity="1" />
-              <stop offset="80%" stopColor={pulseColor} stopOpacity="0.2" />
-              <stop offset="100%" stopColor={pulseColor} stopOpacity="0" />
-
-              {/* SMIL animations move the gradient endpoints along the
-                  path, dragging the comet from source to centre. We
-                  animate all four endpoints in lockstep so the gradient
-                  vector stays perpendicular to the path. */}
-              <animate
-                attributeName="x1"
-                values={`${beam.initial.x1};${beam.animate.x1}`}
-                dur={beam.duration}
-                begin={beam.delay}
-                repeatCount="indefinite"
+        {/* Connection dots — drawn LAST so they sit on top of the
+            beams, and given a glowing halo so the source feels like
+            a real broadcasting node. The dots are split into source
+            (the labelled corner) and centre — the centre dot is
+            implicitly drawn by the brand mark React content above,
+            so we only need source dots here. */}
+        {beams.flatMap((beam, i) => {
+          const source = beam.connectionPoints[0];
+          if (!source) return [];
+          return [
+            <g key={`pt-${i}`} filter="url(#pb-glow-strong)">
+              {/* Outer halo — a faint pulse around each source. */}
+              <circle
+                cx={source.cx}
+                cy={source.cy}
+                r={source.r + 6}
+                fill="none"
+                stroke="rgba(255, 255, 255, 0.18)"
+                strokeWidth="1"
+              >
+                <animate
+                  attributeName="r"
+                  values={`${source.r + 6}; ${source.r + 12}; ${source.r + 6}`}
+                  dur={beam.duration}
+                  begin={beam.delay}
+                  repeatCount="indefinite"
+                />
+                <animate
+                  attributeName="opacity"
+                  values="0.4; 0; 0.4"
+                  dur={beam.duration}
+                  begin={beam.delay}
+                  repeatCount="indefinite"
+                />
+              </circle>
+              {/* Inner solid dot. */}
+              <circle
+                cx={source.cx}
+                cy={source.cy}
+                r={source.r}
+                fill="rgba(255, 255, 255, 0.95)"
               />
-              <animate
-                attributeName="y1"
-                values={`${beam.initial.y1};${beam.animate.y1}`}
-                dur={beam.duration}
-                begin={beam.delay}
-                repeatCount="indefinite"
-              />
-              <animate
-                attributeName="x2"
-                values={`${beam.initial.x2};${beam.animate.x2}`}
-                dur={beam.duration}
-                begin={beam.delay}
-                repeatCount="indefinite"
-              />
-              <animate
-                attributeName="y2"
-                values={`${beam.initial.y2};${beam.animate.y2}`}
-                dur={beam.duration}
-                begin={beam.delay}
-                repeatCount="indefinite"
-              />
-            </linearGradient>
-          ))}
-        </defs>
+            </g>,
+          ];
+        })}
       </svg>
     </div>
   );
 }
 
-function NoiseLayer() {
-  // 1% opacity grain so the dark surface has texture without anything
-  // that reads as decoration. Inline SVG so it doesn't fetch a file.
-  const noise = `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='1.4' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)' opacity='0.6'/></svg>")`;
+function GridLayer() {
+  // Dotted grid 24px on a side at 4% opacity. Reads as "data plane"
+  // without being decorative or distracting.
   return (
     <div
       aria-hidden
       style={{
         position: "absolute",
         inset: 0,
-        backgroundImage: noise,
-        backgroundSize: "180px 180px",
-        opacity: 0.04,
-        mixBlendMode: "overlay",
+        backgroundImage:
+          "radial-gradient(circle, rgba(255,255,255,0.10) 1px, transparent 1px)",
+        backgroundSize: "24px 24px",
+        backgroundPosition: "center center",
+        opacity: 0.5,
+        maskImage:
+          "radial-gradient(ellipse at center, black 30%, transparent 75%)",
+        WebkitMaskImage:
+          "radial-gradient(ellipse at center, black 30%, transparent 75%)",
         pointerEvents: "none",
       }}
     />
