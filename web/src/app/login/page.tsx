@@ -1,13 +1,20 @@
 import Link from "next/link";
 import { AuthClient, type OAuthProviders } from "@/components/AuthClient";
+import { LoginScene } from "@/components/LoginScene";
 import { apiGet } from "@/lib/api";
 
 /**
  * Unified sign-in / sign-up page.
  *
  * Two-column layout:
- *   left  — product positioning (brand mark + tagline)
+ *   left  — animated "data converging on one entity" hero scene
  *   right — auth card with tab toggle, OAuth buttons, password form
+ *
+ * The left rail is the only place in the app that goes dark. The
+ * scene visualises what tracebility actually does: traces, otel
+ * envelopes, replays, evals, and feedback all flow into a single
+ * observability surface (the central brand mark). The animated
+ * pulse-beams literally illustrate the product's value pitch.
  *
  * `?tab=signup` defaults to the Sign up tab; otherwise lands on Sign in.
  * `?return_to=/some/path` is preserved through the OAuth round-trip.
@@ -49,7 +56,7 @@ export default async function LoginPage({
 }
 
 // ---------------------------------------------------------------------------
-// Left rail — product positioning
+// Left rail — pulse-beams hero scene
 // ---------------------------------------------------------------------------
 
 function LeftRail() {
@@ -58,198 +65,81 @@ function LeftRail() {
       style={{
         display: "none",
         position: "relative",
-        background: "var(--surface-2)",
-        borderRight: "1px solid var(--border)",
+        background: "var(--accent)",
+        overflow: "hidden",
       }}
       // Hide on small screens — the auth card takes the full width.
-      // Tailwind would be `hidden lg:flex`; here we do it via media
-      // query on the data-attr.
       data-rail
     >
       <style>{`
         @media (min-width: 960px) {
-          aside[data-rail] { display: flex !important; }
+          aside[data-rail] { display: block !important; }
         }
       `}</style>
-      <div
-        className="stage"
-        style={{
-          padding: "56px 64px",
-          display: "flex",
-          flexDirection: "column",
-          gap: 48,
-          width: "100%",
-          maxWidth: 560,
-          margin: "0 auto",
-          position: "relative",
-        }}
-      >
-        <div className="stage-item"><BrandMark /></div>
-        <div className="stage-item"><Headline /></div>
-        <div className="stage-item"><FeatureList /></div>
-        <div className="stage-item" style={{ marginTop: "auto" }}>
-          <Footnote />
-        </div>
-      </div>
-    </aside>
-  );
-}
 
-function BrandMark() {
-  return (
-    <Link
-      href="/"
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 10,
-        textDecoration: "none",
-        color: "var(--text)",
-      }}
-      aria-label="tracebility home"
-    >
-      <span
-        aria-hidden
+      {/* The hero scene fills the rail; the eyebrow + footer overlay on
+          top so the imagery feels framed by the chrome rather than
+          floating in a void. */}
+      <div
         style={{
-          width: 28,
-          height: 28,
-          borderRadius: "var(--r-1)",
-          background: "var(--accent)",
-          color: "var(--accent-fg)",
-          display: "inline-flex",
+          position: "absolute",
+          inset: 0,
+          display: "flex",
           alignItems: "center",
           justifyContent: "center",
+        }}
+      >
+        <LoginScene />
+      </div>
+
+      {/* Top-left eyebrow — anchors the brand and identifies the
+          surface as the auth screen, not a marketing page. */}
+      <div
+        className="stage-item"
+        style={{
+          position: "absolute",
+          top: 32,
+          left: 32,
           fontFamily: "var(--f-mono)",
-          fontSize: 15,
-          fontWeight: 600,
-        }}
-      >
-        t
-      </span>
-      <span
-        style={{
-          fontSize: 14,
+          fontSize: 11,
           fontWeight: 500,
-          letterSpacing: -0.01,
+          letterSpacing: "0.08em",
+          textTransform: "uppercase",
+          color: "rgba(255, 255, 255, 0.42)",
+          zIndex: 3,
         }}
       >
-        tracebility
-      </span>
-    </Link>
-  );
-}
+        debugger for agents
+      </div>
 
-function Headline() {
-  return (
-    <div style={{ display: "grid", gap: 14 }}>
-      <span className="eyebrow">debugger for agents</span>
-      <h1 className="display" style={{ margin: 0 }}>
-        Trace every step.
-        <br />
-        <span style={{ color: "var(--text-3)" }}>Replay any moment.</span>
-      </h1>
-      <p
+      {/* Bottom-left footer — license + posture badges. */}
+      <div
+        className="stage-item"
         style={{
-          margin: 0,
-          fontSize: 15,
-          lineHeight: 1.55,
-          color: "var(--text-2)",
-          maxWidth: 440,
+          position: "absolute",
+          bottom: 32,
+          left: 32,
+          right: 32,
+          display: "flex",
+          gap: 16,
+          fontFamily: "var(--f-mono)",
+          fontSize: 11,
+          letterSpacing: "0.08em",
+          textTransform: "uppercase",
+          color: "rgba(255, 255, 255, 0.42)",
+          zIndex: 3,
+          // Anchor the footer late in the staged entrance so it lands
+          // after the scene has settled.
+          animationDelay: "700ms",
         }}
       >
-        Self-hosted observability, eval-rigor, and agent-replay. The one
-        you reach for at 2 a.m. when an agent goes sideways.
-      </p>
-    </div>
-  );
-}
-
-function FeatureList() {
-  const items = [
-    {
-      title: "Trace every run",
-      desc: "Spans, prompts, completions, tools — written to your ClickHouse, not ours.",
-    },
-    {
-      title: "Replay & branch",
-      desc: "Re-execute any past run with edits applied. Compare the new trace against the old.",
-    },
-    {
-      title: "Eval with rigor",
-      desc: "Built-in judges, LLM-as-judge, PoLL multi-judge, A/B comparisons, human review queues.",
-    },
-  ];
-  return (
-    <ul
-      style={{
-        listStyle: "none",
-        margin: 0,
-        padding: 0,
-        display: "grid",
-        gap: 18,
-      }}
-    >
-      {items.map((item) => (
-        <li
-          key={item.title}
-          style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: 12 }}
-        >
-          <span
-            aria-hidden
-            style={{
-              width: 6,
-              height: 6,
-              borderRadius: 9999,
-              background: "var(--accent)",
-              marginTop: 8,
-            }}
-          />
-          <div>
-            <div
-              style={{
-                fontSize: 14,
-                fontWeight: 500,
-                color: "var(--text)",
-                marginBottom: 2,
-              }}
-            >
-              {item.title}
-            </div>
-            <div
-              style={{
-                fontSize: 13,
-                color: "var(--text-2)",
-                lineHeight: 1.55,
-              }}
-            >
-              {item.desc}
-            </div>
-          </div>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function Footnote() {
-  return (
-    <div
-      style={{
-        marginTop: "auto",
-        display: "flex",
-        gap: 16,
-        fontSize: 11,
-        color: "var(--text-3)",
-        letterSpacing: 0.4,
-        textTransform: "uppercase",
-      }}
-    >
-      <span>self-hosted</span>
-      <span aria-hidden>·</span>
-      <span>apache-2.0</span>
-      <span aria-hidden>·</span>
-      <span>your data, your vpc</span>
-    </div>
+        <span>self-hosted</span>
+        <span aria-hidden>·</span>
+        <span>apache-2.0</span>
+        <span aria-hidden>·</span>
+        <span>your vpc</span>
+      </div>
+    </aside>
   );
 }
 
@@ -273,6 +163,7 @@ function RightRail({
         alignItems: "center",
         justifyContent: "center",
         padding: "48px 24px",
+        position: "relative",
       }}
     >
       <div
@@ -282,8 +173,6 @@ function RightRail({
           maxWidth: 420,
           display: "grid",
           gap: 24,
-          // Slightly later than the left-rail items so the eye lands on
-          // the headline first, then the form.
           animationDelay: "300ms",
         }}
       >
@@ -293,6 +182,50 @@ function RightRail({
           returnTo={returnTo}
         />
       </div>
+
+      {/* Mobile-only fallback header — the dark scene is hidden under
+          960px, so we surface the brand here so the page never looks
+          unbranded. */}
+      <Link
+        href="/"
+        aria-label="tracebility home"
+        style={{
+          position: "absolute",
+          top: 24,
+          left: 24,
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 10,
+          textDecoration: "none",
+          color: "var(--text)",
+        }}
+        data-mobile-brand
+      >
+        <style>{`
+          @media (min-width: 960px) {
+            a[data-mobile-brand] { display: none !important; }
+          }
+        `}</style>
+        <span
+          aria-hidden
+          style={{
+            width: 24,
+            height: 24,
+            borderRadius: "var(--r-1)",
+            background: "var(--accent)",
+            color: "var(--accent-fg)",
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontFamily: "var(--f-mono)",
+            fontSize: 13,
+            fontWeight: 600,
+          }}
+        >
+          t
+        </span>
+        <span style={{ fontSize: 13, fontWeight: 500 }}>tracebility</span>
+      </Link>
     </section>
   );
 }
