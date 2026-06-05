@@ -311,7 +311,16 @@ a:focus-visible {
 .dot-danger  { background: var(--danger); }
 .dot-info    { background: var(--info); }
 
-/* Card */
+/* ---------- Card system ----------
+ *
+ * The base .card is the canonical container. Three opt-in modifiers:
+ *   .card-elevated  — heavier shadow, used for modals + floating popovers
+ *   .card-section   — preset header + body for "labelled section of UI"
+ *   .card-empty     — empty/zero-state with an icon slot, body, and CTA
+ *
+ * Use the modifier as a *replacement* shape, not as decoration. If a
+ * card needs no header, no empty-state, and no float — use .card.
+ */
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -334,9 +343,112 @@ a:focus-visible {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
 }
-.card-title { font-size: var(--fs-14); font-weight: 500; color: var(--text); }
+.card-title { font-size: var(--fs-14); font-weight: 500; color: var(--text); margin: 0; }
 .card-sub   { font-size: var(--fs-12); color: var(--text-3); }
+
+/* Elevated — modals, dropdowns, command palette. Higher shadow,
+ * stronger inner highlight, slightly larger radius for "floating". */
+.card-elevated {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-4);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.7),
+    var(--shadow-3);
+}
+
+/* Section card — the "labelled chunk of dashboard" pattern.
+ * Title + description in the header; padded body for fields. */
+.card-section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-3);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.6),
+    var(--shadow-1);
+  display: grid;
+}
+.card-section-head {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.card-section-head-text {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.card-section-title {
+  font-size: var(--fs-16);
+  font-weight: 500;
+  letter-spacing: -0.012em;
+  color: var(--text);
+  margin: 0;
+}
+.card-section-desc {
+  font-size: var(--fs-13);
+  color: var(--text-2);
+  line-height: 1.5;
+  margin: 0;
+  max-width: 64ch;
+}
+.card-section-body {
+  padding: 20px;
+}
+.card-section-body-tight {
+  padding: 16px 20px;
+}
+.card-section-foot {
+  padding: 14px 20px;
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+  border-radius: 0 0 var(--r-3) var(--r-3);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+/* Empty-state card — when there's no data yet, this teaches the
+ * interface instead of leaving the user with blank space. */
+.card-empty {
+  background: var(--surface);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--r-3);
+  padding: 32px 24px;
+  display: grid;
+  gap: 12px;
+  justify-items: center;
+  text-align: center;
+}
+.card-empty-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 9999px;
+  background: var(--surface-3);
+  color: var(--text-3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.card-empty-title {
+  font-size: var(--fs-14);
+  font-weight: 500;
+  color: var(--text);
+  margin: 0;
+}
+.card-empty-desc {
+  font-size: var(--fs-13);
+  color: var(--text-2);
+  margin: 0;
+  max-width: 48ch;
+  line-height: 1.55;
+}
 
 /* KPI tile */
 .kpi {
@@ -503,11 +615,23 @@ a:focus-visible {
   100% { transform: scaleY(1); opacity: 1; }
 }
 
-/* Inputs */
+/* ---------- Inputs ----------
+ * Single source of truth for every text input, password, email,
+ * search, textarea, and select across the app. Hover gets a soft
+ * border bump; focus gets a 1px focus ring instead of an outline
+ * (cleaner, doesn't shift layout); aria-invalid pulls the danger
+ * palette so error states cost no extra component-level CSS.
+ *
+ * The `peer` pattern (sibling-selector under .field) lets us style
+ * the surrounding label/hint without JS state.
+ */
 input[type="text"],
 input[type="email"],
 input[type="password"],
 input[type="search"],
+input[type="number"],
+input[type="url"],
+input[type="tel"],
 textarea,
 select {
   font: inherit;
@@ -515,11 +639,174 @@ select {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-2);
-  padding: 7px 10px;
+  padding: 8px 11px;
   outline: 0;
+  width: 100%;
+  /* iOS adds extra inner padding by default; nuke it. */
+  -webkit-appearance: none;
+  appearance: none;
+  transition:
+    border-color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    background var(--motion-fast) var(--ease-out);
+}
+input::placeholder, textarea::placeholder {
+  color: var(--text-3);
+}
+input:hover:not(:focus):not(:disabled),
+textarea:hover:not(:focus):not(:disabled),
+select:hover:not(:focus):not(:disabled) {
+  border-color: var(--border-strong);
 }
 input:focus, textarea:focus, select:focus {
   border-color: var(--border-focus);
+  /* 1px focus ring colour-matched to the accent. Sits inside the
+   * border so the input doesn't jump on focus. */
+  box-shadow: 0 0 0 1px var(--border-focus);
+}
+input:disabled, textarea:disabled, select:disabled {
+  background: var(--surface-2);
+  color: var(--text-3);
+  cursor: not-allowed;
+}
+input[aria-invalid="true"],
+textarea[aria-invalid="true"],
+select[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+input[aria-invalid="true"]:focus,
+textarea[aria-invalid="true"]:focus,
+select[aria-invalid="true"]:focus {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 1px var(--danger);
+}
+
+/* ---------- Field — label + control + hint/error ----------
+ * Wraps a single labelled control with a uniform layout.
+ *
+ *   <label class="field">
+ *     <span class="field-label">Email</span>
+ *     <input type="email" />
+ *     <span class="field-hint">we'll send a verification link</span>
+ *   </label>
+ *
+ * For errors, swap field-hint with role="alert" + .field-error so
+ * screen readers announce the failure (matches WCAG aria-live
+ * conventions).
+ */
+.field {
+  display: grid;
+  gap: 6px;
+}
+.field-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-2);
+  letter-spacing: -0.005em;
+}
+.field-label .required {
+  color: var(--danger);
+  font-weight: 400;
+}
+.field-hint {
+  font-family: var(--f-mono);
+  font-size: 11px;
+  color: var(--text-3);
+  line-height: 1.45;
+}
+.field-error {
+  font-family: var(--f-mono);
+  font-size: 11px;
+  color: var(--danger);
+  line-height: 1.45;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+.field-error::before {
+  content: "!";
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.field-row {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+/* ---------- Form section — group of related fields ----------
+ * Use inside a card to bundle "what this set of fields does":
+ *
+ *   <section class="form-section">
+ *     <header class="form-section-head">
+ *       <h3 class="form-section-title">Sampling</h3>
+ *       <p class="form-section-desc">How much of your traffic to ingest.</p>
+ *     </header>
+ *     <div class="field">…</div>
+ *     <div class="field">…</div>
+ *   </section>
+ */
+.form-section {
+  display: grid;
+  gap: 14px;
+}
+.form-section + .form-section {
+  margin-top: 6px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+.form-section-head {
+  display: grid;
+  gap: 4px;
+}
+.form-section-title {
+  font-size: var(--fs-14);
+  font-weight: 500;
+  color: var(--text);
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+.form-section-desc {
+  font-size: var(--fs-13);
+  color: var(--text-2);
+  margin: 0;
+  line-height: 1.5;
+  max-width: 56ch;
+}
+
+/* ---------- Form footer — submit row ----------
+ * Right-aligned action row, with optional left-side note (e.g.
+ * "saved 4s ago"). Uses padding-top + border so the actions feel
+ * separated from the fields above.
+ */
+.form-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+}
+.form-actions-note {
+  margin-right: auto;
+  font-family: var(--f-mono);
+  font-size: 11px;
+  color: var(--text-3);
 }
 
 /* Code block */

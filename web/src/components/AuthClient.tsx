@@ -302,7 +302,7 @@ function PasswordForm({ tab }: { tab: Tab }) {
         // password signup isn't self-service today.
         if (tab === "signup" && res.status === 401) {
           detail =
-            "no account found. Use Google / GitHub to sign up — password signup is operator-only in v1.";
+            "No account found. Use Google or GitHub to sign up. Password signup is operator-only in v1.";
         }
         setError(detail);
         return;
@@ -312,19 +312,47 @@ function PasswordForm({ tab }: { tab: Tab }) {
     });
   }
 
+  // The `aria-invalid` flag flips the input border red on submit
+  // failure. We set it on both inputs when there's an error since
+  // we don't currently know which one caused it; once the api
+  // surfaces a `field` discriminator we can target precisely.
+  const invalid = error !== null;
+
   return (
-    <form onSubmit={submit} style={{ display: "grid", gap: 12 }}>
-      <Field label="Email">
+    <form onSubmit={submit} style={{ display: "grid", gap: 14 }}>
+      <label className="field">
+        <span className="field-label">Email</span>
         <input
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           autoComplete="email"
           placeholder="you@example.com"
+          aria-invalid={invalid}
           required
         />
-      </Field>
-      <Field label="Password">
+      </label>
+      <label className="field">
+        <span className="field-label">
+          Password
+          {tab === "login" ? (
+            <a
+              href="/forgot"
+              style={{
+                marginLeft: "auto",
+                fontSize: 11,
+                color: "var(--text-3)",
+                textDecoration: "none",
+              }}
+              onClick={(e) => {
+                e.preventDefault();
+                /* TODO: password-reset flow on roadmap */
+              }}
+            >
+              forgot?
+            </a>
+          ) : null}
+        </span>
         <input
           type="password"
           value={password}
@@ -333,14 +361,12 @@ function PasswordForm({ tab }: { tab: Tab }) {
             tab === "signup" ? "new-password" : "current-password"
           }
           placeholder="••••••••"
+          aria-invalid={invalid}
           required
         />
-      </Field>
+      </label>
       {error ? (
-        <p
-          className="mono"
-          style={{ color: "var(--danger)", margin: 0, fontSize: 12 }}
-        >
+        <p className="field-error" role="alert" style={{ margin: 0 }}>
           {error}
         </p>
       ) : null}
@@ -359,30 +385,6 @@ function PasswordForm({ tab }: { tab: Tab }) {
             : "Sign in"}
       </button>
     </form>
-  );
-}
-
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <label style={{ display: "grid", gap: 4 }}>
-      <span
-        style={{
-          fontSize: 11,
-          color: "var(--text-3)",
-          textTransform: "uppercase",
-          letterSpacing: 0.4,
-        }}
-      >
-        {label}
-      </span>
-      {children}
-    </label>
   );
 }
 

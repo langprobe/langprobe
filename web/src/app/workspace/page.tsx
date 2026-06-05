@@ -199,21 +199,25 @@ const activeRowStyle = {
 
 function SettingsCard({ project }: { project: ProjectSettings }) {
   return (
-    <section className="card card-pad-lg">
-      <div style={{ marginBottom: 16 }}>
-        <h2>{project.slug} settings</h2>
-        <p
-          style={{
-            margin: "4px 0 0",
-            color: "var(--text-3)",
-            fontSize: 12,
-          }}
-        >
-          Changes apply on the next ingest call. Only owners and admins can
-          save.
-        </p>
+    <section className="card-section">
+      <header className="card-section-head">
+        <div className="card-section-head-text">
+          <h2 className="card-section-title">
+            <span className="mono" style={{ color: "var(--text-3)" }}>
+              {project.slug}
+            </span>{" "}
+            settings
+          </h2>
+          <p className="card-section-desc">
+            Changes apply on the next ingest call. Only owners and admins
+            can save.
+          </p>
+        </div>
+        <span className="badge badge-neutral">project</span>
+      </header>
+      <div className="card-section-body">
+        <ProjectSettingsForm project={project} />
       </div>
-      <ProjectSettingsForm project={project} />
     </section>
   );
 }
