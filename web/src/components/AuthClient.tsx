@@ -100,22 +100,26 @@ export function AuthClient({
 // ---------------------------------------------------------------------------
 
 function TabSwitch({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
+  // Sign in first, Create account second. Returning users are the
+  // larger cohort and Sign in is the default landing tab; ordering
+  // it first matches user fluency from peer products (Linear, Vercel,
+  // Datadog) and reduces the friction of a tab swap on every visit.
   return (
     <div
       role="tablist"
       style={{
         display: "inline-flex",
-        gap: 16,
+        gap: 20,
         fontSize: 18,
         fontWeight: 500,
         letterSpacing: -0.01,
       }}
     >
-      <TabButton active={tab === "signup"} onClick={() => setTab("signup")}>
-        Create account
-      </TabButton>
       <TabButton active={tab === "login"} onClick={() => setTab("login")}>
         Sign in
+      </TabButton>
+      <TabButton active={tab === "signup"} onClick={() => setTab("signup")}>
+        Create account
       </TabButton>
     </div>
   );
@@ -347,9 +351,11 @@ function PasswordForm({ tab }: { tab: Tab }) {
       >
         {pending
           ? tab === "signup"
-            ? "creating account…"
-            : "signing in…"
-          : "Continue"}
+            ? "Creating account…"
+            : "Signing in…"
+          : tab === "signup"
+            ? "Create account"
+            : "Sign in"}
       </button>
     </form>
   );

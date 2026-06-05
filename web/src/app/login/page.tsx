@@ -92,27 +92,11 @@ function LeftRail() {
         <LoginScene />
       </div>
 
-      {/* Top-left eyebrow — anchors the brand and identifies the
-          surface as the auth screen, not a marketing page. */}
-      <div
-        className="stage-item"
-        style={{
-          position: "absolute",
-          top: 32,
-          left: 32,
-          fontFamily: "var(--f-mono)",
-          fontSize: 11,
-          fontWeight: 500,
-          letterSpacing: "0.08em",
-          textTransform: "uppercase",
-          color: "rgba(255, 255, 255, 0.42)",
-          zIndex: 3,
-        }}
-      >
-        debugger for agents
-      </div>
-
-      {/* Bottom-left footer — license + posture badges. */}
+      {/* Bottom-left footer — posture-neutral so the same chrome reads
+       * credibly under both deploy postures (self-hosted today,
+       * SaaS roadmap per PRODUCT.md). The hero scene already
+       * communicates "debugger for agents" via the labelled signal
+       * sources, so we don't repeat that message in microcopy. */}
       <div
         className="stage-item"
         style={{
@@ -128,16 +112,14 @@ function LeftRail() {
           textTransform: "uppercase",
           color: "rgba(255, 255, 255, 0.42)",
           zIndex: 3,
-          // Anchor the footer late in the staged entrance so it lands
-          // after the scene has settled.
           animationDelay: "700ms",
         }}
       >
-        <span>self-hosted</span>
+        <span>open source</span>
         <span aria-hidden>·</span>
         <span>apache-2.0</span>
         <span aria-hidden>·</span>
-        <span>your vpc</span>
+        <span>your data, your call</span>
       </div>
     </aside>
   );
@@ -160,17 +142,24 @@ function RightRail({
     <section
       style={{
         display: "flex",
+        flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
         padding: "48px 24px",
+        gap: 24,
         position: "relative",
       }}
     >
+      {/* Mobile-only headline. Under 960px the dark hero is hidden,
+       * so without this the auth card lands with no product context.
+       * Visible only when the dark rail isn't. */}
+      <MobileBrandHeader />
+
       <div
         className="card card-pad-lg stage-item"
         style={{
           width: "100%",
-          maxWidth: 420,
+          maxWidth: 460,
           display: "grid",
           gap: 24,
           animationDelay: "300ms",
@@ -182,51 +171,71 @@ function RightRail({
           returnTo={returnTo}
         />
       </div>
+    </section>
+  );
+}
 
-      {/* Mobile-only fallback header — the dark scene is hidden under
-          960px, so we surface the brand here so the page never looks
-          unbranded. */}
-      <Link
-        href="/"
-        aria-label="tracebility home"
+function MobileBrandHeader() {
+  return (
+    <Link
+      href="/"
+      aria-label="tracebility home"
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: 8,
+        textDecoration: "none",
+        color: "var(--text)",
+        textAlign: "center",
+      }}
+      data-mobile-brand
+    >
+      <style>{`
+        @media (min-width: 960px) {
+          a[data-mobile-brand] { display: none !important; }
+        }
+      `}</style>
+      <span
+        aria-hidden
         style={{
-          position: "absolute",
-          top: 24,
-          left: 24,
+          width: 36,
+          height: 36,
+          borderRadius: "var(--r-2)",
+          background: "var(--accent)",
+          color: "var(--accent-fg)",
           display: "inline-flex",
           alignItems: "center",
-          gap: 10,
-          textDecoration: "none",
-          color: "var(--text)",
+          justifyContent: "center",
+          fontFamily: "var(--f-mono)",
+          fontSize: 18,
+          fontWeight: 600,
+          boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), var(--shadow-1)",
         }}
-        data-mobile-brand
       >
-        <style>{`
-          @media (min-width: 960px) {
-            a[data-mobile-brand] { display: none !important; }
-          }
-        `}</style>
-        <span
-          aria-hidden
-          style={{
-            width: 24,
-            height: 24,
-            borderRadius: "var(--r-1)",
-            background: "var(--accent)",
-            color: "var(--accent-fg)",
-            display: "inline-flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontFamily: "var(--f-mono)",
-            fontSize: 13,
-            fontWeight: 600,
-          }}
-        >
-          t
-        </span>
-        <span style={{ fontSize: 13, fontWeight: 500 }}>tracebility</span>
-      </Link>
-    </section>
+        t
+      </span>
+      <div
+        style={{
+          fontSize: 22,
+          fontWeight: 500,
+          letterSpacing: "-0.022em",
+          marginTop: 4,
+        }}
+      >
+        tracebility
+      </div>
+      <div
+        style={{
+          fontSize: 13,
+          color: "var(--text-2)",
+          maxWidth: 320,
+          lineHeight: 1.5,
+        }}
+      >
+        The real debugger for agents.
+      </div>
+    </Link>
   );
 }
 

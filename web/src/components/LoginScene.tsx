@@ -153,7 +153,7 @@ function CenterEntity() {
           letterSpacing: "0.02em",
         }}
       >
-        every run · every span · every eval — one place
+        every run, every span, every eval. one place.
       </div>
     </div>
   );
@@ -215,8 +215,11 @@ function BrandNode() {
           20%  { opacity: 0.8; }
           100% { transform: scale(1.6); opacity: 0; }
         }
+        /* Scope reduced-motion override to the pulse-ring elements
+         * so we don't accidentally kill animations on every other
+         * aria-hidden element across the auth page. */
         @media (prefers-reduced-motion: reduce) {
-          [data-pulse-ring] { animation: none !important; opacity: 0.5 !important; }
+          [data-pulse-ring] { animation: none !important; opacity: 0.4 !important; }
         }
       `}</style>
     </div>
