@@ -92,7 +92,6 @@ function Topbar({
       <div className="crumbs">
         {crumbs ?? (
           <>
-            <Link href="/">tracability</Link>
             <span className="sep">/</span>
             <span className="last">overview</span>
             {active ? (
@@ -116,11 +115,11 @@ function BrandMark() {
   return (
     <Link
       href="/"
-      aria-label="tracability home"
+      aria-label="tracebility home"
       style={{
         display: "inline-flex",
         alignItems: "center",
-        gap: 8,
+        gap: 10,
         textDecoration: "none",
         color: "var(--text)",
       }}
@@ -139,9 +138,20 @@ function BrandMark() {
           fontFamily: "var(--f-mono)",
           fontSize: 13,
           fontWeight: 600,
+          boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08)",
         }}
       >
         t
+      </span>
+      <span
+        style={{
+          fontSize: 13,
+          fontWeight: 500,
+          letterSpacing: -0.01,
+          color: "var(--text)",
+        }}
+      >
+        tracebility
       </span>
     </Link>
   );

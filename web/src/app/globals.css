@@ -70,8 +70,23 @@
   --fs-13: 13px;
   --fs-14: 14px;
   --fs-16: 16px;
+  --fs-18: 18px;
   --fs-20: 20px;
+  --fs-24: 24px;
   --fs-28: 28px;
+  --fs-32: 32px;
+  --fs-40: 40px;
+
+  /* Motion tokens — subtle by default; cinematic moves are scoped to
+   * specific surfaces (auth, hero) via opt-in classes. Reduced-motion
+   * media query at the bottom of the file zeroes everything out. */
+  --motion-fast:    120ms;
+  --motion-base:    180ms;
+  --motion-slow:    240ms;
+  --motion-stage:   400ms;   /* page-level entrances (login left rail) */
+  --ease-out:       cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-out-soft:  cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in:        cubic-bezier(0.4, 0, 1, 1);
 
   /* Layout chrome (mock) */
   --topbar-h: 48px;
@@ -112,13 +127,40 @@ body { min-height: 100vh; }
 h1, h2, h3, h4 {
   margin: 0;
   font-weight: 600;
-  letter-spacing: -0.015em;
+  letter-spacing: -0.018em;
   color: var(--text);
 }
-h1 { font-size: var(--fs-20); line-height: 1.2; }
-h2 { font-size: var(--fs-16); line-height: 1.25; }
+h1 { font-size: var(--fs-24); line-height: 1.18; letter-spacing: -0.022em; font-weight: 500; }
+h2 { font-size: var(--fs-18); line-height: 1.24; letter-spacing: -0.018em; }
 h3 { font-size: var(--fs-14); line-height: 1.3; }
 h4 { font-size: var(--fs-13); line-height: 1.3; }
+
+/* Display headline — opt-in, used on hero/auth/empty-state surfaces.
+ * Tighter tracking + lighter weight for editorial confidence. */
+.display {
+  font-family: var(--f-sans);
+  font-size: var(--fs-40);
+  line-height: 1.05;
+  letter-spacing: -0.028em;
+  font-weight: 500;
+  color: var(--text);
+}
+.display-sm {
+  font-family: var(--f-sans);
+  font-size: var(--fs-32);
+  line-height: 1.1;
+  letter-spacing: -0.024em;
+  font-weight: 500;
+  color: var(--text);
+}
+.eyebrow {
+  font-family: var(--f-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
 
 a {
   color: var(--link);
@@ -152,25 +194,46 @@ a:focus-visible {
   font-weight: 500;
   letter-spacing: -0.005em;
   cursor: pointer;
-  transition: background 100ms ease-out, border-color 100ms ease-out;
+  /* Slightly longer easing so hover feels intentional rather than instant. */
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
   text-decoration: none;
+  /* Hint to the GPU that we'll transform on press. */
+  will-change: transform;
 }
-.btn:hover { background: var(--hover); }
+.btn:hover {
+  background: var(--hover);
+  border-color: var(--border-strong);
+}
+.btn:active { transform: translateY(1px); }
 .btn:focus-visible { outline: 1px solid var(--border-focus); outline-offset: 1px; }
-.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 
 .btn-primary {
   background: var(--accent);
   color: var(--accent-fg);
   border-color: var(--accent);
+  /* A whisper of inner highlight that catches the eye on the primary CTA. */
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--shadow-1);
 }
-.btn-primary:hover { background: #1c1c1c; }
+.btn-primary:hover {
+  background: #1c1c1c;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), var(--shadow-2);
+}
+.btn-primary:active {
+  background: #2b2b2b;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
 
 .btn-ghost {
   background: transparent;
   border-color: transparent;
 }
-.btn-ghost:hover { background: var(--hover); }
+.btn-ghost:hover { background: var(--hover); border-color: transparent; }
 
 .btn-danger {
   background: var(--danger);
@@ -253,7 +316,15 @@ a:focus-visible {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-3);
-  box-shadow: var(--shadow-1);
+  /* Stack the standard 1px shadow with a near-invisible inner highlight
+   * so the card feels like a *physical* surface against the bg without
+   * leaning on a heavy drop-shadow. */
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.6),
+    var(--shadow-1);
+  transition:
+    border-color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-base) var(--ease-out);
 }
 .card-pad    { padding: 16px; }
 .card-pad-lg { padding: 20px; }
@@ -324,6 +395,9 @@ a:focus-visible {
   letter-spacing: 0.06em;
   color: var(--text-3);
 }
+.table tbody tr {
+  transition: background var(--motion-fast) var(--ease-out);
+}
 .table tbody tr:hover { background: var(--hover); }
 .table .num { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
 
@@ -389,15 +463,45 @@ a:focus-visible {
   color: var(--text-2);
   text-decoration: none;
   cursor: pointer;
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out);
 }
 .nav-item:hover { background: var(--hover); color: var(--text); text-decoration: none; }
+.nav-item:hover .nav-icon { opacity: 1; }
 .nav-item.active {
   background: var(--surface-3);
   color: var(--text);
   font-weight: 500;
 }
-.nav-item .nav-icon { width: 16px; height: 16px; opacity: 0.85; }
+/* Left-edge accent bar on the active item — high-affordance signal that
+ * hints the user is "anchored" to that section. Animates in via a
+ * scaleY transform so it doesn't jolt when the active item changes. */
+.nav-item.active::before {
+  content: "";
+  position: absolute;
+  left: -6px;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+  transform-origin: center;
+  animation: nav-indicator-in var(--motion-base) var(--ease-out-soft);
+}
+.nav-item .nav-icon {
+  width: 16px;
+  height: 16px;
+  opacity: 0.7;
+  transition: opacity var(--motion-fast) var(--ease-out);
+}
+.nav-item.active .nav-icon { opacity: 1; }
 .nav-item .badge { margin-left: auto; }
+
+@keyframes nav-indicator-in {
+  0%   { transform: scaleY(0); opacity: 0; }
+  100% { transform: scaleY(1); opacity: 1; }
+}
 
 /* Inputs */
 input[type="text"],
@@ -441,10 +545,42 @@ pre, .code {
 }
 *::-webkit-scrollbar-thumb:hover { background: var(--border-strong); }
 
-/* Reduced motion */
+/* ---------- Cinematic entrance — opt-in via .stage / .stage-item ----------
+ * Used on the auth surface (and only on the auth surface for now) to give
+ * the first-impression page a real moment of theatre. Items inside .stage
+ * fade up with a 60ms stagger; the .stage container itself fades in.
+ * Reduced-motion media query at the bottom of the file zeroes everything. */
+.stage {
+  animation: stage-fade var(--motion-stage) var(--ease-out-soft) both;
+}
+.stage-item {
+  opacity: 0;
+  transform: translateY(8px);
+  animation: stage-rise var(--motion-stage) var(--ease-out-soft) forwards;
+}
+.stage-item:nth-child(1) { animation-delay:  60ms; }
+.stage-item:nth-child(2) { animation-delay: 120ms; }
+.stage-item:nth-child(3) { animation-delay: 180ms; }
+.stage-item:nth-child(4) { animation-delay: 240ms; }
+.stage-item:nth-child(5) { animation-delay: 300ms; }
+.stage-item:nth-child(6) { animation-delay: 360ms; }
+
+@keyframes stage-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes stage-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Reduced motion — wipe every transition + animation, including the
+ * cinematic stage entrance, for users who've requested less motion. */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0ms !important;
+    animation-delay: 0ms !important;
     transition-duration: 0ms !important;
   }
+  .stage-item { opacity: 1 !important; transform: none !important; }
 }

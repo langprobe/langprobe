@@ -72,6 +72,7 @@ function LeftRail() {
         }
       `}</style>
       <div
+        className="stage"
         style={{
           padding: "56px 64px",
           display: "flex",
@@ -83,10 +84,12 @@ function LeftRail() {
           position: "relative",
         }}
       >
-        <BrandMark />
-        <Headline />
-        <FeatureList />
-        <Footnote />
+        <div className="stage-item"><BrandMark /></div>
+        <div className="stage-item"><Headline /></div>
+        <div className="stage-item"><FeatureList /></div>
+        <div className="stage-item" style={{ marginTop: "auto" }}>
+          <Footnote />
+        </div>
       </div>
     </aside>
   );
@@ -138,20 +141,12 @@ function BrandMark() {
 
 function Headline() {
   return (
-    <div style={{ display: "grid", gap: 12 }}>
-      <h1
-        style={{
-          margin: 0,
-          fontSize: 40,
-          lineHeight: 1.1,
-          fontWeight: 500,
-          letterSpacing: -0.02,
-          color: "var(--text)",
-        }}
-      >
-        The real debugger
+    <div style={{ display: "grid", gap: 14 }}>
+      <span className="eyebrow">debugger for agents</span>
+      <h1 className="display" style={{ margin: 0 }}>
+        Trace every step.
         <br />
-        for agents.
+        <span style={{ color: "var(--text-3)" }}>Replay any moment.</span>
       </h1>
       <p
         style={{
@@ -281,12 +276,15 @@ function RightRail({
       }}
     >
       <div
-        className="card card-pad-lg"
+        className="card card-pad-lg stage-item"
         style={{
           width: "100%",
           maxWidth: 420,
           display: "grid",
           gap: 24,
+          // Slightly later than the left-rail items so the eye lands on
+          // the headline first, then the form.
+          animationDelay: "300ms",
         }}
       >
         <AuthClient
