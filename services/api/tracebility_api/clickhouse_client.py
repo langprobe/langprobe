@@ -1,34 +1,88 @@
 """Thin ClickHouse client used by read-side routers.
 
-clickhouse-connect is sync, so we wrap calls in ``run_in_executor``. One
-HTTP client per process (it manages its own pool internally). Reads via
-``query``; control-plane writes (dataset items, etc.) via ``insert`` /
-``command``. The hot trace ingest path stays on the dedicated ingest
-service — these helpers are for low-volume CRUD only.
+clickhouse-connect's `Client` is sync AND not thread-safe — concurrent
+calls within the same client raise "Attempt to execute concurrent
+queries within the same session". One client per process can't serve
+a fan-out request like the home page (which fires 3-4 reads in
+parallel).
+
+We keep a small thread-safe pool of clients. Each call checks one out
+of the pool, runs the query in a thread, returns it. The pool grows
+lazily up to a cap; no client is ever shared between two concurrent
+calls.
+
 Failure surfaces as an exception so routers can translate to 503; we
-prefer that to a 200 with stale or empty data.
+prefer that to a 200 with stale or empty data. The hot trace ingest
+path stays on the dedicated ingest service — these helpers are for
+low-volume CRUD + read fan-out only.
 """
 
 from __future__ import annotations
 
 import asyncio
+import queue
+import threading
 from collections.abc import Sequence
 from typing import Any
 
 import clickhouse_connect
 from clickhouse_connect.driver.client import Client
 
+# Pool cap: deliberately conservative. Each client opens a small HTTP
+# connection pool internally; we just need enough distinct sessions
+# that the home-page fan-out (5-ish parallel reads) doesn't queue.
+_DEFAULT_POOL_SIZE = 8
+
 
 class ClickHouseQuery:
-    def __init__(self, url: str) -> None:
-        self._client: Client = clickhouse_connect.get_client(dsn=url)
+    def __init__(self, url: str, pool_size: int = _DEFAULT_POOL_SIZE) -> None:
+        self._url = url
+        self._pool_size = pool_size
+        # `_pool` holds idle clients; `_created` tracks how many we've
+        # made so we know when to grow vs. block on a checkout.
+        self._pool: queue.Queue[Client] = queue.Queue()
+        self._created = 0
+        self._lock = threading.Lock()
+        self._closed = False
+
+    def _checkout(self) -> Client:
+        try:
+            return self._pool.get_nowait()
+        except queue.Empty:
+            pass
+        with self._lock:
+            if self._closed:
+                raise RuntimeError("ClickHouseQuery is closed")
+            if self._created < self._pool_size:
+                client = clickhouse_connect.get_client(dsn=self._url)
+                self._created += 1
+                return client
+        # Pool is at cap; block until a client is returned.
+        return self._pool.get()
+
+    def _checkin(self, client: Client) -> None:
+        if self._closed:
+            try:
+                client.close()
+            except Exception:  # noqa: BLE001
+                pass
+            return
+        self._pool.put(client)
+
+    def _run(self, fn) -> Any:
+        client = self._checkout()
+        try:
+            return fn(client)
+        finally:
+            self._checkin(client)
 
     async def query(
         self, sql: str, parameters: dict[str, Any] | None = None
     ) -> list[dict[str, Any]]:
         loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(
-            None, lambda: self._client.query(sql, parameters=parameters)
+            None,
+            lambda: self._run(lambda c: c.query(sql, parameters=parameters)),
         )
         column_names = result.column_names
         return [dict(zip(column_names, row, strict=True)) for row in result.result_rows]
@@ -48,10 +102,12 @@ class ClickHouseQuery:
         if not rows:
             return
         loop = asyncio.get_running_loop()
+        rows_list = list(rows)
+        cols_list = list(column_names)
         await loop.run_in_executor(
             None,
-            lambda: self._client.insert(
-                table, list(rows), column_names=list(column_names)
+            lambda: self._run(
+                lambda c: c.insert(table, rows_list, column_names=cols_list)
             ),
         )
 
@@ -61,8 +117,21 @@ class ClickHouseQuery:
         """Run a DDL/DML command (ALTER ... DELETE, etc.) without a result set."""
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(
-            None, lambda: self._client.command(sql, parameters=parameters)
+            None,
+            lambda: self._run(lambda c: c.command(sql, parameters=parameters)),
         )
 
     def close(self) -> None:
-        self._client.close()
+        with self._lock:
+            self._closed = True
+        # Drain whatever is idle; in-flight clients get closed on
+        # checkin via the closed-flag check.
+        while True:
+            try:
+                client = self._pool.get_nowait()
+            except queue.Empty:
+                break
+            try:
+                client.close()
+            except Exception:  # noqa: BLE001
+                pass
