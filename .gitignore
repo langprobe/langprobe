@@ -67,3 +67,9 @@ docker-compose.override.yml
 
 # Local worktrees (superpowers)
 .worktrees/
+
+# Local agent / scratchpad state
+.claude/
+.github/skills/
+docs/superpowers/plans/
+next-items.md
