@@ -63,3 +63,4 @@ docker-compose.override.yml
 
 # Repo-internal state we don't want public
 .gstack/
+.superpowers/
