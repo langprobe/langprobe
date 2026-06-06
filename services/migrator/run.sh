@@ -22,6 +22,8 @@ for f in /schemas/postgres/*.sql; do
 done
 echo "==> Postgres: applied $count_applied, skipped $count_skipped"
 
+# All ClickHouse migrations must be idempotent (CREATE TABLE IF NOT EXISTS).
+# ALTER migrations require a version-tracking table before being added.
 echo "==> ClickHouse: applying all migrations (CREATE IF NOT EXISTS)"
 ch_total=0
 for f in /schemas/clickhouse/*.sql; do
