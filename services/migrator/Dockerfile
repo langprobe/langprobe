@@ -1,28 +1,27 @@
-# ClickHouse client stage: pull a pinned, official ClickHouse image and
-# copy out the single `clickhouse` binary (which dispatches to all
-# sub-commands including `client` via argv[0]).
-#
-# The version is pinned to match the ClickHouse server image used for
-# dev-deps (see deploy/k8s/dev-deps/clickhouse.yaml). Bumping that image
-# is when this pin should also bump.
-FROM clickhouse/clickhouse-server:24.8-alpine AS clickhouse-binary
+# Single-stage Debian base. Has psql via the postgres:16 image and the
+# clickhouse-client via the official ClickHouse apt repo. Larger than
+# Alpine but reproducible, doesn't require multi-stage glibc tricks,
+# and runs as a one-shot Job so cold-start size doesn't matter.
+FROM postgres:16
 
-# Final stage: postgres:16-alpine for psql, with the clickhouse binary
-# copied in from the stage above.
-# NOTE: the ClickHouse binary is glibc-linked. The clickhouse-server:24.8-alpine
-# image ships the glibc dynamic linker in /lib alongside musl. We copy
-# the whole /lib directory so that both architectures (amd64/arm64) get
-# the correct platform-specific glibc shims — only ~3 MB of overhead.
-FROM postgres:16-alpine
+ARG CLICKHOUSE_VERSION=24.8.14.39
+ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apk add --no-cache bash
-
-# Bring in the glibc shims from the ClickHouse stage (arch-agnostic).
-COPY --from=clickhouse-binary /lib/ /lib/
-
-# clickhouse-client is symlinked -> clickhouse; both names work.
-COPY --from=clickhouse-binary /usr/bin/clickhouse /usr/local/bin/clickhouse
-RUN ln -s /usr/local/bin/clickhouse /usr/local/bin/clickhouse-client
+# ClickHouse apt repo + pinned client install. Build-only deps
+# (curl, gnupg) are removed in the same RUN to keep the layer small.
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends ca-certificates curl gnupg; \
+    curl -fsSL https://packages.clickhouse.com/rpm/lts/repodata/repomd.xml.key \
+      | gpg --dearmor -o /usr/share/keyrings/clickhouse-keyring.gpg; \
+    echo "deb [signed-by=/usr/share/keyrings/clickhouse-keyring.gpg] https://packages.clickhouse.com/deb stable main" \
+      > /etc/apt/sources.list.d/clickhouse.list; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+      "clickhouse-client=${CLICKHOUSE_VERSION}" \
+      "clickhouse-common-static=${CLICKHOUSE_VERSION}"; \
+    apt-get purge -y --auto-remove curl gnupg; \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 COPY services/migrator/run.sh /app/run.sh
