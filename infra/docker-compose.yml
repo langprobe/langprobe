@@ -108,6 +108,11 @@ services:
       # the api can be relayed by the web's /api/auth/oauth/<provider>/callback
       # route handler back to the same origin the browser sees.
       OAUTH_REDIRECT_BASE: ${OAUTH_REDIRECT_BASE:-http://localhost:7090}
+      # Circuit breaker for the LiteLLM dispatch gateway. Default
+      # 'litellm'; set to 'legacy' to halt all gateway dispatches with
+      # a 502 (used as an emergency switch — actual fix is a deploy
+      # rollback).
+      LLM_GATEWAY: ${LLM_GATEWAY:-litellm}
     ports:
       - "7081:7081"
     depends_on:

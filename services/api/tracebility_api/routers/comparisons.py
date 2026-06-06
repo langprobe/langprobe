@@ -370,17 +370,6 @@ async def _run_comparison(
         variant_a = _build_variant("a", ver_by_id.get(cmp_row["prompt_version_id_a"]))
         variant_b = _build_variant("b", ver_by_id.get(cmp_row["prompt_version_id_b"]))
 
-        # Resolve api keys per provider once. Both sides may use the same
-        # provider; resolve_secret is cheap but no reason to call it twice.
-        api_keys: dict[str, str | None] = {}
-        for variant in (variant_a, variant_b):
-            if variant.provider not in api_keys:
-                api_keys[variant.provider] = (
-                    await llm_credentials.resolve_secret(
-                        pool, workspace_id=workspace_id, provider=variant.provider
-                    )
-                )
-
         items = await _fetch_dataset_items(
             ch, cmp_row["project_id"], cmp_row["dataset_id"]
         )
@@ -393,12 +382,13 @@ async def _run_comparison(
         score_sum_a = 0.0
         score_sum_b = 0.0
         judged_at = datetime.utcnow()
+        project_id = cmp_row["project_id"]
         for item in items:
             output_a, run_id_a, err_a = await _dispatch_variant(
-                variant_a, item, api_keys[variant_a.provider]
+                pool, project_id, comparison_id, variant_a, item,
             )
             output_b, run_id_b, err_b = await _dispatch_variant(
-                variant_b, item, api_keys[variant_b.provider]
+                pool, project_id, comparison_id, variant_b, item,
             )
             score_a, label_a, rationale_a = _judge(
                 cmp_row["judge_kind"], output_a, item["expected"]
@@ -658,39 +648,56 @@ def _item_variables(item: dict[str, Any]) -> dict[str, Any]:
 
 
 async def _dispatch_variant(
+    pool: asyncpg.Pool,
+    project_id: UUID,
+    comparison_id: UUID,
     variant: _Variant,
     item: dict[str, Any],
-    api_key: str | None,
 ) -> tuple[str, str, str | None]:
-    """Render template + dispatch the LLM. Returns (output, run_id, error).
+    """Render template + dispatch the LLM via the gateway.
 
-    On dispatch failure we still return a `run_id` (the new uuid we
-    generated) and a non-None error so the trace + score row record the
-    failure attempt rather than silent-drop (ER-23).
+    Returns (output, run_id, error). On dispatch failure we still return
+    a `run_id` (the new uuid we generated) and a non-None error so the
+    trace + score row record the failure attempt rather than silent-drop
+    (ER-23).
     """
     rendered = _render_template(variant.template, _item_variables(item))
     variant.last_rendered = rendered
     run_id = str(_uuid.uuid4())
+
+    if variant.provider == "stub":
+        # Stub bypasses LiteLLM entirely. Used as the fallback when the
+        # comparison is configured against a model whose provider prefix
+        # we don't know.
+        output = f"[stub:{variant.model}] {rendered[-512:]}"
+        return output, run_id, None
+
+    from ..llm import DispatchError, Message, dispatch as gateway_dispatch
+    bare_model = variant.model
+    if not bare_model.startswith(variant.provider + "/"):
+        bare_model = f"{variant.provider}/{bare_model}"
     try:
-        result = await playground_module._dispatch(
-            provider=variant.provider,
-            model=variant.model,
-            prompt=rendered,
+        result = await gateway_dispatch(
+            pool,
+            project_id=project_id,
+            surface="comparisons",
+            surface_ref_id=comparison_id,
+            model=bare_model,
+            messages=[Message(role="user", content=rendered)],
             temperature=variant.temperature,
             max_tokens=variant.max_tokens,
-            api_key=api_key,
         )
-        output = result.get("text") or ""
-        return output, run_id, None
-    except Exception as exc:  # noqa: BLE001
+        return result.text, run_id, None
+    except DispatchError as exc:
         log.warning(
             "comparison dispatch failed",
             side=variant.side,
             provider=variant.provider,
             model=variant.model,
-            error=str(exc),
+            code=exc.code,
+            detail=exc.detail,
         )
-        return "", run_id, f"{type(exc).__name__}: {exc}"
+        return "", run_id, f"[{exc.code}] {exc.detail}"
 
 
 async def _write_comparison_trace(

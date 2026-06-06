@@ -34,3 +34,24 @@ export async function DELETE(
     headers: { "content-type": "application/json" },
   });
 }
+
+export async function PATCH(
+  req: Request,
+  { params }: { params: { id: string } },
+): Promise<NextResponse> {
+  const body = await req.text();
+  const res = await fetch(`${apiBase()}/v1/llm-credentials/${params.id}`, {
+    method: "PATCH",
+    headers: {
+      cookie: cookieHeader(),
+      "content-type": "application/json",
+    },
+    body,
+    cache: "no-store",
+  });
+  const text = await res.text();
+  return new NextResponse(text, {
+    status: res.status,
+    headers: { "content-type": "application/json" },
+  });
+}

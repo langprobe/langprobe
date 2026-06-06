@@ -35,7 +35,9 @@ log = structlog.get_logger("tracebility.api.llm_credentials")
 
 router = APIRouter(prefix="/v1/llm-credentials", tags=["llm-credentials"])
 
-_VALID_PROVIDERS = {"anthropic", "openai"}
+_VALID_PROVIDERS = {
+    "anthropic", "openai", "gemini", "mistral", "deepseek", "groq",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -49,9 +51,14 @@ class LLMCredentialOut(BaseModel):
     provider: str
     name: str
     secret_last4: str
+    default_enabled: bool = False
     created_at: datetime
     updated_at: datetime
     revoked_at: datetime | None
+
+
+class LLMCredentialPatch(BaseModel):
+    default_enabled: bool
 
 
 class LLMCredentialCreated(LLMCredentialOut):
@@ -87,6 +94,7 @@ async def list_credentials(
     rows = await pool.fetch(
         """
         select id, workspace_id, provider, name, secret_last4,
+               default_enabled,
                created_at, updated_at, revoked_at
           from workspace_llm_credential
          where workspace_id = $1
@@ -133,6 +141,7 @@ async def create_credential(
             )
             values ($1, $2, $3, $4, $5, $6)
             returning id, workspace_id, provider, name, secret_last4,
+                      default_enabled,
                       created_at, updated_at, revoked_at
             """,
             workspace_id,
@@ -202,29 +211,168 @@ async def revoke_credential(
     )
 
 
+@router.patch("/{credential_id}", response_model=LLMCredentialOut)
+async def patch_credential(
+    request: Request,
+    credential_id: UUID,
+    body: LLMCredentialPatch,
+    principal: Principal = Depends(require_user),
+) -> LLMCredentialOut:
+    pool: asyncpg.Pool = request.app.state.pg
+    cur = await pool.fetchrow(
+        "select workspace_id, provider, name, default_enabled, revoked_at "
+        "from workspace_llm_credential where id = $1",
+        credential_id,
+    )
+    if cur is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "credential not found")
+    if cur["revoked_at"] is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "credential is revoked")
+    await assert_workspace_role(
+        pool,
+        user_id=principal.user_id,
+        workspace_id=cur["workspace_id"],
+        allowed=("owner", "admin"),
+    )
+
+    flipped_to_true = (not cur["default_enabled"]) and body.default_enabled
+
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            row = await conn.fetchrow(
+                """
+                update workspace_llm_credential
+                   set default_enabled = $2, updated_at = now()
+                 where id = $1
+                returning id, workspace_id, provider, name, secret_last4,
+                          default_enabled,
+                          created_at, updated_at, revoked_at
+                """,
+                credential_id,
+                body.default_enabled,
+            )
+            assert row is not None
+            if flipped_to_true:
+                await _propagate_default_enabled(
+                    conn,
+                    credential_id=credential_id,
+                    workspace_id=cur["workspace_id"],
+                    user_id=principal.user_id,
+                )
+
+    await audit.record(
+        pool,
+        principal=principal,
+        action="llm_credential.default_enabled_changed",
+        target_kind="workspace_llm_credential",
+        target_id=credential_id,
+        payload={
+            "provider": cur["provider"],
+            "name": cur["name"],
+            "default_enabled": body.default_enabled,
+        },
+        request=request,
+        workspace_id=cur["workspace_id"],
+    )
+    return LLMCredentialOut(**dict(row))
+
+
+async def _propagate_default_enabled(
+    conn: asyncpg.Connection,
+    *,
+    credential_id: UUID,
+    workspace_id: UUID,
+    user_id: UUID | None,
+) -> None:
+    """When default_enabled flips false→true, link this credential to
+    every existing project in the workspace that lacks a link.
+
+    Idempotent via the link table's primary key (project_id, credential_id).
+    """
+    await conn.execute(
+        """
+        insert into project_llm_credential (project_id, credential_id, enabled_by)
+        select p.id, $1, $3
+          from project p
+         where p.workspace_id = $2
+           and p.deleted_at is null
+         on conflict do nothing
+        """,
+        credential_id,
+        workspace_id,
+        user_id,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Public dispatch helper
 # ---------------------------------------------------------------------------
 
 
+_ENV_KEY_BY_PROVIDER = {
+    "anthropic": "ANTHROPIC_API_KEY",
+    "openai":    "OPENAI_API_KEY",
+    "gemini":    "GEMINI_API_KEY",
+    "mistral":   "MISTRAL_API_KEY",
+    "deepseek":  "DEEPSEEK_API_KEY",
+    "groq":      "GROQ_API_KEY",
+}
+
+
 async def resolve_secret(
     pool: asyncpg.Pool,
     *,
-    workspace_id: UUID | None,
+    project_id: UUID | None = None,
     provider: str,
+    workspace_id: UUID | None = None,
 ) -> str | None:
-    """Find an active secret for (workspace, provider).
+    """Find an active secret for (project, provider).
 
     Lookup order:
-      1. The most-recently-created active workspace credential.
-      2. Env var for the provider (`ANTHROPIC_API_KEY` /
-         `OPENAI_API_KEY`).
+      1. The most-recently-created active credential linked to this
+         project via project_llm_credential.
+      2. Env var per provider (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` /
+         `GEMINI_API_KEY` / `MISTRAL_API_KEY` / `DEEPSEEK_API_KEY` /
+         `GROQ_API_KEY`).
       3. None — caller decides whether that's fatal.
 
-    Self-host single-tenant deployments don't need workspace creds;
-    the env fallback keeps that path working unchanged.
+    Single-tenant self-host deployments without project links keep
+    working via env fallback unchanged.
+
+    The legacy `workspace_id=` kwarg is accepted as a transitional
+    fallback: when project_id is None and workspace_id is set, we look
+    up by workspace (matching pre-0023 behavior). Tasks 10-15 of the
+    LiteLLM-dispatch migration remove all workspace_id callers; this
+    shim exists only to keep the api running between Task 4 and
+    Task 15.
     """
-    if workspace_id is not None:
+    if project_id is not None:
+        try:
+            row = await pool.fetchrow(
+                """
+                select c.secret_encrypted
+                  from project_llm_credential pl
+                  join workspace_llm_credential c on c.id = pl.credential_id
+                 where pl.project_id = $1
+                   and c.provider = $2
+                   and c.revoked_at is null
+                 order by c.created_at desc
+                 limit 1
+                """,
+                project_id,
+                provider,
+            )
+            if row is not None and row["secret_encrypted"]:
+                return str(row["secret_encrypted"])
+        except asyncpg.PostgresError as exc:  # pragma: no cover
+            log.warning(
+                "credential lookup failed",
+                project_id=str(project_id),
+                provider=provider,
+                error=str(exc),
+            )
+    elif workspace_id is not None:
+        # Transitional: pre-Task-15 callers still pass workspace_id.
         try:
             row = await pool.fetchrow(
                 """
@@ -249,10 +397,7 @@ async def resolve_secret(
                 error=str(exc),
             )
 
-    env_key = {
-        "anthropic": "ANTHROPIC_API_KEY",
-        "openai": "OPENAI_API_KEY",
-    }.get(provider)
+    env_key = _ENV_KEY_BY_PROVIDER.get(provider)
     if env_key is None:
         return None
     return os.environ.get(env_key)
