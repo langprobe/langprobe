@@ -92,6 +92,11 @@ Resolve a credential. Renders:
   - the literal `inline` value, OR
   - empty string (caller decides if that's fatal).
 This indirection keeps the templates branch-free at the env-var site.
+
+Note: this helper does NOT support `optional: true` on the secretKeyRef.
+The OAuth env vars in api-deployment.yaml inline four secretKeyRef
+blocks directly because they need `optional: true` (so a Secret with
+only google_* keys doesn't crash the api when github_* is missing).
 */}}
 {{- define "tracebility.envFromSecret" -}}
 {{- $cfg := .cfg -}}
