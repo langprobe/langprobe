@@ -144,6 +144,14 @@ async def dispatch(
     raises DispatchError. Callers translate the error to their own
     row-failure shape.
     """
+    from ..config import load as _load_settings
+    if _load_settings().llm_gateway != "litellm":
+        raise DispatchError(
+            "provider_error", None,
+            "LLM_GATEWAY != litellm: dispatch refused. "
+            "Set LLM_GATEWAY=litellm or roll back the deploy.",
+        )
+
     provider = provider_from_model(model)
     workspace_id = await _workspace_id_for_project(pool, project_id)
 

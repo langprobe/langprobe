@@ -36,6 +36,11 @@ class Settings:
     oauth_github_client_secret: str | None = None
     oauth_redirect_base: str = "http://localhost:7081"
     web_base_url: str = "http://localhost:7090"
+    # Circuit breaker for the LiteLLM gateway. 'litellm' (default) =
+    # active. 'legacy' = the gateway refuses dispatch with a 502; the
+    # actual fix in that case is a deploy rollback. The flag exists so
+    # operators can halt LLM traffic without a code change.
+    llm_gateway: str = "litellm"
 
 
 def load() -> Settings:
@@ -73,4 +78,5 @@ def load() -> Settings:
         web_base_url=os.environ.get(
             "TRACEBILITY_WEB_BASE_URL", "http://localhost:7090"
         ),
+        llm_gateway=os.environ.get("LLM_GATEWAY", "litellm"),
     )

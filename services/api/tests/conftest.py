@@ -11,6 +11,11 @@ import os
 
 import pytest
 
+# Required-by-config env vars. Set defaults so unit tests don't have to
+# pass them and config.load() doesn't raise at import time.
+os.environ.setdefault("TRACEBILITY_PG_DSN", "postgres://test/test")
+os.environ.setdefault("TRACEBILITY_SESSION_SECRET", "x" * 40)
+
 
 @pytest.fixture
 def fake_pool(mocker):
