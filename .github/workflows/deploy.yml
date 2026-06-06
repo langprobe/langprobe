@@ -13,7 +13,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
   group: deploy-main
@@ -31,6 +30,9 @@ env:
 jobs:
   build-images:
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    permissions:
+      contents: read
+      id-token: write
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -85,6 +87,9 @@ jobs:
 
   helm-deploy:
     needs: build-images
+    permissions:
+      contents: read
+      id-token: write
     runs-on: ubuntu-latest
     steps:
       - name: Resolve SHA
@@ -130,7 +135,7 @@ jobs:
             --namespace "${{ env.K8S_NAMESPACE }}" \
             --create-namespace \
             --values deploy/helm/tracebility/values-gke.yaml \
-            --set image.tag=${{ steps.sha.outputs.sha }} \
+            --set image.tag="${{ steps.sha.outputs.sha }}" \
             --atomic \
             --wait \
             --timeout 5m
