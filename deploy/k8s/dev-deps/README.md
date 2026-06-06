@@ -15,12 +15,14 @@ kubectl apply -n tracebility -f deploy/k8s/dev-deps/
 
 ## Replace with managed services
 
-Edit the four k8s secrets created during bootstrap to point at the new
+Edit the three k8s secrets created during bootstrap to point at the new
 endpoints, then `kubectl rollout restart deploy -n tracebility`:
 
 - `tracebility-postgres` (key `dsn`)
 - `tracebility-clickhouse` (key `url`)
 - `tracebility-redis` (key `url`)
+
+(`tracebility-session` is unrelated — it stays.)
 
 Once switched, delete the dev-deps:
 
