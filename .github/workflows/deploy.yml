@@ -46,6 +46,8 @@ jobs:
             dockerfile: services/ingest-worker/Dockerfile
           - service: web
             dockerfile: web/Dockerfile
+          - service: migrator
+            dockerfile: services/migrator/Dockerfile
     steps:
       - name: Resolve SHA
         id: sha
