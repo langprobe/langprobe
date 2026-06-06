@@ -35,7 +35,9 @@ log = structlog.get_logger("tracebility.api.llm_credentials")
 
 router = APIRouter(prefix="/v1/llm-credentials", tags=["llm-credentials"])
 
-_VALID_PROVIDERS = {"anthropic", "openai"}
+_VALID_PROVIDERS = {
+    "anthropic", "openai", "gemini", "mistral", "deepseek", "groq",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -49,9 +51,14 @@ class LLMCredentialOut(BaseModel):
     provider: str
     name: str
     secret_last4: str
+    default_enabled: bool = False
     created_at: datetime
     updated_at: datetime
     revoked_at: datetime | None
+
+
+class LLMCredentialPatch(BaseModel):
+    default_enabled: bool
 
 
 class LLMCredentialCreated(LLMCredentialOut):
@@ -87,6 +94,7 @@ async def list_credentials(
     rows = await pool.fetch(
         """
         select id, workspace_id, provider, name, secret_last4,
+               default_enabled,
                created_at, updated_at, revoked_at
           from workspace_llm_credential
          where workspace_id = $1
@@ -133,6 +141,7 @@ async def create_credential(
             )
             values ($1, $2, $3, $4, $5, $6)
             returning id, workspace_id, provider, name, secret_last4,
+                      default_enabled,
                       created_at, updated_at, revoked_at
             """,
             workspace_id,
@@ -199,6 +208,99 @@ async def revoke_credential(
         payload={"provider": row["provider"], "name": row["name"]},
         request=request,
         workspace_id=row["workspace_id"],
+    )
+
+
+@router.patch("/{credential_id}", response_model=LLMCredentialOut)
+async def patch_credential(
+    request: Request,
+    credential_id: UUID,
+    body: LLMCredentialPatch,
+    principal: Principal = Depends(require_user),
+) -> LLMCredentialOut:
+    pool: asyncpg.Pool = request.app.state.pg
+    cur = await pool.fetchrow(
+        "select workspace_id, provider, name, default_enabled, revoked_at "
+        "from workspace_llm_credential where id = $1",
+        credential_id,
+    )
+    if cur is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "credential not found")
+    if cur["revoked_at"] is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "credential is revoked")
+    await assert_workspace_role(
+        pool,
+        user_id=principal.user_id,
+        workspace_id=cur["workspace_id"],
+        allowed=("owner", "admin"),
+    )
+
+    flipped_to_true = (not cur["default_enabled"]) and body.default_enabled
+
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            row = await conn.fetchrow(
+                """
+                update workspace_llm_credential
+                   set default_enabled = $2, updated_at = now()
+                 where id = $1
+                returning id, workspace_id, provider, name, secret_last4,
+                          default_enabled,
+                          created_at, updated_at, revoked_at
+                """,
+                credential_id,
+                body.default_enabled,
+            )
+            assert row is not None
+            if flipped_to_true:
+                await _propagate_default_enabled(
+                    conn,
+                    credential_id=credential_id,
+                    workspace_id=cur["workspace_id"],
+                    user_id=principal.user_id,
+                )
+
+    await audit.record(
+        pool,
+        principal=principal,
+        action="llm_credential.default_enabled_changed",
+        target_kind="workspace_llm_credential",
+        target_id=credential_id,
+        payload={
+            "provider": cur["provider"],
+            "name": cur["name"],
+            "default_enabled": body.default_enabled,
+        },
+        request=request,
+        workspace_id=cur["workspace_id"],
+    )
+    return LLMCredentialOut(**dict(row))
+
+
+async def _propagate_default_enabled(
+    conn: asyncpg.Connection,
+    *,
+    credential_id: UUID,
+    workspace_id: UUID,
+    user_id: UUID | None,
+) -> None:
+    """When default_enabled flips false→true, link this credential to
+    every existing project in the workspace that lacks a link.
+
+    Idempotent via the link table's primary key (project_id, credential_id).
+    """
+    await conn.execute(
+        """
+        insert into project_llm_credential (project_id, credential_id, enabled_by)
+        select p.id, $1, $3
+          from project p
+         where p.workspace_id = $2
+           and p.deleted_at is null
+         on conflict do nothing
+        """,
+        credential_id,
+        workspace_id,
+        user_id,
     )
 
 
