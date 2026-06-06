@@ -11,16 +11,18 @@ metadata:
   name: tracebility-web
   namespace: tracebility
   annotations:
-    # Static global IP reserved as `gcloud compute addresses create
-    # tracebility-web-ip --global`. The Gateway controller binds the
-    # provisioned LB to this address.
-    networking.gke.io/addresses: tracebility-web-ip
     # Certificate Manager cert map. The map contains an entry for
     # langprobe.daz.co.in -> tracebility-web-cert, both created by
     # `gcloud certificate-manager` in the bootstrap runbook.
     networking.gke.io/certmap: tracebility-web-certmap
 spec:
   gatewayClassName: gke-l7-global-external-managed
+  # Bind to the global static IP reserved as
+  # `gcloud compute addresses create tracebility-web-ip --global`.
+  # NamedAddress is the GKE-specific value form for this gatewayClass.
+  addresses:
+    - type: NamedAddress
+      value: tracebility-web-ip
   listeners:
     - name: http
       protocol: HTTP
