@@ -179,28 +179,31 @@ serviceAccount:
 logging:
   level: INFO
 
-## Public OAuth signup (Google + GitHub) for /login + /signup.
+## Public OAuth signup (Google + GitHub) for /login + /signup. Set
+## `existingSecret` and `publicUrl` to enable; leave blank to hide
+## the buttons. The four cred keys live in one Secret; each env var
+## uses `optional: true`, so missing a provider's two keys just hides
+## that one button. The Secret object itself must exist when
+## `existingSecret` is set (Helm --atomic rolls back if not).
 ##
-## Operator-controlled at deploy time. The four credential keys live in
-## a single k8s Secret (`existingSecret`); each key is `optional: true`
-## on the env var, so a missing key only hides that one provider's
-## button (the API's start endpoint 503s, the web's providers endpoint
-## reports false). The secret object itself MUST exist if
-## `existingSecret` is set, or pod creation fails — Helm `--atomic`
-## rolls back in that case.
-##
-## `publicUrl` is the externally-reachable HTTPS origin of the web UI.
-## The API uses it for two things: (1) constructing the IdP callback
-## URI (`<publicUrl>/api/auth/oauth/<provider>/callback`), and (2) as
-## the WEB_BASE_URL for relative redirects after login. Set this to the
-## host you registered with Google + GitHub (e.g. https://app.example.com).
-##
-## To enable: set `existingSecret` to the secret name and `publicUrl`
-## to your domain. Leave both blank to keep the buttons hidden.
+## Note on key-name field naming: this chart's convention elsewhere
+## is a single `existingSecretKey`. We intentionally deviate here
+## because all four creds live in one Secret — one field name per
+## key. The api-deployment template emits four explicit secretKeyRef
+## blocks; the `tracebility.envFromSecret` helper is not used.
 oauth:
+  # The publicly-reachable HTTPS origin of the web UI. Used by the API
+  # both for the IdP callback URI (<publicUrl>/api/auth/oauth/<provider>/callback)
+  # and as TRACEBILITY_WEB_BASE_URL for relative redirects after login.
+  # NOT a secret — goes in values directly.
+  publicUrl: ""
+
+  # Name of the k8s Secret holding the four OAuth credential values.
   existingSecret: ""
+
+  # Key names within `existingSecret`. Defaults match docker-compose
+  # (infra/docker-compose.yml) so dev + prod use the same names.
   googleClientIdKey: google_client_id
   googleClientSecretKey: google_client_secret
   githubClientIdKey: github_client_id
   githubClientSecretKey: github_client_secret
-  publicUrl: ""
