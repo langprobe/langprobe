@@ -39,9 +39,12 @@ If it already exists, `gcloud` returns `ALREADY_EXISTS`; ignore.
 ## 3. Create the deploy service account
 
 ```bash
-gcloud iam service-accounts create tracebility-deploy \
-  --display-name="GitHub Actions deploy SA" \
-  --project=project-c4ff4ea3-775a-4e0c-9a3
+gcloud iam service-accounts describe \
+  tracebility-deploy@project-c4ff4ea3-775a-4e0c-9a3.iam.gserviceaccount.com \
+  --project=project-c4ff4ea3-775a-4e0c-9a3 >/dev/null 2>&1 \
+  || gcloud iam service-accounts create tracebility-deploy \
+       --display-name="GitHub Actions deploy SA" \
+       --project=project-c4ff4ea3-775a-4e0c-9a3
 ```
 
 Email: `tracebility-deploy@project-c4ff4ea3-775a-4e0c-9a3.iam.gserviceaccount.com`.
@@ -69,18 +72,25 @@ gcloud projects add-iam-policy-binding project-c4ff4ea3-775a-4e0c-9a3 \
 ## 5. Create the WIF pool and provider
 
 ```bash
-gcloud iam workload-identity-pools create github-actions-pool \
+gcloud iam workload-identity-pools describe github-actions-pool \
   --location=global \
-  --display-name="GitHub Actions" \
-  --project=project-c4ff4ea3-775a-4e0c-9a3
+  --project=project-c4ff4ea3-775a-4e0c-9a3 >/dev/null 2>&1 \
+  || gcloud iam workload-identity-pools create github-actions-pool \
+       --location=global \
+       --display-name="GitHub Actions" \
+       --project=project-c4ff4ea3-775a-4e0c-9a3
 
-gcloud iam workload-identity-pools providers create-oidc github-actions-provider \
+gcloud iam workload-identity-pools providers describe github-actions-provider \
   --workload-identity-pool=github-actions-pool \
   --location=global \
-  --issuer-uri=https://token.actions.githubusercontent.com \
-  --attribute-mapping=google.subject=assertion.sub,attribute.repository=assertion.repository,attribute.ref=assertion.ref \
-  --attribute-condition='assertion.repository == "tracebility-ai/tracebility"' \
-  --project=project-c4ff4ea3-775a-4e0c-9a3
+  --project=project-c4ff4ea3-775a-4e0c-9a3 >/dev/null 2>&1 \
+  || gcloud iam workload-identity-pools providers create-oidc github-actions-provider \
+       --workload-identity-pool=github-actions-pool \
+       --location=global \
+       --issuer-uri=https://token.actions.githubusercontent.com \
+       --attribute-mapping=google.subject=assertion.sub,attribute.repository=assertion.repository \
+       --attribute-condition='assertion.repository == "tracebility-ai/tracebility"' \
+       --project=project-c4ff4ea3-775a-4e0c-9a3
 ```
 
 ## 6. Bind WIF principal → deploy SA
@@ -95,9 +105,9 @@ gcloud iam service-accounts add-iam-policy-binding \
   --project=project-c4ff4ea3-775a-4e0c-9a3
 ```
 
-The full WIF provider resource name (needed for the GitHub repo variable):
-```
-projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/github-actions-pool/providers/github-actions-provider
+```bash
+# Print the full WIF provider resource name to copy into GitHub Variables:
+echo "projects/$(gcloud projects describe project-c4ff4ea3-775a-4e0c-9a3 --format='value(projectNumber)')/locations/global/workloadIdentityPools/github-actions-pool/providers/github-actions-provider"
 ```
 
 ## 7. Get cluster credentials
@@ -131,18 +141,12 @@ kubectl -n tracebility create secret generic tracebility-redis \
   --from-literal=url="redis://redis:6379/0" \
   --dry-run=client -o yaml | kubectl apply -f -
 
-kubectl -n tracebility create secret generic tracebility-session \
-  --from-literal=secret="$(openssl rand -hex 32)" \
-  --dry-run=client -o yaml | kubectl apply -f -
-```
-
-The session secret is regenerated on every re-run of the runbook unless you
-guard it. To avoid invalidating active sessions, check first:
-```bash
 kubectl -n tracebility get secret tracebility-session >/dev/null 2>&1 \
   || kubectl -n tracebility create secret generic tracebility-session \
        --from-literal=secret="$(openssl rand -hex 32)"
 ```
+
+Re-running the runbook will not regenerate the session secret.
 
 ## 10. Set GitHub repo variables
 
@@ -150,7 +154,7 @@ In GitHub: **Settings → Secrets and variables → Actions → Variables**.
 
 | Name | Value |
 |---|---|
-| `WIF_PROVIDER` | `projects/<PROJECT_NUMBER>/locations/global/workloadIdentityPools/github-actions-pool/providers/github-actions-provider` |
+| `WIF_PROVIDER` | Output of the `echo` command in Step 6. |
 | `DEPLOY_SA_EMAIL` | `tracebility-deploy@project-c4ff4ea3-775a-4e0c-9a3.iam.gserviceaccount.com` |
 
 These are repository **variables**, not secrets — neither value is sensitive
