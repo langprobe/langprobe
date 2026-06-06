@@ -42,6 +42,38 @@ spec:
             {{- include "tracebility.envFromSecret" (dict "cfg" .Values.postgres "name" "TRACEBILITY_PG_DSN") | nindent 12 }}
             {{- include "tracebility.envFromSecret" (dict "cfg" .Values.clickhouse "name" "TRACEBILITY_CLICKHOUSE_URL") | nindent 12 }}
             {{- include "tracebility.envFromSecret" (dict "cfg" .Values.session "name" "TRACEBILITY_SESSION_SECRET") | nindent 12 }}
+            {{- if .Values.oauth.existingSecret }}
+            - name: OAUTH_GOOGLE_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.oauth.existingSecret }}
+                  key: {{ .Values.oauth.googleClientIdKey }}
+                  optional: true
+            - name: OAUTH_GOOGLE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.oauth.existingSecret }}
+                  key: {{ .Values.oauth.googleClientSecretKey }}
+                  optional: true
+            - name: OAUTH_GITHUB_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.oauth.existingSecret }}
+                  key: {{ .Values.oauth.githubClientIdKey }}
+                  optional: true
+            - name: OAUTH_GITHUB_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.oauth.existingSecret }}
+                  key: {{ .Values.oauth.githubClientSecretKey }}
+                  optional: true
+            {{- end }}
+            {{- with .Values.oauth.publicUrl }}
+            - name: OAUTH_REDIRECT_BASE
+              value: {{ . | quote }}
+            - name: TRACEBILITY_WEB_BASE_URL
+              value: {{ . | quote }}
+            {{- end }}
             {{- with .Values.web.publicApiBase }}
             - name: TRACEBILITY_CORS_ALLOW_ORIGIN
               value: {{ . | quote }}
