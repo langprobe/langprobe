@@ -11,16 +11,24 @@ image:
 # repo path already segments by `/tracebility/`, so the per-service
 # component is the bare service name. Final image:
 #   <image.registry>/<service>:<image.tag>
+# All services pinned to 1 replica on this cluster. Default chart
+# value is 2; with the GKE Autopilot quota we have today, 2x rolling
+# replicas don't fit (`Node scale up failed: GCE quota exceeded` on
+# every upgrade). Bump back to 2 once the quota is raised.
 api:
+  replicaCount: 1
   image:
     repository: api
 ingestApi:
+  replicaCount: 1
   image:
     repository: ingest-api
 ingestWorker:
+  replicaCount: 1
   image:
     repository: ingest-worker
 web:
+  replicaCount: 1
   image:
     repository: web
   service:
