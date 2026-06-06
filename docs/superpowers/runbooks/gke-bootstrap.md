@@ -166,7 +166,85 @@ kubectl -n tracebility get secret tracebility-session >/dev/null 2>&1 \
 
 Re-running the runbook will not regenerate the session secret.
 
-## 10. Set GitHub repo variables
+## 10. OAuth signup setup (Google + GitHub)
+
+Skip this section if you don't want third-party login. The chart's OAuth
+block defaults to off — login still works for any other auth path the
+app provides.
+
+### 10a. Register the Google OAuth app
+
+1. Open <https://console.cloud.google.com/apis/credentials>.
+2. **+ CREATE CREDENTIALS → OAuth client ID**.
+3. Application type: **Web application**.
+4. Name: `tracebility (langprobe)`.
+5. Authorized redirect URIs — add exactly:
+   ```
+   https://langprobe.daz.co.in/api/auth/oauth/google/callback
+   ```
+6. **Create**. Copy the Client ID and Client Secret to a scratch buffer.
+
+If the OAuth consent screen has never been configured for this project,
+Google will prompt you through it before showing the credentials dialog.
+Use **External** user type, fill the required app name + support email,
+and you can skip the optional scopes / test users for now.
+
+### 10b. Register the GitHub OAuth app
+
+1. Open <https://github.com/settings/developers> → **OAuth Apps** → **New OAuth App**.
+2. Application name: `tracebility (langprobe)`.
+3. Homepage URL: `https://langprobe.daz.co.in`.
+4. Authorization callback URL — exactly:
+   ```
+   https://langprobe.daz.co.in/api/auth/oauth/github/callback
+   ```
+5. **Register application**. Copy the Client ID. **Generate a new client secret** and copy that too.
+
+### 10c. Create the k8s secret
+
+The secret holds all four creds in one object. Re-running this block is
+how you rotate any of them.
+
+```bash
+kubectl -n tracebility create secret generic tracebility-oauth \
+  --from-literal=google_client_id="<paste google client id>" \
+  --from-literal=google_client_secret="<paste google client secret>" \
+  --from-literal=github_client_id="<paste github client id>" \
+  --from-literal=github_client_secret="<paste github client secret>" \
+  --dry-run=client -o yaml | kubectl apply -f -
+```
+
+To enable just one provider, pass only its two keys; the chart's
+`secretKeyRef.optional: true` setting means the other provider's button
+just stays hidden.
+
+### 10d. Roll the API to pick up the secret
+
+If the chart change is already live (deploy workflow ran), the api
+deployment template is already mounting the env vars — but existing
+pods cached the (then-empty) values at boot. Rollout-restart so new
+pods read the populated secret:
+
+```bash
+kubectl rollout restart deployment/tracebility-api -n tracebility
+kubectl rollout status deployment/tracebility-api -n tracebility --timeout=120s
+```
+
+Expected: `successfully rolled out`. Skip this if you're applying the
+chart change for the first time after creating the secret — the regular
+deploy workflow handles it.
+
+### 10e. Verify
+
+```bash
+curl -sS https://langprobe.daz.co.in/api/auth/oauth/providers
+```
+
+Expected: `{"google":true,"github":true}` (or `true` for whichever
+provider you configured). The web `/login` page should now render the
+matching `Continue with` buttons.
+
+## 11. Set GitHub repo variables
 
 In GitHub: **Settings → Secrets and variables → Actions → Variables**.
 
@@ -178,7 +256,7 @@ In GitHub: **Settings → Secrets and variables → Actions → Variables**.
 These are repository **variables**, not secrets — neither value is sensitive
 on its own (they're discoverable from any successful deploy log).
 
-## 11. Verify
+## 12. Verify
 
 ```bash
 gcloud artifacts repositories describe tracebility --location=asia-southeast2
