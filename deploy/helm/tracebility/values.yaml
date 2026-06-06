@@ -219,6 +219,11 @@ migrator:
   image:
     repository: migrator
     tag: ""           # falls back to image.tag
+  # Hard ceiling on Job runtime. The helm hook also has its own
+  # timeout (`helm upgrade --timeout`), but bounding the Job itself
+  # means kubectl reports the failure cleanly rather than waiting for
+  # helm to give up.
+  activeDeadlineSeconds: 300
   resources:
     requests:
       cpu: 100m

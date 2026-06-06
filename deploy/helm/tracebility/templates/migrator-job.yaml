@@ -12,6 +12,9 @@ metadata:
     helm.sh/hook-delete-policy: before-hook-creation
 spec:
   backoffLimit: 0
+  # Bound the Job so a hung psql connection (e.g. wrong DSN, postgres
+  # unreachable) fails fast instead of waiting for the helm hook timeout.
+  activeDeadlineSeconds: {{ .Values.migrator.activeDeadlineSeconds }}
   template:
     metadata:
       labels:
