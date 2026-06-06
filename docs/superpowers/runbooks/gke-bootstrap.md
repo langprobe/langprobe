@@ -69,6 +69,24 @@ gcloud projects add-iam-policy-binding project-c4ff4ea3-775a-4e0c-9a3 \
   --role=roles/container.clusterViewer
 ```
 
+The cluster's node pools also need read access to Artifact Registry so
+kubelet can pull the images we push. On Autopilot the node identity is
+the project's default compute service account:
+
+```bash
+PROJECT_NUMBER=$(gcloud projects describe project-c4ff4ea3-775a-4e0c-9a3 --format='value(projectNumber)')
+gcloud artifacts repositories add-iam-policy-binding tracebility \
+  --location=asia-southeast2 \
+  --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+  --role=roles/artifactregistry.reader \
+  --project=project-c4ff4ea3-775a-4e0c-9a3
+```
+
+Without this binding pods land in `ImagePullBackOff` with `403 Forbidden`
+even though the deploy SA can push to AR fine. Default GCE compute SA
+permissions cover most things but not cross-project / cross-region AR
+reads, and they don't include AR reader on a freshly-created repo.
+
 ## 5. Create the WIF pool and provider
 
 ```bash
