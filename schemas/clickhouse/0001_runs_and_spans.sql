@@ -84,12 +84,12 @@ order by (project_id, run_id, span_id)
 ttl toDateTime(start_time) + interval 90 day
 settings index_granularity = 8192;
 
--- Index helpers
-alter table span add index idx_span_kind kind type set(0) granularity 4;
-alter table span add index idx_span_model model type set(0) granularity 4;
-alter table span add index idx_span_status status type set(0) granularity 4;
+-- Index helpers (idempotent: re-running is a no-op)
+alter table span add index if not exists idx_span_kind kind type set(0) granularity 4;
+alter table span add index if not exists idx_span_model model type set(0) granularity 4;
+alter table span add index if not exists idx_span_status status type set(0) granularity 4;
 
-alter table run add index idx_run_status status type set(0) granularity 4;
-alter table run add index idx_run_session session_id type bloom_filter granularity 4;
-alter table run add index idx_run_user user_id type bloom_filter granularity 4;
-alter table run add index idx_run_tags tags type bloom_filter granularity 4;
+alter table run add index if not exists idx_run_status status type set(0) granularity 4;
+alter table run add index if not exists idx_run_session session_id type bloom_filter granularity 4;
+alter table run add index if not exists idx_run_user user_id type bloom_filter granularity 4;
+alter table run add index if not exists idx_run_tags tags type bloom_filter granularity 4;
