@@ -20,7 +20,7 @@ import { PulseBeams } from "@/components/PulseBeams";
  */
 
 const CENTER_X = 429;
-const CENTER_Y = 217;
+const CENTER_Y = 300;
 
 interface BeamSource {
   /** Where the beam starts — pulled inward from the SVG corners. */
@@ -46,9 +46,9 @@ interface BeamSource {
 // as deliberately engineered rather than scrappy.
 const beamSources: BeamSource[] = [
   {
-    origin: { x: 110, y: 90 },
+    origin: { x: 90, y: 110 },
     // up-left → 90° bend down → centre
-    path: "M110 90 L110 197 Q110 217 130 217 L429 217",
+    path: "M90 110 L90 280 Q90 300 110 300 L429 300",
     duration: "3.2s",
     delay: "0s",
     label: "runs",
@@ -56,8 +56,8 @@ const beamSources: BeamSource[] = [
     labelAnchor: "tl",
   },
   {
-    origin: { x: 748, y: 90 },
-    path: "M748 90 L748 197 Q748 217 728 217 L429 217",
+    origin: { x: 768, y: 110 },
+    path: "M768 110 L768 280 Q768 300 748 300 L429 300",
     duration: "3.2s",
     delay: "0.4s",
     label: "otel",
@@ -65,8 +65,8 @@ const beamSources: BeamSource[] = [
     labelAnchor: "tr",
   },
   {
-    origin: { x: 110, y: 344 },
-    path: "M110 344 L110 237 Q110 217 130 217 L429 217",
+    origin: { x: 90, y: 490 },
+    path: "M90 490 L90 320 Q90 300 110 300 L429 300",
     duration: "3.2s",
     delay: "0.8s",
     label: "replays",
@@ -74,8 +74,8 @@ const beamSources: BeamSource[] = [
     labelAnchor: "bl",
   },
   {
-    origin: { x: 748, y: 344 },
-    path: "M748 344 L748 237 Q748 217 728 217 L429 217",
+    origin: { x: 768, y: 490 },
+    path: "M768 490 L768 320 Q768 300 748 300 L429 300",
     duration: "3.2s",
     delay: "1.2s",
     label: "evals",
@@ -83,8 +83,8 @@ const beamSources: BeamSource[] = [
     labelAnchor: "br",
   },
   {
-    origin: { x: 429, y: 60 },
-    path: "M429 60 L429 217",
+    origin: { x: 429, y: 30 },
+    path: "M429 30 L429 300",
     duration: "3.2s",
     delay: "1.6s",
     label: "feedback",
@@ -108,7 +108,7 @@ export function LoginScene() {
   }));
 
   return (
-    <PulseBeams beams={beams} width={858} height={434}>
+    <PulseBeams beams={beams} width={858} height={600}>
       <CenterEntity />
       <SourceLabels sources={beamSources} />
     </PulseBeams>
@@ -261,7 +261,9 @@ interface SourceLabelsProps {
 
 function SourceLabels({ sources }: SourceLabelsProps) {
   // Wrap in an absolute-positioned container that EXACTLY mirrors the
-  // SVG's viewBox aspect ratio, so % positions translate cleanly.
+  // SVG's letterbox (preserveAspectRatio="xMidYMid meet"). Container
+  // queries compute the letterbox math identically to the SVG so chips
+  // stay glued to their dots at every rail size.
   return (
     <div
       aria-hidden
@@ -273,15 +275,14 @@ function SourceLabels({ sources }: SourceLabelsProps) {
         alignItems: "center",
         justifyContent: "center",
         zIndex: 2,
+        containerType: "size",
       }}
     >
       <div
         style={{
           position: "relative",
-          width: "100%",
-          maxWidth: 858,
-          maxHeight: 434,
-          aspectRatio: "858 / 434",
+          width: "min(100cqw, calc(100cqh * 858 / 600))",
+          height: "min(100cqh, calc(100cqw * 600 / 858))",
         }}
       >
         {sources.map((s) => (
@@ -296,7 +297,7 @@ function SourceChip({ source }: { source: BeamSource }) {
   // Translate viewBox coordinates (0..858 / 0..434) to percentages
   // so the chip stays glued to its dot regardless of canvas scale.
   const leftPct = (source.origin.x / 858) * 100;
-  const topPct = (source.origin.y / 434) * 100;
+  const topPct = (source.origin.y / 600) * 100;
 
   // Each anchor offsets the chip in the right direction so it sits
   // *outside* the dot, never overlapping a beam.
@@ -308,7 +309,7 @@ function SourceChip({ source }: { source: BeamSource }) {
     tr: { offsetX: 16, offsetY: -16, align: "flex-start", transform: "translate(0, -100%)" },
     bl: { offsetX: -16, offsetY: 16, align: "flex-end", transform: "translate(-100%, 0)" },
     br: { offsetX: 16, offsetY: 16, align: "flex-start", transform: "translate(0, 0)" },
-    t: { offsetX: 0, offsetY: -16, align: "center", transform: "translate(-50%, -100%)" },
+    t: { offsetX: 0, offsetY: -24, align: "center", transform: "translate(-50%, -100%)" },
   };
   const pos = positions[source.labelAnchor];
 

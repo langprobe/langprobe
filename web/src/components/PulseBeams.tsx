@@ -82,18 +82,15 @@ export function PulseBeams({
       <div style={{ position: "relative", zIndex: 3 }}>{children}</div>
 
       <svg
-        width={width}
-        height={height}
+        width="100%"
+        height="100%"
         viewBox={`0 0 ${width} ${height}`}
+        preserveAspectRatio="xMidYMid meet"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
         style={{
           position: "absolute",
-          top: "50%",
-          left: "50%",
-          transform: "translate(-50%, -50%)",
-          maxWidth: "100%",
-          maxHeight: "100%",
+          inset: 0,
           zIndex: 1,
         }}
         aria-hidden
