@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 
+import { ModelPicker } from "@/components/ModelPicker";
+
 /**
  * Interactive Playground canvas.
  *
@@ -53,15 +55,6 @@ export interface PlaygroundSessionOut {
 
 const VAR_RE = /\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}/g;
 
-const PRESET_MODELS: { value: string; label: string }[] = [
-  { value: "claude-opus-4-7", label: "claude-opus-4-7" },
-  { value: "claude-sonnet-4-6", label: "claude-sonnet-4-6" },
-  { value: "claude-haiku-4-5-20251001", label: "claude-haiku-4-5" },
-  { value: "gpt-4o", label: "gpt-4o" },
-  { value: "gpt-4o-mini", label: "gpt-4o-mini" },
-  { value: "stub-echo", label: "stub-echo (no api key)" },
-];
-
 function extractVariables(template: string): string[] {
   const out = new Set<string>();
   let match: RegExpExecArray | null;
@@ -89,8 +82,8 @@ export function PlaygroundComposer({
   const [variables, setVariables] = useState<Record<string, string>>({
     text: "tracebility is a self-hosted LLM observability platform.",
   });
-  const [model, setModel] = useState<string>("stub-echo");
-  const [modelB, setModelB] = useState<string>("claude-haiku-4-5-20251001");
+  const [model, setModel] = useState<string>("anthropic/claude-sonnet-4-6");
+  const [modelB, setModelB] = useState<string>("openai/gpt-4o-mini");
   const [temperature, setTemperature] = useState<string>("0.7");
   const [maxTokens, setMaxTokens] = useState<string>("1024");
   const [result, setResult] = useState<PlaygroundSessionOut | null>(null);
@@ -499,25 +492,13 @@ function ModelCard({
           gap: 12,
         }}
       >
-        <Field label={mode === "compare" ? "Model A" : "Model"}>
-          <select value={model} onChange={(e) => setModel(e.target.value)}>
-            {PRESET_MODELS.map((m) => (
-              <option key={m.value} value={m.value}>
-                {m.label}
-              </option>
-            ))}
-          </select>
-        </Field>
+        <ModelPicker
+          label={mode === "compare" ? "Model A" : "Model"}
+          value={model}
+          onChange={setModel}
+        />
         {mode === "compare" ? (
-          <Field label="Model B">
-            <select value={modelB} onChange={(e) => setModelB(e.target.value)}>
-              {PRESET_MODELS.map((m) => (
-                <option key={m.value} value={m.value}>
-                  {m.label}
-                </option>
-              ))}
-            </select>
-          </Field>
+          <ModelPicker label="Model B" value={modelB} onChange={setModelB} />
         ) : null}
         <Field label="Temperature" hint="0.0..2.0 (blank = provider default)">
           <input
