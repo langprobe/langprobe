@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Shell } from "@/components/Shell";
 import {
+  DefaultEnabledToggle,
   type LLMCredentialRow,
   NewLLMCredentialButton,
   RevokeLLMCredentialButton,
@@ -160,6 +161,7 @@ function CredentialsCard({ rows }: { rows: LLMCredentialRow[] }) {
               <th>Provider</th>
               <th>Name</th>
               <th>Last 4</th>
+              <th>Default for new projects</th>
               <th>Status</th>
               <th style={{ textAlign: "right" }}>Created</th>
               <th />
@@ -176,6 +178,16 @@ function CredentialsCard({ rows }: { rows: LLMCredentialRow[] }) {
                 </td>
                 <td className="mono" style={{ fontSize: 12 }}>
                   …{c.secret_last4}
+                </td>
+                <td>
+                  {c.revoked_at ? (
+                    <span style={{ color: "var(--text-3)", fontSize: 11 }}>—</span>
+                  ) : (
+                    <DefaultEnabledToggle
+                      credentialId={c.id}
+                      initial={c.default_enabled}
+                    />
+                  )}
                 </td>
                 <td>
                   {c.revoked_at ? (

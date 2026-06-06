@@ -22,9 +22,16 @@ import { useState, useTransition } from "react";
 export interface LLMCredentialRow {
   id: string;
   workspace_id: string;
-  provider: "anthropic" | "openai";
+  provider:
+    | "anthropic"
+    | "openai"
+    | "gemini"
+    | "mistral"
+    | "deepseek"
+    | "groq";
   name: string;
   secret_last4: string;
+  default_enabled: boolean;
   created_at: string;
   updated_at: string;
   revoked_at: string | null;
@@ -33,7 +40,54 @@ export interface LLMCredentialRow {
 const PROVIDERS: { value: LLMCredentialRow["provider"]; label: string; hint: string }[] = [
   { value: "anthropic", label: "Anthropic", hint: "sk-ant-* keys for Claude" },
   { value: "openai", label: "OpenAI", hint: "sk-proj-* / sk-* keys for GPT and o-series" },
+  { value: "gemini", label: "Gemini", hint: "Google AI Studio keys for gemini-*" },
+  { value: "mistral", label: "Mistral", hint: "keys.mistral.ai keys for mistral-*" },
+  { value: "deepseek", label: "DeepSeek", hint: "platform.deepseek.com keys" },
+  { value: "groq", label: "Groq", hint: "console.groq.com keys for hosted llama / mixtral" },
 ];
+
+export function DefaultEnabledToggle({
+  credentialId,
+  initial,
+}: {
+  credentialId: string;
+  initial: boolean;
+}) {
+  const [enabled, setEnabled] = useState(initial);
+  const [pending, startTransition] = useTransition();
+  return (
+    <label
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 8,
+        cursor: pending ? "wait" : "pointer",
+      }}
+    >
+      <input
+        type="checkbox"
+        checked={enabled}
+        disabled={pending}
+        onChange={(e) => {
+          const next = e.target.checked;
+          setEnabled(next);
+          startTransition(async () => {
+            const res = await fetch(`/api/llm-credentials/${credentialId}`, {
+              method: "PATCH",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ default_enabled: next }),
+            });
+            if (!res.ok) setEnabled(!next);
+          });
+        }}
+        style={{ width: "auto", margin: 0 }}
+      />
+      <span style={{ fontSize: 11, color: "var(--text-3)" }}>
+        {enabled ? "default for new projects" : "manual link only"}
+      </span>
+    </label>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // New-credential modal
