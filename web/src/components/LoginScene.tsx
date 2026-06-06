@@ -49,7 +49,7 @@ const beamSources: BeamSource[] = [
     origin: { x: 90, y: 110 },
     // up-left → 90° bend down → centre
     path: "M90 110 L90 280 Q90 300 110 300 L429 300",
-    duration: "3.2s",
+    duration: "5.6s",
     delay: "0s",
     label: "runs",
     rate: "3.2k/min",
@@ -58,8 +58,8 @@ const beamSources: BeamSource[] = [
   {
     origin: { x: 768, y: 110 },
     path: "M768 110 L768 280 Q768 300 748 300 L429 300",
-    duration: "3.2s",
-    delay: "0.4s",
+    duration: "5.6s",
+    delay: "0.7s",
     label: "otel",
     rate: "1.8k/min",
     labelAnchor: "tr",
@@ -67,8 +67,8 @@ const beamSources: BeamSource[] = [
   {
     origin: { x: 90, y: 490 },
     path: "M90 490 L90 320 Q90 300 110 300 L429 300",
-    duration: "3.2s",
-    delay: "0.8s",
+    duration: "5.6s",
+    delay: "1.4s",
     label: "replays",
     rate: "12/min",
     labelAnchor: "bl",
@@ -76,8 +76,8 @@ const beamSources: BeamSource[] = [
   {
     origin: { x: 768, y: 490 },
     path: "M768 490 L768 320 Q768 300 748 300 L429 300",
-    duration: "3.2s",
-    delay: "1.2s",
+    duration: "5.6s",
+    delay: "2.1s",
     label: "evals",
     rate: "248/hr",
     labelAnchor: "br",
@@ -85,8 +85,8 @@ const beamSources: BeamSource[] = [
   {
     origin: { x: 429, y: 30 },
     path: "M429 30 L429 300",
-    duration: "3.2s",
-    delay: "1.6s",
+    duration: "5.6s",
+    delay: "2.8s",
     label: "feedback",
     rate: "45/hr",
     labelAnchor: "t",
@@ -173,8 +173,8 @@ function BrandNode() {
     >
       {/* Three concentric rings ripple outward, staggered. */}
       <PulseRing inset={-18} delay="0s" border="rgba(255,255,255,0.05)" />
-      <PulseRing inset={-10} delay="1.6s" border="rgba(255,255,255,0.08)" />
-      <PulseRing inset={-4} delay="3.2s" border="rgba(255,255,255,0.12)" />
+      <PulseRing inset={-10} delay="2.7s" border="rgba(255,255,255,0.08)" />
+      <PulseRing inset={-4} delay="5.4s" border="rgba(255,255,255,0.12)" />
 
       {/* Static outline ring — anchors the centre when the pulses
           are between cycles. */}
@@ -244,7 +244,7 @@ function PulseRing({
         inset,
         borderRadius: 16,
         border: `1px solid ${border}`,
-        animation: "brand-pulse-ring 4.8s ease-out infinite",
+        animation: "brand-pulse-ring 8s ease-out infinite",
         animationDelay: delay,
       }}
     />
