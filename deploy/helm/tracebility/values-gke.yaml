@@ -24,9 +24,9 @@ web:
   image:
     repository: web
   service:
-    # LoadBalancer gets a public IP from GCP. Replace with ClusterIP +
-    # an Ingress / Gateway when wiring a real domain + TLS.
-    type: LoadBalancer
+    # Back to ClusterIP — public traffic now goes through the GCE Ingress
+    # below, which fronts its own Google-managed load balancer + cert.
+    type: ClusterIP
     port: 7090
 
 postgres:
@@ -43,4 +43,32 @@ session:
   existingSecretKey: secret
 
 ingress:
-  enabled: false
+  enabled: true
+  className: gce
+  annotations:
+    # Reserve a global static IP with `gcloud compute addresses create
+    # tracebility-web-ip --global` and reference it by name here.
+    kubernetes.io/ingress.global-static-ip-name: tracebility-web-ip
+    # The ManagedCertificate CRD is applied separately (out-of-chart)
+    # because it's a GKE-only resource. The annotation tells the
+    # GCE Ingress controller to use it for TLS.
+    networking.gke.io/managed-certificates: tracebility-web-cert
+    # Force HTTPS — kubernetes.io/ingress.allow-http=false would also
+    # work but a FrontendConfig is cleaner if/when we add HSTS.
+    kubernetes.io/ingress.allow-http: "true"
+  hosts:
+    web:
+      host: langprobe.daz.co.in
+      paths:
+        - path: /
+          pathType: Prefix
+    api:
+      host: ""
+      paths:
+        - path: /
+          pathType: Prefix
+    ingest:
+      host: ""
+      paths:
+        - path: /
+          pathType: Prefix
