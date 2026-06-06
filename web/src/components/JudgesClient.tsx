@@ -4,6 +4,8 @@ import { Plus, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
+import { ProviderModelPicker } from "@/components/ModelPicker";
+
 /**
  * Client controls for /judges:
  *   - NewJudgeButton: modal that POSTs /api/luna-judges
@@ -22,19 +24,20 @@ export interface LunaJudgeRow {
   description: string | null;
   rubric_prompt: string;
   output_format: "score-rationale" | "json-object";
-  provider: "anthropic" | "openai" | "stub";
+  provider:
+    | "anthropic"
+    | "openai"
+    | "gemini"
+    | "mistral"
+    | "deepseek"
+    | "groq"
+    | "stub";
   model: string;
   temperature: number | null;
   max_tokens: number;
   created_at: string;
   updated_at: string;
 }
-
-const PROVIDER_OPTIONS = [
-  { value: "anthropic", label: "anthropic" },
-  { value: "openai", label: "openai" },
-  { value: "stub", label: "stub (test only)" },
-] as const;
 
 const FORMAT_OPTIONS = [
   {
@@ -68,7 +71,9 @@ export function NewJudgeButton({ projectId }: { projectId: string }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [rubric, setRubric] = useState(DEFAULT_RUBRIC);
-  const [provider, setProvider] = useState<LunaJudgeRow["provider"]>("anthropic");
+  const [provider, setProvider] = useState<
+    Exclude<LunaJudgeRow["provider"], "stub">
+  >("anthropic");
   const [model, setModel] = useState("claude-sonnet-4-6");
   const [temperature, setTemperature] = useState("0.0");
   const [maxTokens, setMaxTokens] = useState("512");
@@ -231,26 +236,22 @@ export function NewJudgeButton({ projectId }: { projectId: string }) {
             style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}
           />
         </Field>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 12 }}>
-          <Field label="Provider">
-            <select
-              value={provider}
-              onChange={(e) => setProvider(e.target.value as LunaJudgeRow["provider"])}
-            >
-              {PROVIDER_OPTIONS.map((p) => (
-                <option key={p.value} value={p.value}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Model" hint="e.g. claude-sonnet-4-6, gpt-4o-mini, stub-echo">
-            <input
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-            />
-          </Field>
-        </div>
+        <ProviderModelPicker
+          provider={provider}
+          model={model}
+          onChange={({ provider: p, model: m }) => {
+            setProvider(p);
+            setModel(m);
+          }}
+        />
+        <p
+          className="mono"
+          style={{ fontSize: 11, color: "var(--text-3)", margin: 0 }}
+        >
+          tip: pick &lsquo;Custom&hellip;&rsquo; and type{" "}
+          <code>stub/echo</code> for the deterministic test path that
+          bypasses LiteLLM.
+        </p>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 2fr", gap: 12 }}>
           <Field label="Temperature">
             <input

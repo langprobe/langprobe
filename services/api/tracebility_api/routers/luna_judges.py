@@ -54,7 +54,9 @@ log = structlog.get_logger("tracebility.api.luna_judges")
 
 router = APIRouter(prefix="/v1/luna-judges", tags=["luna-judges"])
 
-_VALID_PROVIDERS = {"anthropic", "openai", "stub"}
+_VALID_PROVIDERS = {
+    "anthropic", "openai", "gemini", "mistral", "deepseek", "groq", "stub",
+}
 _VALID_FORMATS = {"score-rationale", "json-object"}
 _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 _VAR_RE = re.compile(r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}")
