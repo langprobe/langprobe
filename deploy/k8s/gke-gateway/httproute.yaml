@@ -1,0 +1,25 @@
+---
+# Routes traffic for langprobe.daz.co.in to the tracebility-web Service.
+# Listed twice in parentRefs so both the HTTP and HTTPS listeners use the
+# same backend (HTTPS terminates on the Gateway, HTTP just passes through).
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: tracebility-web
+  namespace: tracebility
+spec:
+  parentRefs:
+    - name: tracebility-web
+      sectionName: http
+    - name: tracebility-web
+      sectionName: https
+  hostnames:
+    - langprobe.daz.co.in
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: tracebility-web
+          port: 7090

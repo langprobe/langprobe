@@ -1,0 +1,36 @@
+---
+# Gateway API resource that fronts tracebility-web on the public internet.
+# Uses GKE's gke-l7-global-external-managed gatewayClass which provisions
+# a Google Cloud HTTP(S) Load Balancer behind the scenes. TLS terminates
+# here using a cert from Certificate Manager (referenced by certmap name).
+#
+# Apply with: kubectl apply -n tracebility -f deploy/k8s/gke-gateway/
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: tracebility-web
+  namespace: tracebility
+  annotations:
+    # Static global IP reserved as `gcloud compute addresses create
+    # tracebility-web-ip --global`. The Gateway controller binds the
+    # provisioned LB to this address.
+    networking.gke.io/addresses: tracebility-web-ip
+    # Certificate Manager cert map. The map contains an entry for
+    # langprobe.daz.co.in -> tracebility-web-cert, both created by
+    # `gcloud certificate-manager` in the bootstrap runbook.
+    networking.gke.io/certmap: tracebility-web-certmap
+spec:
+  gatewayClassName: gke-l7-global-external-managed
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+      allowedRoutes:
+        kinds:
+          - kind: HTTPRoute
+    - name: https
+      protocol: HTTPS
+      port: 443
+      allowedRoutes:
+        kinds:
+          - kind: HTTPRoute
