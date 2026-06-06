@@ -20,7 +20,9 @@ import litellm
 import structlog
 from litellm import exceptions as litellm_errors
 
+from .. import audit
 from ..routers.llm_credentials import resolve_secret
+from .audit_throttle import should_emit_audit
 from .types import (
     DispatchError,
     DispatchResult,
@@ -157,6 +159,21 @@ async def dispatch(
                 prompt_tokens=None, completion_tokens=None, cost_usd=0,
                 error_code=exc.code, error_detail=exc.detail,
             )
+            if await should_emit_audit(
+                pool, project_id=project_id, provider=provider,
+                action="dispatch.ceiling_exceeded",
+            ):
+                await audit.record(
+                    pool, principal=None,
+                    action="dispatch.ceiling_exceeded",
+                    target_kind="project", target_id=project_id,
+                    payload={
+                        "provider": provider,
+                        "surface": surface,
+                        "detail": exc.detail,
+                    },
+                    project_id=project_id, workspace_id=workspace_id,
+                )
             raise
 
     api_key = await resolve_secret(
@@ -172,6 +189,17 @@ async def dispatch(
             error_code="no_credential",
             error_detail=f"no {provider} credential resolved",
         )
+        if await should_emit_audit(
+            pool, project_id=project_id, provider=provider,
+            action="dispatch.no_credential",
+        ):
+            await audit.record(
+                pool, principal=None,
+                action="dispatch.no_credential",
+                target_kind="project", target_id=project_id,
+                payload={"provider": provider, "surface": surface},
+                project_id=project_id, workspace_id=workspace_id,
+            )
         raise DispatchError(
             "no_credential", provider,
             f"no {provider} credential resolved",
