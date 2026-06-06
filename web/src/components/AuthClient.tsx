@@ -450,7 +450,6 @@ function GithubMark() {
 // ---------------------------------------------------------------------------
 
 export function LogoutLink() {
-  const router = useRouter();
   const [pending, startTransition] = useTransition();
   return (
     <button
@@ -460,9 +459,21 @@ export function LogoutLink() {
       disabled={pending}
       onClick={() => {
         startTransition(async () => {
-          await fetch("/api/auth/logout", { method: "POST" });
-          router.push("/login");
-          router.refresh();
+          try {
+            await fetch("/api/auth/logout", {
+              method: "POST",
+              credentials: "same-origin",
+              cache: "no-store",
+            });
+          } catch {
+            // even if the request fails, fall through to a hard reload —
+            // the worst case is the user lands on /login with a stale
+            // cookie, the middleware will accept them, and they'll be
+            // booted on the next 401 from the api.
+          }
+          // Hard navigation drops the router cache + every server-
+          // component payload along with the cleared cookie.
+          window.location.href = "/login";
         });
       }}
     >
