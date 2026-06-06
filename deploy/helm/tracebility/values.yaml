@@ -207,3 +207,22 @@ oauth:
   googleClientSecretKey: google_client_secret
   githubClientIdKey: github_client_id
   githubClientSecretKey: github_client_secret
+
+## Schema migration runner. Helm pre-upgrade Job that applies any
+## unapplied Postgres + ClickHouse migrations before any Deployment
+## rolls. Same image lifecycle as the four service images — built
+## per-commit by deploy.yml with image.tag = SHA.
+##
+## To opt out (e.g. if you run migrations out-of-band), set enabled: false.
+migrator:
+  enabled: true
+  image:
+    repository: migrator
+    tag: ""           # falls back to image.tag
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi

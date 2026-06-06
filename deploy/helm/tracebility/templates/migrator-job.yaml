@@ -1,0 +1,36 @@
+{{- if .Values.migrator.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "tracebility.fullname" . }}-migrator-{{ .Release.Revision }}
+  labels:
+    {{- include "tracebility.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migrator
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-5"
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        {{- include "tracebility.labels" . | nindent 8 }}
+        app.kubernetes.io/component: migrator
+    spec:
+      serviceAccountName: {{ include "tracebility.serviceAccountName" . }}
+      restartPolicy: Never
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: migrator
+          image: {{ include "tracebility.image" (dict "root" . "component" .Values.migrator) }}
+          imagePullPolicy: {{ default .Values.global.imagePullPolicy .Values.image.pullPolicy }}
+          env:
+            {{- include "tracebility.envFromSecret" (dict "cfg" .Values.postgres "name" "TRACEBILITY_PG_DSN") | nindent 12 }}
+            {{- include "tracebility.envFromSecret" (dict "cfg" .Values.clickhouse "name" "TRACEBILITY_CLICKHOUSE_URL") | nindent 12 }}
+          resources:
+            {{- toYaml .Values.migrator.resources | nindent 12 }}
+{{- end }}
