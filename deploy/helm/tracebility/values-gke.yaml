@@ -5,8 +5,12 @@
 
 image:
   registry: asia-southeast2-docker.pkg.dev/project-c4ff4ea3-775a-4e0c-9a3/tracebility
-  pullPolicy: IfNotPresent
 
+# Per-service repository overrides: the parent chart defaults to
+# `tracebility-<service>` (for ghcr.io). On Artifact Registry the AR
+# repo path already segments by `/tracebility/`, so the per-service
+# component is the bare service name. Final image:
+#   <image.registry>/<service>:<image.tag>
 api:
   image:
     repository: api
