@@ -1,0 +1,37 @@
+# GKE-specific overrides for the tracebility chart.
+# `image.tag` is supplied by the GitHub Actions workflow via `--set`,
+# so this file alone is not enough to redeploy a specific version —
+# pair it with `--set image.tag=<sha>`.
+
+image:
+  registry: asia-southeast2-docker.pkg.dev/project-c4ff4ea3-775a-4e0c-9a3/tracebility
+  pullPolicy: IfNotPresent
+
+api:
+  image:
+    repository: api
+ingestApi:
+  image:
+    repository: ingest-api
+ingestWorker:
+  image:
+    repository: ingest-worker
+web:
+  image:
+    repository: web
+
+postgres:
+  existingSecret: tracebility-postgres
+  existingSecretKey: dsn
+clickhouse:
+  existingSecret: tracebility-clickhouse
+  existingSecretKey: url
+redis:
+  existingSecret: tracebility-redis
+  existingSecretKey: url
+session:
+  existingSecret: tracebility-session
+  existingSecretKey: secret
+
+ingress:
+  enabled: false
