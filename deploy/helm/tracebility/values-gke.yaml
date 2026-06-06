@@ -48,3 +48,11 @@ session:
 # which is not present on this Autopilot cluster.
 ingress:
   enabled: false
+
+# OAuth signup. Both 'Continue with Google' and 'Continue with GitHub'
+# show up on /login when the named secret has the matching keys.
+# Operator creates the secret out-of-chart via the bootstrap runbook
+# (docs/superpowers/runbooks/gke-bootstrap.md, "OAuth signup setup").
+oauth:
+  existingSecret: tracebility-oauth
+  publicUrl: https://langprobe.daz.co.in
