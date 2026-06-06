@@ -5,7 +5,6 @@ RUN npm install -g pnpm@9.12.0
 WORKDIR /repo
 COPY package.json pnpm-workspace.yaml ./
 COPY web/package.json ./web/package.json
-COPY packages ./packages
 # --shamefully-hoist places real files (not symlinks to .pnpm store) under
 # web/node_modules so the bundle is self-contained when copied into the runner.
 RUN pnpm install --frozen-lockfile=false --shamefully-hoist
@@ -17,7 +16,6 @@ COPY --from=deps /repo/node_modules ./node_modules
 COPY --from=deps /repo/web/node_modules ./web/node_modules
 COPY package.json pnpm-workspace.yaml ./
 COPY web ./web
-COPY packages ./packages
 RUN pnpm --filter @tracebility/web build
 
 FROM node:20-bookworm-slim AS runner
