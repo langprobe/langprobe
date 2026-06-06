@@ -23,6 +23,11 @@ ingestWorker:
 web:
   image:
     repository: web
+  service:
+    # LoadBalancer gets a public IP from GCP. Replace with ClusterIP +
+    # an Ingress / Gateway when wiring a real domain + TLS.
+    type: LoadBalancer
+    port: 7090
 
 postgres:
   existingSecret: tracebility-postgres
