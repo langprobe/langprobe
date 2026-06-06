@@ -153,8 +153,8 @@ def _row_for_run(envelope: dict[str, Any], run: dict[str, Any]) -> tuple[Any, ..
         run.get("user_id"),
         list(run.get("tags") or []),
         json.dumps(run.get("metadata") or {}),
-        run.get("error_kind"),
-        run.get("error_message"),
+        run.get("error_kind") or "",
+        run.get("error_message") or "",
         run.get("schema_version") or 1,
     )
 
@@ -178,7 +178,7 @@ def _row_for_span(
         _epoch(span.get("start_time")),
         _parse_dt(span.get("end_time")),
         received_at,
-        span.get("model"),
+        span.get("model") or "",
         span.get("temperature"),
         span.get("inputs") or "",
         span.get("outputs") or "",
@@ -189,8 +189,8 @@ def _row_for_span(
         span.get("total_tokens") or 0,
         span.get("cost_usd") or 0,
         json.dumps(span.get("attributes") or {}),
-        span.get("error_kind"),
-        span.get("error_message"),
+        span.get("error_kind") or "",
+        span.get("error_message") or "",
         span.get("schema_version") or 1,
     )
 
