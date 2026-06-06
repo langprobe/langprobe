@@ -110,6 +110,31 @@ async def list_projects(
     return [ProjectOut(**dict(r)) for r in rows]
 
 
+async def _autolink_default_credentials(
+    conn: asyncpg.Connection,
+    *,
+    project_id: UUID,
+    workspace_id: UUID,
+    user_id: UUID | None,
+) -> None:
+    """Auto-link every default_enabled, non-revoked workspace credential
+    to a freshly-created project. Idempotent via the link table's PK."""
+    await conn.execute(
+        """
+        insert into project_llm_credential (project_id, credential_id, enabled_by)
+        select $1, c.id, $3
+          from workspace_llm_credential c
+         where c.workspace_id = $2
+           and c.default_enabled = true
+           and c.revoked_at is null
+         on conflict do nothing
+        """,
+        project_id,
+        workspace_id,
+        user_id,
+    )
+
+
 @router.post("", response_model=ProjectOut, status_code=status.HTTP_201_CREATED)
 async def create_project(
     request: Request,
@@ -124,30 +149,38 @@ async def create_project(
         allowed=("owner", "admin"),
     )
     try:
-        row = await pool.fetchrow(
-            """
-            insert into project (
-                workspace_id, slug, name, sample_rate, pii_redaction,
-                eval_default_judge, eval_cost_ceiling_usd_per_day, rca_mode
-            )
-            values ($1, $2, $3, $4, $5, $6, $7, $8)
-            returning id, workspace_id, slug, name, sample_rate, pii_redaction,
-                      eval_default_judge, eval_cost_ceiling_usd_per_day, rca_mode
-            """,
-            body.workspace_id,
-            body.slug,
-            body.name,
-            body.sample_rate,
-            body.pii_redaction,
-            body.eval_default_judge,
-            body.eval_cost_ceiling_usd_per_day,
-            body.rca_mode,
-        )
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                row = await conn.fetchrow(
+                    """
+                    insert into project (
+                        workspace_id, slug, name, sample_rate, pii_redaction,
+                        eval_default_judge, eval_cost_ceiling_usd_per_day, rca_mode
+                    )
+                    values ($1, $2, $3, $4, $5, $6, $7, $8)
+                    returning id, workspace_id, slug, name, sample_rate, pii_redaction,
+                              eval_default_judge, eval_cost_ceiling_usd_per_day, rca_mode
+                    """,
+                    body.workspace_id,
+                    body.slug,
+                    body.name,
+                    body.sample_rate,
+                    body.pii_redaction,
+                    body.eval_default_judge,
+                    body.eval_cost_ceiling_usd_per_day,
+                    body.rca_mode,
+                )
+                assert row is not None
+                await _autolink_default_credentials(
+                    conn,
+                    project_id=row["id"],
+                    workspace_id=body.workspace_id,
+                    user_id=principal.user_id,
+                )
     except asyncpg.UniqueViolationError as exc:
         raise HTTPException(
             status.HTTP_409_CONFLICT, "project slug already exists in workspace"
         ) from exc
-    assert row is not None
     project = ProjectOut(**dict(row))
     await audit.record(
         pool,
