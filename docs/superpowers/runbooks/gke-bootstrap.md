@@ -182,7 +182,7 @@ app provides.
    ```
    https://langprobe.daz.co.in/api/auth/oauth/google/callback
    ```
-6. **Create**. Copy the Client ID and Client Secret to a scratch buffer.
+6. **Create**. Copy the Client ID and Client Secret somewhere you can paste from in step 10c (a password manager, or just a temporary text file you delete afterwards).
 
 If the OAuth consent screen has never been configured for this project,
 Google will prompt you through it before showing the credentials dialog.
