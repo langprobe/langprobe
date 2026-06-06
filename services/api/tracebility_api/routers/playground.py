@@ -216,22 +216,55 @@ async def create_session(
         project_id=body.project_id,
     )
 
-    # Execute the LLM call. Failure modes captured into the session row.
-    # Resolve the api key from the workspace credential store first
-    # (falls back to env in resolve_secret); pass it through so the
-    # provider call sites stay free of env/db lookup logic.
-    api_key = await llm_credentials.resolve_secret(
-        pool, workspace_id=workspace_id, provider=provider
-    )
+    # Execute the LLM call via the LiteLLM gateway. Cost + tokens are
+    # recorded in dispatch_cost by the gateway; the session row only
+    # holds the surface state.
+    if provider == "stub":
+        result_dict = await _dispatch_stub(body.model, rendered)
+    else:
+        from ..llm import DispatchError, Message, dispatch as gateway_dispatch
+        try:
+            gw = await gateway_dispatch(
+                pool,
+                project_id=body.project_id,
+                surface="playground",
+                surface_ref_id=session_id,
+                model=f"{provider}/{body.model.removeprefix(provider + '/')}",
+                messages=[Message(role="user", content=rendered)],
+                temperature=body.temperature,
+                max_tokens=body.max_tokens or _DEFAULT_MAX_TOKENS,
+            )
+            result_dict = {
+                "text": gw.text,
+                "prompt_tokens": gw.prompt_tokens,
+                "completion_tokens": gw.completion_tokens,
+            }
+        except DispatchError as exc:
+            latency_ms = int((time.monotonic() - started) * 1000)
+            failed = await pool.fetchrow(
+                """
+                update playground_session
+                   set status = 'failed',
+                       error = $2,
+                       latency_ms = $3,
+                       finished_at = $4
+                 where id = $1
+                returning id, project_id, prompt_version_id, raw_template,
+                          rendered_prompt, variables, provider, model, temperature,
+                          max_tokens, status, output_text, prompt_tokens,
+                          completion_tokens, total_tokens, cost_usd, latency_ms,
+                          run_id, error, created_at, finished_at
+                """,
+                session_id,
+                f"[{exc.code}] {exc.detail}",
+                latency_ms,
+                datetime.now(timezone.utc),
+            )
+            assert failed is not None
+            return _session_out(failed)
+
     try:
-        result = await _dispatch(
-            provider=provider,
-            model=body.model,
-            prompt=rendered,
-            temperature=body.temperature,
-            max_tokens=body.max_tokens or _DEFAULT_MAX_TOKENS,
-            api_key=api_key,
-        )
+        result = result_dict
         latency_ms = int((time.monotonic() - started) * 1000)
         run_id = str(uuid.uuid4())
         await _write_clickhouse_trace(
@@ -395,143 +428,21 @@ def _render_template(template: str, variables: dict[str, Any]) -> str:
     return _VAR_RE.sub(_repl, template)
 
 
-async def _dispatch(
-    *,
-    provider: str,
-    model: str,
-    prompt: str,
-    temperature: float | None,
-    max_tokens: int,
-    api_key: str | None = None,
-) -> dict[str, Any]:
-    if provider == "stub":
-        return {
-            "text": f"[stub:{model}] {prompt[-512:]}",
-            "prompt_tokens": _approx_tokens(prompt),
-            "completion_tokens": _approx_tokens(prompt[-512:]),
-        }
-    if provider == "anthropic":
-        return await asyncio.to_thread(
-            _call_anthropic, model, prompt, temperature, max_tokens, api_key
-        )
-    if provider == "openai":
-        return await asyncio.to_thread(
-            _call_openai, model, prompt, temperature, max_tokens, api_key
-        )
-    raise HTTPException(
-        status.HTTP_400_BAD_REQUEST, f"unsupported provider {provider}"
-    )
+async def _dispatch_stub(model: str, prompt: str) -> dict[str, Any]:
+    """Deterministic echo for tests + the no-key smoke path. The
+    'stub' provider bypasses the LiteLLM gateway entirely."""
+    return {
+        "text": f"[stub:{model}] {prompt[-512:]}",
+        "prompt_tokens": _approx_tokens(prompt),
+        "completion_tokens": _approx_tokens(prompt[-512:]),
+    }
 
 
 def _approx_tokens(text: str) -> int:
-    # Tokenization is a per-model concern; the playground only needs
-    # an order-of-magnitude estimate for the stub path. 4 chars/token
-    # is the common rule of thumb that's wrong by ±30%.
+    # Stub-only token estimate; real provider responses come back from
+    # LiteLLM with actual usage numbers. 4 chars/token is the rule of
+    # thumb that's wrong by ±30%.
     return max(1, len(text) // 4)
-
-
-def _call_anthropic(
-    model: str,
-    prompt: str,
-    temperature: float | None,
-    max_tokens: int,
-    api_key: str | None = None,
-) -> dict[str, Any]:
-    api_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        raise RuntimeError(
-            "no anthropic credential resolved "
-            "(workspace_llm_credential or ANTHROPIC_API_KEY)"
-        )
-    body = {
-        "model": model.removeprefix("anthropic/"),
-        "max_tokens": max_tokens,
-        "messages": [{"role": "user", "content": prompt}],
-    }
-    if temperature is not None:
-        body["temperature"] = temperature
-    payload = _json.dumps(body).encode("utf-8")
-    req = urllib.request.Request(
-        "https://api.anthropic.com/v1/messages",
-        data=payload,
-        method="POST",
-        headers={
-            "content-type": "application/json",
-            "x-api-key": api_key,
-            "anthropic-version": "2023-06-01",
-        },
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            data = _json.loads(resp.read())
-    except urllib.error.HTTPError as exc:
-        msg = exc.read().decode("utf-8", errors="replace")[:500]
-        raise RuntimeError(f"anthropic {exc.code}: {msg}") from exc
-
-    text = "".join(
-        b.get("text", "")
-        for b in (data.get("content") or [])
-        if isinstance(b, dict) and b.get("type") == "text"
-    )
-    usage = data.get("usage") or {}
-    return {
-        "text": text,
-        "prompt_tokens": usage.get("input_tokens"),
-        "completion_tokens": usage.get("output_tokens"),
-    }
-
-
-def _call_openai(
-    model: str,
-    prompt: str,
-    temperature: float | None,
-    max_tokens: int,
-    api_key: str | None = None,
-) -> dict[str, Any]:
-    api_key = api_key or os.environ.get("OPENAI_API_KEY")
-    if not api_key:
-        raise RuntimeError(
-            "no openai credential resolved "
-            "(workspace_llm_credential or OPENAI_API_KEY)"
-        )
-    body: dict[str, Any] = {
-        "model": model.removeprefix("openai/"),
-        "max_tokens": max_tokens,
-        "messages": [{"role": "user", "content": prompt}],
-    }
-    if temperature is not None:
-        body["temperature"] = temperature
-    payload = _json.dumps(body).encode("utf-8")
-    req = urllib.request.Request(
-        "https://api.openai.com/v1/chat/completions",
-        data=payload,
-        method="POST",
-        headers={
-            "content-type": "application/json",
-            "authorization": f"Bearer {api_key}",
-        },
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            data = _json.loads(resp.read())
-    except urllib.error.HTTPError as exc:
-        msg = exc.read().decode("utf-8", errors="replace")[:500]
-        raise RuntimeError(f"openai {exc.code}: {msg}") from exc
-
-    choices = data.get("choices") or []
-    text = ""
-    if choices:
-        text = (
-            choices[0].get("message", {}).get("content")
-            or choices[0].get("text")
-            or ""
-        )
-    usage = data.get("usage") or {}
-    return {
-        "text": text,
-        "prompt_tokens": usage.get("prompt_tokens"),
-        "completion_tokens": usage.get("completion_tokens"),
-    }
 
 
 async def _write_clickhouse_trace(

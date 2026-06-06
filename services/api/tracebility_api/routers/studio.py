@@ -637,7 +637,7 @@ async def _execute_replay(
     if not new_prompt.strip():
         return None, "", "rendered prompt is empty"
 
-    # 3) Resolve provider + credential.
+    # 3) Resolve provider from the model prefix.
     try:
         provider = playground_module._resolve_provider(  # type: ignore[attr-defined]
             new_model
@@ -645,38 +645,41 @@ async def _execute_replay(
     except HTTPException as exc:
         return None, "", f"provider routing failed: {exc.detail}"
 
-    api_key = await llm_credentials.resolve_secret(
-        pool, workspace_id=workspace_id, provider=provider
-    )
-
-    # 4) Dispatch the LLM. Errors land on the branch as `replay
-    #    failed: <reason>`; the branch still flips to `replayed`
+    # 4) Dispatch the LLM via the gateway. Errors land on the branch as
+    #    `replay failed: <reason>`; the branch still flips to `replayed`
     #    so the operator can see the failure inline.
     started = time.monotonic()
+    bare_model = new_model
+    if not bare_model.startswith(provider + "/"):
+        bare_model = f"{provider}/{bare_model}"
+    from ..llm import DispatchError, Message, dispatch as gateway_dispatch
     try:
-        result = await playground_module._dispatch(  # type: ignore[attr-defined]
-            provider=provider,
-            model=new_model,
-            prompt=new_prompt,
+        result = await gateway_dispatch(
+            pool,
+            project_id=project_id,
+            surface="studio",
+            surface_ref_id=branch_id,
+            model=bare_model,
+            messages=[Message(role="user", content=new_prompt)],
             temperature=new_temperature,
             max_tokens=1024,
-            api_key=api_key,
         )
-    except Exception as exc:  # noqa: BLE001
+    except DispatchError as exc:
         log.warning(
             "studio replay dispatch failed",
             branch_id=str(branch_id),
             provider=provider,
-            error=str(exc),
+            code=exc.code,
+            detail=exc.detail,
         )
-        return None, "", f"{type(exc).__name__}: {exc}"
+        return None, "", f"[{exc.code}] {exc.detail}"
 
     latency_ms = int((time.monotonic() - started) * 1000)
     new_run_id = str(_uuid.uuid4())
     new_span_id = str(_uuid.uuid4())
-    output_text = str(result.get("text") or "")
-    prompt_tokens = int(result.get("prompt_tokens") or 0)
-    completion_tokens = int(result.get("completion_tokens") or 0)
+    output_text = result.text
+    prompt_tokens = int(result.prompt_tokens or 0)
+    completion_tokens = int(result.completion_tokens or 0)
     total_tokens = prompt_tokens + completion_tokens
 
     # 5) Write the new run + its single replay span to ClickHouse.

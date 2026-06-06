@@ -315,14 +315,6 @@ async def _run_eval(
                     pool, run_id, f"luna judge '{luna_slug}' not found",
                 )
                 return
-            ws_id = await pool.fetchval(
-                "select workspace_id from project where id = $1",
-                run["project_id"],
-            )
-            luna_api_key = await llm_credentials.resolve_secret(
-                pool, workspace_id=ws_id, provider=luna_row["provider"]
-            )
-
         rows: list[tuple[Any, ...]] = []
         score_sum = 0.0
         judged_at = datetime.utcnow()
@@ -331,9 +323,12 @@ async def _run_eval(
                 score, label, rationale, raw_output = (
                     await luna_judges.apply_luna_judge(
                         luna_row,
+                        pool=pool,
+                        project_id=run["project_id"],
+                        surface="eval",
+                        surface_ref_id=run_id,
                         input_text=item["input"],
                         expected=item["expected"],
-                        api_key=luna_api_key,
                     )
                 )
                 judge_endpoint = luna_row["provider"]

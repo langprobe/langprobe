@@ -342,8 +342,6 @@ async def _run_poll(
         # Resolve any luna judges once up-front; abort with an honest
         # error if a slug went missing between create and run.
         luna_rows: dict[str, dict[str, Any]] = {}
-        luna_keys: dict[str, str | None] = {}
-        ws_id_for_creds: Any = None
         for judge in judges:
             base, slug = luna_judges.parse_judge_kind(judge)
             if slug is not None:
@@ -358,16 +356,6 @@ async def _run_poll(
                     )
                     return
                 luna_rows[judge] = row
-                if ws_id_for_creds is None:
-                    ws_id_for_creds = await pool.fetchval(
-                        "select workspace_id from project where id = $1",
-                        poll["project_id"],
-                    )
-                luna_keys[judge] = await llm_credentials.resolve_secret(
-                    pool,
-                    workspace_id=ws_id_for_creds,
-                    provider=row["provider"],
-                )
 
         items = await _fetch_dataset_items(
             ch, poll["project_id"], poll["dataset_id"]
@@ -388,9 +376,12 @@ async def _run_poll(
                     score, label, rationale, raw_output = (
                         await luna_judges.apply_luna_judge(
                             luna_row,
+                            pool=pool,
+                            project_id=poll["project_id"],
+                            surface="poll",
+                            surface_ref_id=poll_id,
                             input_text=item["input"],
                             expected=item["expected"],
-                            api_key=luna_keys.get(judge),
                         )
                     )
                     judge_endpoint = luna_row["provider"]

@@ -356,12 +356,15 @@ def parse_judge_kind(judge_kind: str) -> tuple[str, str | None]:
 async def apply_luna_judge(
     judge_row: dict[str, Any],
     *,
+    pool: asyncpg.Pool,
+    project_id: UUID,
+    surface: str,
+    surface_ref_id: UUID,
     input_text: str,
     expected: str,
     output_text: str | None = None,
-    api_key: str | None = None,
 ) -> tuple[float, str, str, str]:
-    """Run the prompted judge once.
+    """Run the prompted judge once via the LiteLLM gateway.
 
     Returns ``(score, label, rationale, raw_output)``.
 
@@ -377,25 +380,45 @@ async def apply_luna_judge(
             "output": output_text if output_text is not None else input_text,
         },
     )
+    provider = judge_row["provider"]
+    model = judge_row["model"]
+    if provider == "stub":
+        # Deterministic stub for tests + smoke. The parser path is
+        # exercised; the LiteLLM gateway is bypassed.
+        raw = f"score: 1.0\nrationale: stub-judge ack ({rendered[-128:]})"
+        score, label, rationale = _parse_response(
+            raw, judge_row.get("output_format") or "score-rationale",
+        )
+        return score, label, rationale, raw[:2000]
+
+    bare_model = model
+    if not bare_model.startswith(provider + "/"):
+        bare_model = f"{provider}/{bare_model}"
+    from ..llm import DispatchError, Message, dispatch as gateway_dispatch
     try:
-        result = await _dispatch(
-            provider=judge_row["provider"],
-            model=judge_row["model"],
-            prompt=rendered,
+        result = await gateway_dispatch(
+            pool,
+            project_id=project_id,
+            surface=surface,  # type: ignore[arg-type]
+            surface_ref_id=surface_ref_id,
+            model=bare_model,
+            messages=[Message(role="user", content=rendered)],
             temperature=judge_row.get("temperature"),
             max_tokens=int(judge_row.get("max_tokens") or 512),
-            api_key=api_key,
         )
-    except Exception as exc:  # noqa: BLE001
+    except DispatchError as exc:
         log.warning(
             "luna judge dispatch failed",
             slug=judge_row.get("slug"),
-            error=str(exc),
+            code=exc.code,
+            detail=exc.detail,
         )
-        return 0.0, "error", f"dispatch failed: {exc}", str(exc)[:1000]
+        return 0.0, "error", f"dispatch failed: [{exc.code}] {exc.detail}", exc.detail[:1000]
 
-    raw = result.get("text") or ""
-    score, label, rationale = _parse_response(raw, judge_row.get("output_format") or "score-rationale")
+    raw = result.text
+    score, label, rationale = _parse_response(
+        raw, judge_row.get("output_format") or "score-rationale",
+    )
     return score, label, rationale, raw[:2000]
 
 
@@ -488,138 +511,6 @@ def _parse_json_response(text: str) -> tuple[float, str, str]:
     rationale = str(payload.get("rationale") or "")
     label = str(payload.get("label") or ("pass" if score >= 0.5 else "fail"))
     return score, label, rationale
-
-
-async def _dispatch(
-    *,
-    provider: str,
-    model: str,
-    prompt: str,
-    temperature: float | None,
-    max_tokens: int,
-    api_key: str | None = None,
-) -> dict[str, Any]:
-    if provider == "stub":
-        # Deterministic stub for tests + smoke. Returns "score: 1.0\n
-        # rationale: <prompt-snippet>" so the parser path is exercised.
-        return {
-            "text": f"score: 1.0\nrationale: stub-judge ack ({prompt[-128:]})",
-            "prompt_tokens": 0,
-            "completion_tokens": 0,
-        }
-    if provider == "anthropic":
-        return await asyncio.to_thread(
-            _call_anthropic, model, prompt, temperature, max_tokens, api_key
-        )
-    if provider == "openai":
-        return await asyncio.to_thread(
-            _call_openai, model, prompt, temperature, max_tokens, api_key
-        )
-    raise RuntimeError(f"unsupported provider {provider}")
-
-
-def _call_anthropic(
-    model: str,
-    prompt: str,
-    temperature: float | None,
-    max_tokens: int,
-    api_key: str | None = None,
-) -> dict[str, Any]:
-    api_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        raise RuntimeError(
-            "no anthropic credential resolved "
-            "(workspace_llm_credential or ANTHROPIC_API_KEY)"
-        )
-    body: dict[str, Any] = {
-        "model": model.removeprefix("anthropic/"),
-        "max_tokens": max_tokens,
-        "messages": [{"role": "user", "content": prompt}],
-    }
-    if temperature is not None:
-        body["temperature"] = temperature
-    payload = _json.dumps(body).encode("utf-8")
-    req = urllib.request.Request(
-        "https://api.anthropic.com/v1/messages",
-        data=payload,
-        method="POST",
-        headers={
-            "content-type": "application/json",
-            "x-api-key": api_key,
-            "anthropic-version": "2023-06-01",
-        },
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            data = _json.loads(resp.read())
-    except urllib.error.HTTPError as exc:
-        msg = exc.read().decode("utf-8", errors="replace")[:500]
-        raise RuntimeError(f"anthropic {exc.code}: {msg}") from exc
-
-    text = "".join(
-        b.get("text", "")
-        for b in (data.get("content") or [])
-        if isinstance(b, dict) and b.get("type") == "text"
-    )
-    usage = data.get("usage") or {}
-    return {
-        "text": text,
-        "prompt_tokens": usage.get("input_tokens"),
-        "completion_tokens": usage.get("output_tokens"),
-    }
-
-
-def _call_openai(
-    model: str,
-    prompt: str,
-    temperature: float | None,
-    max_tokens: int,
-    api_key: str | None = None,
-) -> dict[str, Any]:
-    api_key = api_key or os.environ.get("OPENAI_API_KEY")
-    if not api_key:
-        raise RuntimeError(
-            "no openai credential resolved "
-            "(workspace_llm_credential or OPENAI_API_KEY)"
-        )
-    body: dict[str, Any] = {
-        "model": model.removeprefix("openai/"),
-        "max_tokens": max_tokens,
-        "messages": [{"role": "user", "content": prompt}],
-    }
-    if temperature is not None:
-        body["temperature"] = temperature
-    payload = _json.dumps(body).encode("utf-8")
-    req = urllib.request.Request(
-        "https://api.openai.com/v1/chat/completions",
-        data=payload,
-        method="POST",
-        headers={
-            "content-type": "application/json",
-            "authorization": f"Bearer {api_key}",
-        },
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            data = _json.loads(resp.read())
-    except urllib.error.HTTPError as exc:
-        msg = exc.read().decode("utf-8", errors="replace")[:500]
-        raise RuntimeError(f"openai {exc.code}: {msg}") from exc
-
-    choices = data.get("choices") or []
-    text = ""
-    if choices:
-        text = (
-            choices[0].get("message", {}).get("content")
-            or choices[0].get("text")
-            or ""
-        )
-    usage = data.get("usage") or {}
-    return {
-        "text": text,
-        "prompt_tokens": usage.get("prompt_tokens"),
-        "completion_tokens": usage.get("completion_tokens"),
-    }
 
 
 # ---------------------------------------------------------------------------
