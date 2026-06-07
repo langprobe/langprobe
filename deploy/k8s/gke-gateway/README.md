@@ -41,6 +41,14 @@ supports Gateway API).
 kubectl apply -n tracebility -f deploy/k8s/gke-gateway/
 ```
 
+The directory contains:
+
+- `gateway.yaml` — the GKE-managed L7 LB (HTTP+HTTPS listeners on the static IP).
+- `httproute.yaml` — routes `langprobe.daz.co.in/*` to the `tracebility-web` Service.
+- `healthcheckpolicy.yaml` — points the GCP backend health check at `/login`
+  instead of the default `/`. Without it, `/` returns 307 → LB marks the
+  backend UNHEALTHY → public domain serves "no healthy upstream" 503s.
+
 ## Wait for provisioning
 
 ```bash
