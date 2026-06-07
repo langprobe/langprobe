@@ -45,6 +45,7 @@ from pydantic import BaseModel, Field
 from .. import audit
 from ..auth import Principal, assert_workspace_role, require_user
 from ..clickhouse_client import ClickHouseQuery
+from .prompts import Message
 
 log = structlog.get_logger("tracebility.api.playground")
 
@@ -408,20 +409,53 @@ async def _resolve_template(
     return body.raw_template, None
 
 
+def _coerce_var_value(value: Any) -> str:
+    """Stringify a variable value the same way for both render paths.
+
+    Strings pass through. Other types serialize via json.dumps so dicts
+    and lists round-trip as readable JSON. Falls back to str() on
+    json-incompatible objects (datetimes etc.) so we never crash mid-render.
+    """
+    if isinstance(value, str):
+        return value
+    try:
+        return _json.dumps(value)
+    except (TypeError, ValueError):
+        return str(value)
+
+
 def _render_template(template: str, variables: dict[str, Any]) -> str:
     def _repl(match: re.Match[str]) -> str:
         key = match.group(1)
         if key not in variables:
             return match.group(0)
-        value = variables[key]
-        if isinstance(value, str):
-            return value
-        try:
-            return _json.dumps(value)
-        except (TypeError, ValueError):
-            return str(value)
+        return _coerce_var_value(variables[key])
 
     return _VAR_RE.sub(_repl, template)
+
+
+def _render_messages(
+    messages: list[Message],
+    variables: dict[str, Any],
+) -> list[Message]:
+    """Render `{{ var }}` substitutions in each message's content.
+
+    Missing variables render as empty string per spec decision 9 — the
+    user can iterate without the renderer fighting them. Non-string
+    values serialize via json.dumps (same as _render_template) so a dict
+    or list passed as a variable round-trips as readable JSON.
+
+    Returns a fresh list of new Message objects — never mutates the
+    input list or its contents.
+    """
+
+    def _repl(match: re.Match[str]) -> str:
+        key = match.group(1)
+        if key not in variables:
+            return ""  # spec decision 9: missing var -> empty string
+        return _coerce_var_value(variables[key])
+
+    return [Message(role=m.role, content=_VAR_RE.sub(_repl, m.content)) for m in messages]
 
 
 async def _dispatch_stub(model: str, prompt: str) -> dict[str, Any]:
