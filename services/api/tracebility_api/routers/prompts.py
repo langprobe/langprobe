@@ -24,8 +24,8 @@ from uuid import UUID
 
 import asyncpg
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from pydantic import BaseModel, Field, model_validator
 
 from .. import audit
 from ..auth import Principal, assert_workspace_role, require_user
@@ -97,11 +97,43 @@ class PromptVersionList(BaseModel):
 
 
 class PromptVersionCreate(BaseModel):
-    template: str = Field(min_length=1)
+    """Body for POST /v1/prompts/{prompt_id}/versions.
+
+    Exactly one of `template_messages` (preferred, structured) and
+    `template` (legacy single-string) must be provided. The legacy
+    field stays for one release of back-compat; it wraps to a single
+    human message internally before write.
+    """
+
+    template_messages: list[Message] | None = Field(default=None, min_length=1)
+    template: str | None = Field(default=None, min_length=1)
     input_schema: dict[str, Any] | None = None
     model_params: dict[str, Any] | None = None
     aliases: list[str] = Field(default_factory=list)
     commit_message: str | None = Field(default=None, max_length=2000)
+
+    @model_validator(mode="after")
+    def _exactly_one_template_source(self) -> PromptVersionCreate:
+        n = sum(
+            [
+                self.template_messages is not None,
+                self.template is not None,
+            ]
+        )
+        if n == 0:
+            raise ValueError("one of template, template_messages is required")
+        if n > 1:
+            raise ValueError(
+                "template and template_messages are mutually exclusive; provide exactly one"
+            )
+        return self
+
+    def to_messages(self) -> list[Message]:
+        """Resolve to the canonical list-of-messages form for storage."""
+        if self.template_messages is not None:
+            return self.template_messages
+        assert self.template is not None  # validated above
+        return [Message(role="human", content=self.template)]
 
 
 class AliasUpdate(BaseModel):
@@ -319,6 +351,7 @@ async def list_versions(
 )
 async def create_version(
     request: Request,
+    response: Response,
     prompt_id: UUID,
     body: PromptVersionCreate,
     principal: Principal = Depends(require_user),
@@ -336,14 +369,41 @@ async def create_version(
     input_schema_json = _json.dumps(body.input_schema) if body.input_schema is not None else None
     model_params_json = _json.dumps(body.model_params) if body.model_params is not None else None
 
+    messages = body.to_messages()
+    messages_json_list = [m.model_dump() for m in messages]
+
     async with pool.acquire() as conn, conn.transaction():
-        next_version = await conn.fetchval(
+        # Latest version for this prompt, if any. Used both to compute the
+        # next version number and to detect a no-op duplicate.
+        latest = await conn.fetchrow(
             """
-                select coalesce(max(version), 0) + 1
-                from prompt_version where prompt_id = $1
+                select id, prompt_id, version, template, template_messages,
+                       input_schema, model_params, aliases, commit_message,
+                       created_at
+                  from prompt_version
+                 where prompt_id = $1
+                 order by version desc
+                 limit 1
                 """,
             prompt_id,
         )
+
+        if latest is not None:
+            # Decode jsonb defensively (some asyncpg codec configs return str).
+            latest_msgs_raw = latest["template_messages"]
+            if isinstance(latest_msgs_raw, str):
+                latest_msgs_raw = _json.loads(latest_msgs_raw)
+            # No-op short-circuit: identical to the most recent version.
+            # End-to-end coverage of this branch lives in the deferred
+            # integration test (Plan B Task 6 follow-up); the comparison
+            # contract is pinned by tests/unit/test_prompt_version_create_validation.py
+            # so a regression in to_messages()/model_dump fails fast.
+            if latest_msgs_raw == messages_json_list:
+                response.status_code = status.HTTP_200_OK
+                return _hydrate_version(latest)
+
+        next_version = (latest["version"] + 1) if latest is not None else 1
+
         if aliases:
             await conn.execute(
                 """
@@ -356,20 +416,24 @@ async def create_version(
                 prompt_id,
                 aliases,
             )
+
+        legacy_template = _derive_legacy_template(messages)
         row = await conn.fetchrow(
             """
                 insert into prompt_version (
-                    prompt_id, version, template, input_schema, model_params,
-                    aliases, commit_message, created_by
+                    prompt_id, version, template, template_messages,
+                    input_schema, model_params, aliases, commit_message,
+                    created_by
                 )
-                values ($1, $2, $3, $4::jsonb, $5::jsonb, $6, $7, $8)
+                values ($1, $2, $3, $4::jsonb, $5::jsonb, $6::jsonb, $7, $8, $9)
                 returning id, prompt_id, version, template, template_messages,
                           input_schema, model_params, aliases, commit_message,
                           created_at
                 """,
             prompt_id,
             next_version,
-            body.template,
+            legacy_template,
+            _json.dumps(messages_json_list),
             input_schema_json,
             model_params_json,
             aliases,
@@ -392,6 +456,7 @@ async def create_version(
             "prompt_id": str(prompt_id),
             "version": version.version,
             "aliases": aliases,
+            "template_messages": body.template_messages is not None,
         },
         request=request,
         workspace_id=workspace_id,
@@ -504,6 +569,23 @@ async def assign_alias(
     return version
 
 
+def _derive_legacy_template(messages: list[Message]) -> str:
+    """Compute the legacy `template` text from the canonical messages.
+
+    Returns the human content only when the version is exactly one bare
+    human message; otherwise empty string. Lying about the legacy field
+    (e.g., picking the human content from a multi-message version) would
+    quietly mislead old clients during the deprecation window.
+
+    This rule is the ONE source of truth — the create write path and the
+    read hydration path both call this so the response shape can never
+    diverge between create and read.
+    """
+    if len(messages) == 1 and messages[0].role == "human":
+        return messages[0].content
+    return ""
+
+
 def _normalize_aliases(raw: list[str]) -> list[str]:
     seen: set[str] = set()
     out: list[str] = []
@@ -541,9 +623,7 @@ def _hydrate_version(row: asyncpg.Record) -> PromptVersionOut:
     # data-corruption bug. If/when ai/tool roles land, extend Message,
     # don't loosen this validation.
     messages = [Message.model_validate(m) for m in msgs_raw]
-    legacy_template = (
-        messages[0].content if len(messages) == 1 and messages[0].role == "human" else ""
-    )
+    legacy_template = _derive_legacy_template(messages)
     return PromptVersionOut(
         id=data["id"],
         prompt_id=data["prompt_id"],
