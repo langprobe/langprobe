@@ -26,7 +26,30 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "UP", "B", "A", "C4", "SIM", "RET", "PTH", "ERA"]
-ignore = ["E501"]
+ignore = [
+    "E501",   # line length — formatter handles wrapping
+    "B008",   # Depends() / File() in defaults — canonical FastAPI pattern
+    "N818",   # *Error suffix — we use named exceptions like ResolverInvalidKey
+    "ERA001", # commented-out code — false positive on Lua/SQL doc strings
+    "SIM105", # try/except/pass — explicit form is clearer at our call sites
+    "SIM108", # ternary — explicit if/else is fine, often clearer
+    "SIM115", # context manager for open() — false-positives on streaming reads
+    "SIM117", # single nested `with` — explicit form is clearer
+    "SIM118", # `key in dict.keys()` — explicit reads better in contexts that already iterate keys
+    "SIM102", # nested if — explicit form is fine
+    "RET504", # unnecessary assignment before return — debugger-friendliness wins
+    "PTH123", # open() vs Path.open() — open() is fine
+    "PTH105", # os.replace vs Path.replace — atomic-rename idiom is os.replace
+    "F841",   # unused local — safer to leave the name binding for grep-ability
+    "A002",   # builtin shadowing — `filter` is part of the SCIM protocol shape
+    "B017",   # blind Exception in tests — sometimes the right assertion shape
+]
+
+[tool.ruff.lint.per-file-ignores]
+# SCIM v2 protocol mandates camelCase parameter names (startIndex, etc.)
+"services/api/tracebility_api/routers/scim.py" = ["N803"]
+# SSO config also surfaces a couple SCIM-shaped names.
+"services/api/tracebility_api/routers/sso.py" = ["N803"]
 
 [tool.ruff.format]
 quote-style = "double"
