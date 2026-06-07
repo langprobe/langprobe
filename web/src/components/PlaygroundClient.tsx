@@ -68,9 +68,20 @@ function extractVariables(template: string): string[] {
 export function PlaygroundComposer({
   projectId,
   prompts,
+  configuredProviders,
 }: {
   projectId: string;
   prompts: PromptOption[];
+  /**
+   * Providers the workspace has at least one active LLM credential for,
+   * resolved server-side from /v1/llm-credentials. The model picker
+   * filters its catalog to only these providers — picking a model
+   * without a credential is a guaranteed dispatch failure, so we
+   * surface the configured set up front rather than letting the user
+   * pick something that fails. Empty array = no creds; the picker
+   * shows the empty-state nudge to /workspace/credentials.
+   */
+  configuredProviders: string[];
 }) {
   const [mode, setMode] = useState<"single" | "compare">("single");
   const [promptId, setPromptId] = useState<string>("");
@@ -212,6 +223,7 @@ export function PlaygroundComposer({
         setTemperature={setTemperature}
         maxTokens={maxTokens}
         setMaxTokens={setMaxTokens}
+        configuredProviders={configuredProviders}
       />
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
         {error ? (
@@ -471,6 +483,7 @@ function ModelCard({
   setTemperature,
   maxTokens,
   setMaxTokens,
+  configuredProviders,
 }: {
   mode: "single" | "compare";
   model: string;
@@ -481,6 +494,7 @@ function ModelCard({
   setTemperature: (s: string) => void;
   maxTokens: string;
   setMaxTokens: (s: string) => void;
+  configuredProviders: string[];
 }) {
   return (
     <section className="card card-pad-lg">
@@ -496,9 +510,15 @@ function ModelCard({
           label={mode === "compare" ? "Model A" : "Model"}
           value={model}
           onChange={setModel}
+          availableProviders={configuredProviders}
         />
         {mode === "compare" ? (
-          <ModelPicker label="Model B" value={modelB} onChange={setModelB} />
+          <ModelPicker
+            label="Model B"
+            value={modelB}
+            onChange={setModelB}
+            availableProviders={configuredProviders}
+          />
         ) : null}
         <Field label="Temperature" hint="0.0..2.0 (blank = provider default)">
           <input
