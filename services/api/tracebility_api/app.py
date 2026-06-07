@@ -92,14 +92,7 @@ def create_app() -> FastAPI:
         # ``audit_log`` is read-only after this lands; new writes go to
         # ClickHouse via this writer (spec §5.8).
         app.state.audit_writer = (
-            await AuditWriter.from_url(
-                settings.clickhouse_url,
-                username=settings.clickhouse_user,
-                password=settings.clickhouse_password,
-                database=settings.clickhouse_database,
-            )
-            if settings.clickhouse_url
-            else None
+            await AuditWriter.from_url(settings.clickhouse_url) if settings.clickhouse_url else None
         )
         # Redis is needed for the api-key invalidation publish path and the
         # quota / audit reconciler hooks. Optional; if unset, those features

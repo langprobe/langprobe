@@ -85,12 +85,7 @@ def create_app() -> FastAPI:
         await app.state.resolver.start_invalidator()
         app.state.rate_limiter = RateLimiter(app.state.redis)
         app.state.quota_meter = QuotaMeter(app.state.redis)
-        app.state.audit_writer = await AuditWriter.from_url(
-            settings.clickhouse_url,
-            username=settings.clickhouse_user,
-            password=settings.clickhouse_password,
-            database=settings.clickhouse_database,
-        )
+        app.state.audit_writer = await AuditWriter.from_url(settings.clickhouse_url)
         app.state.redactor = redactor_from_env(settings.redact_pii)
         drain_task = asyncio.create_task(_drain_loop(app.state.enqueue))
         log.info(

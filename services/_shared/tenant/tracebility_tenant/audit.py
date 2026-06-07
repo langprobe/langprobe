@@ -86,17 +86,16 @@ class AuditWriter:
         cls,
         url: str,
         *,
-        username: str | None = None,
-        password: str | None = None,
-        database: str = "default",
         table: str = "audit_log",
     ) -> AuditWriter:
-        client = await clickhouse_connect.get_async_client(
-            dsn=url,
-            username=username,
-            password=password,
-            database=database,
-        )
+        # Pass the full DSN through. Credentials and database are encoded
+        # in the URL (http://user:pass@host:port/db). Earlier versions
+        # accepted username/password/database kwargs, but that turned out
+        # to override the DSN's embedded credentials when callers passed
+        # default values — yielding cryptic AUTHENTICATION_FAILED errors
+        # in deployed environments where the helm chart only ships the
+        # DSN as a single secret.
+        client = await clickhouse_connect.get_async_client(dsn=url)
         return cls(client, table=table)
 
     async def write(self, event: AuditEvent) -> None:
