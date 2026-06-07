@@ -9,12 +9,16 @@ authors = [{ name = "tracebility contributors" }]
 
 [tool.uv.workspace]
 members = [
+    "services/_shared/tenant",
     "services/ingest-api",
     "services/api",
     "services/ingest-worker",
-    "services/eval-orchestrator",
     "services/migrate-langsmith",
 ]
+# services/eval-orchestrator is referenced in the multi-tenancy spec but
+# does not exist as a service yet. The per-org concurrency semaphore that
+# the spec calls for lives in tracebility_tenant.eval_concurrency so the
+# orchestrator can pick it up wholesale when it lands.
 
 [tool.ruff]
 line-length = 100
