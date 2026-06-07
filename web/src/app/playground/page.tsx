@@ -45,6 +45,11 @@ interface PlaygroundSessionList {
   items: PlaygroundSessionOut[];
 }
 
+interface LLMCredentialRow {
+  provider: string;
+  revoked_at: string | null;
+}
+
 export default async function PlaygroundPage() {
   const { active, all, reason } = await resolveActiveProject();
   if (!active) {
@@ -61,17 +66,32 @@ export default async function PlaygroundPage() {
     );
   }
 
-  const [promptsRes, sessionsRes] = await Promise.all([
+  const [promptsRes, sessionsRes, credentialsRes] = await Promise.all([
     apiGet<PromptRow[]>(
       `/v1/prompts?project_id=${encodeURIComponent(active.id)}`,
     ),
     apiGet<PlaygroundSessionList>(
       `/v1/playground/runs?project_id=${encodeURIComponent(active.id)}&limit=20`,
     ),
+    apiGet<LLMCredentialRow[]>(
+      `/v1/llm-credentials?workspace_id=${encodeURIComponent(active.workspace_id)}`,
+    ),
   ]);
 
   const prompts = promptsRes.data ?? [];
   const sessions = sessionsRes.data?.items ?? [];
+  // Active credentials (revoked_at IS NULL) -> distinct provider list.
+  // The playground filters its model picker by this so users see only
+  // providers they actually have keys for. An admin/root user can see
+  // empty configured-providers (and pick anything via "Custom..."); a
+  // member without credentials sees the empty-state nudge to settings.
+  const configuredProviders = Array.from(
+    new Set(
+      (credentialsRes.data ?? [])
+        .filter((c) => c.revoked_at === null)
+        .map((c) => c.provider),
+    ),
+  ).sort();
 
   const promptOptions = await Promise.all(
     prompts.map(async (p): Promise<PromptOption> => {
@@ -109,6 +129,7 @@ export default async function PlaygroundPage() {
           <PlaygroundComposer
             projectId={active.id}
             prompts={promptOptions}
+            configuredProviders={configuredProviders}
           />
           <RecentSessionsCard sessions={sessions} />
         </div>

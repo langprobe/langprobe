@@ -31,18 +31,39 @@ export function ModelPicker({
   onChange,
   label,
   ariaLabel,
+  availableProviders,
 }: {
   value: string;
   onChange: (next: string) => void;
   /** Optional label for the field wrapper. If omitted, render just the inputs. */
   label?: string;
   ariaLabel?: string;
+  /**
+   * Filter the picker to providers the workspace has credentials for.
+   * Pass the result of /v1/llm-credentials projected to distinct
+   * provider names. Omit (undefined) for callers without workspace
+   * context — judges and others — which keeps today's "show
+   * everything" behavior.
+   *
+   * - undefined: show all providers (legacy)
+   * - non-empty array: show only those providers + Custom escape hatch
+   * - empty array: show only Custom + nudge to /workspace/credentials
+   */
+  availableProviders?: string[];
 }) {
   // If the current value isn't in the catalog, expose a free-text mode
   // so the user can edit it directly without losing it.
   const inCatalog = ALL_MODELS.some((m) => m.value === value);
   const initialCustom = value !== "" && !inCatalog;
   const [customMode, setCustomMode] = useState(initialCustom);
+
+  const visibleProviders =
+    availableProviders === undefined
+      ? PROVIDERS
+      : PROVIDERS.filter((p) => availableProviders.includes(p.value));
+
+  const noCredentials =
+    availableProviders !== undefined && availableProviders.length === 0;
 
   const select = (
     <select
@@ -61,7 +82,7 @@ export function ModelPicker({
       }}
       style={{ width: "100%" }}
     >
-      {PROVIDERS.map((p) => (
+      {visibleProviders.map((p) => (
         <optgroup key={p.value} label={p.label}>
           {MODEL_CATALOG[p.value].map((m) => (
             <option key={m.value} value={m.value}>
@@ -107,6 +128,15 @@ export function ModelPicker({
     </span>
   ) : null;
 
+  const noCredsNudge = noCredentials ? (
+    <span style={{ fontSize: 11, color: "var(--text-3)", marginTop: 4 }}>
+      No LLM credentials configured.{" "}
+      <a href="/workspace/credentials" style={{ color: "var(--link)" }}>
+        Add one →
+      </a>
+    </span>
+  ) : null;
+
   if (label) {
     return (
       <label style={{ display: "grid", gap: 4 }}>
@@ -123,6 +153,7 @@ export function ModelPicker({
         {select}
         {customInput}
         {meta}
+        {noCredsNudge}
       </label>
     );
   }
@@ -132,6 +163,7 @@ export function ModelPicker({
       {select}
       {customInput}
       {meta}
+      {noCredsNudge}
     </div>
   );
 }
