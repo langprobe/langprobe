@@ -49,6 +49,7 @@ spec:
               value: {{ .Values.logging.level | quote }}
             {{- include "tracebility.envFromSecret" (dict "cfg" .Values.postgres "name" "TRACEBILITY_PG_DSN") | nindent 12 }}
             {{- include "tracebility.envFromSecret" (dict "cfg" .Values.clickhouse "name" "TRACEBILITY_CLICKHOUSE_URL") | nindent 12 }}
+            {{- include "tracebility.envFromSecret" (dict "cfg" .Values.redis "name" "TRACEBILITY_REDIS_URL") | nindent 12 }}
             {{- include "tracebility.envFromSecret" (dict "cfg" .Values.session "name" "TRACEBILITY_SESSION_SECRET") | nindent 12 }}
             {{- if .Values.oauth.existingSecret }}
             - name: OAUTH_GOOGLE_CLIENT_ID

@@ -12,11 +12,11 @@ from dataclasses import dataclass
 class Settings:
     redis_url: str
     postgres_dsn: str
-    # ClickHouse used by AuditWriter (egress + quota.block events)
+    # Full DSN — http(s)://user:pass@host:port/db. Credentials and
+    # database name are embedded; the helm chart ships this as a single
+    # secret value (see deploy/helm/.../templates/ingest-api-deployment.yaml
+    # and the tracebility-clickhouse secret created by the bootstrap runbook).
     clickhouse_url: str
-    clickhouse_user: str
-    clickhouse_password: str
-    clickhouse_database: str = "default"
     # spans larger than this are spilled to object storage (per ER-06)
     inline_blob_max_bytes: int = 1_000_000
     # disk buffer for ingest enqueue when redis is unavailable (ER-01)
@@ -46,9 +46,6 @@ def load() -> Settings:
         redis_url=redis_url,
         postgres_dsn=postgres_dsn,
         clickhouse_url=clickhouse_url,
-        clickhouse_user=os.environ.get("TRACEBILITY_CLICKHOUSE_USER", "default"),
-        clickhouse_password=os.environ.get("TRACEBILITY_CLICKHOUSE_PASSWORD", ""),
-        clickhouse_database=os.environ.get("TRACEBILITY_CLICKHOUSE_DATABASE", "default"),
         inline_blob_max_bytes=int(os.environ.get("TRACEBILITY_INLINE_BLOB_MAX_BYTES", "1000000")),
         disk_buffer_path=os.environ.get(
             "TRACEBILITY_DISK_BUFFER_PATH", "/var/lib/tracebility/ingest-buffer"

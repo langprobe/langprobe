@@ -192,17 +192,11 @@ async def reconciler_loop(
     *,
     pg: asyncpg.Pool,
     clickhouse_url: str,
-    clickhouse_user: str = "default",
-    clickhouse_password: str = "",
-    clickhouse_database: str = "default",
     interval_s: float = 24 * 60 * 60.0,  # daily
 ) -> None:
-    ch = await clickhouse_connect.get_async_client(
-        dsn=clickhouse_url,
-        username=clickhouse_user,
-        password=clickhouse_password,
-        database=clickhouse_database,
-    )
+    """``clickhouse_url`` is a full DSN with embedded credentials. See
+    reconciler_quota.reconciler_loop docstring for why we don't split."""
+    ch = await clickhouse_connect.get_async_client(dsn=clickhouse_url)
     try:
         while True:
             try:

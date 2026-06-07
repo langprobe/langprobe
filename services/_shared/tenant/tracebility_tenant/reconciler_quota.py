@@ -165,18 +165,16 @@ async def reconciler_loop(
     pg: asyncpg.Pool,
     redis: redis_async.Redis,
     clickhouse_url: str,
-    clickhouse_user: str = "default",
-    clickhouse_password: str = "",
-    clickhouse_database: str = "default",
     interval_s: float = 60.0,
 ) -> None:
-    """Run forever. Operator service spawns this as a background task."""
-    ch = await clickhouse_connect.get_async_client(
-        dsn=clickhouse_url,
-        username=clickhouse_user,
-        password=clickhouse_password,
-        database=clickhouse_database,
-    )
+    """Run forever. Operator service spawns this as a background task.
+
+    ``clickhouse_url`` is a full DSN with embedded credentials and database
+    (http(s)://user:pass@host:port/db). The helm chart ships it as a single
+    secret value; splitting credentials into separate kwargs caused
+    AUTHENTICATION_FAILED in production.
+    """
+    ch = await clickhouse_connect.get_async_client(dsn=clickhouse_url)
     try:
         while True:
             try:
