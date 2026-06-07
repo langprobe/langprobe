@@ -140,7 +140,7 @@ jobs:
             --set image.tag="${{ steps.sha.outputs.sha }}" \
             --atomic \
             --wait \
-            --timeout 10m
+            --timeout 20m
 
       - name: Rollout status (sanity)
         run: |
