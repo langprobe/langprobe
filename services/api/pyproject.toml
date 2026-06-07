@@ -16,7 +16,12 @@ dependencies = [
     "itsdangerous>=2.1",
     "clickhouse-connect>=0.7",
     "litellm==1.52.16",
+    "redis>=5.0",
+    "tracebility-tenant",
 ]
+
+[tool.uv.sources]
+tracebility-tenant = { workspace = true }
 
 [project.optional-dependencies]
 dev = [
