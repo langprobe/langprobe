@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 
 import { ModelPicker } from "@/components/ModelPicker";
 import { MessageEditor } from "@/components/playground/MessageEditor";
+import { SavePromptForm } from "@/components/playground/SavePromptForm";
 
 /**
  * Interactive Playground canvas.
@@ -163,6 +164,114 @@ export function PlaygroundComposer({
 
   const isComposerEmpty = !messages.some((m) => m.content.trim().length > 0);
 
+  // Save flow. Two paths:
+  //   1. loadedVersionId !== null → POST a new version under the same prompt.
+  //      Plan B's api short-circuits identical messages and returns the
+  //      existing row (HTTP 200), so re-saving an unchanged composer is
+  //      a cheap no-op.
+  //   2. loadedVersionId === null → show the inline name+slug form; on
+  //      submit, create the prompt then post v1 and switch the composer
+  //      to the loaded state so subsequent saves create v2/v3/...
+  const [showSaveForm, setShowSaveForm] = useState(false);
+  const [savingBusy, setSavingBusy] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const canSave = !isComposerEmpty && !savingBusy && !pending;
+
+  async function postNewVersion(
+    targetPromptId: string,
+  ): Promise<{ id: string } | null> {
+    const resp = await fetch(`/api/prompts/${encodeURIComponent(targetPromptId)}/versions`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ template_messages: messages }),
+    });
+    if (!resp.ok && resp.status !== 200 && resp.status !== 201) {
+      let detail = `request failed (${resp.status})`;
+      try {
+        const data = await resp.json();
+        if (data && typeof data === "object" && "detail" in data) {
+          detail = String((data as { detail: unknown }).detail);
+        }
+      } catch {
+        /* ignore */
+      }
+      setSaveError(detail);
+      return null;
+    }
+    return (await resp.json()) as { id: string };
+  }
+
+  async function saveExisting() {
+    if (loadedVersionId === null) return;
+    const owner = prompts.find((p) =>
+      p.versions.some((v) => v.id === loadedVersionId),
+    );
+    if (!owner) {
+      setSaveError("loaded version not found in prompt catalog");
+      return;
+    }
+    setSavingBusy(true);
+    setSaveError(null);
+    try {
+      const created = await postNewVersion(owner.id);
+      if (created) {
+        setLoadedVersionId(created.id);
+        router.refresh();
+      }
+    } finally {
+      setSavingBusy(false);
+    }
+  }
+
+  async function saveNew(form: { name: string; slug: string }) {
+    setSavingBusy(true);
+    setSaveError(null);
+    try {
+      const create = await fetch("/api/prompts", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          project_id: projectId,
+          slug: form.slug,
+          name: form.name,
+        }),
+      });
+      if (!create.ok) {
+        let detail = `prompt create failed (${create.status})`;
+        try {
+          const data = await create.json();
+          if (data && typeof data === "object" && "detail" in data) {
+            detail = String((data as { detail: unknown }).detail);
+          }
+        } catch {
+          /* ignore */
+        }
+        setSaveError(detail);
+        return;
+      }
+      const prompt = (await create.json()) as { id: string };
+      const created = await postNewVersion(prompt.id);
+      if (created) {
+        setShowSaveForm(false);
+        setPromptId(prompt.id);
+        setVersionId(created.id);
+        setLoadedVersionId(created.id);
+        router.refresh();
+      }
+    } finally {
+      setSavingBusy(false);
+    }
+  }
+
+  function onClickSave() {
+    setSaveError(null);
+    if (loadedVersionId !== null) {
+      void saveExisting();
+    } else {
+      setShowSaveForm(true);
+    }
+  }
+
   function setVariable(key: string, value: string) {
     setVariables((prev) => ({ ...prev, [key]: value }));
   }
@@ -249,6 +358,13 @@ export function PlaygroundComposer({
         setMessages={setMessages}
         loadedVersionId={loadedVersionId}
         setLoadedVersionId={setLoadedVersionId}
+        canSave={canSave}
+        savingBusy={savingBusy}
+        saveError={saveError}
+        showSaveForm={showSaveForm}
+        onClickSave={onClickSave}
+        onCancelSave={() => setShowSaveForm(false)}
+        onSubmitSave={saveNew}
       />
       <VariablesCard
         keys={detectedVars}
@@ -331,6 +447,13 @@ function PromptSourceCard({
   setMessages,
   loadedVersionId,
   setLoadedVersionId,
+  canSave,
+  savingBusy,
+  saveError,
+  showSaveForm,
+  onClickSave,
+  onCancelSave,
+  onSubmitSave,
 }: {
   prompts: PromptOption[];
   promptId: string;
@@ -342,6 +465,13 @@ function PromptSourceCard({
   setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
   loadedVersionId: string | null;
   setLoadedVersionId: (id: string | null) => void;
+  canSave: boolean;
+  savingBusy: boolean;
+  saveError: string | null;
+  showSaveForm: boolean;
+  onClickSave: () => void;
+  onCancelSave: () => void;
+  onSubmitSave: (form: { name: string; slug: string }) => void;
 }) {
   function clearLoaded() {
     setPromptId("");
@@ -420,6 +550,20 @@ function PromptSourceCard({
               Unload
             </button>
           ) : null}
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            onClick={onClickSave}
+            disabled={!canSave}
+            title={
+              loadedVersionId !== null
+                ? "save as a new version under the loaded prompt"
+                : "save as a new prompt"
+            }
+            style={{ fontSize: 12 }}
+          >
+            {savingBusy ? "Saving..." : "Save"}
+          </button>
         </div>
       </div>
       {messages.map((msg, i) => (
@@ -456,6 +600,27 @@ function PromptSourceCard({
           }
         />
       ))}
+      {showSaveForm ? (
+        <SavePromptForm
+          busy={savingBusy}
+          onCancel={onCancelSave}
+          onSubmit={onSubmitSave}
+        />
+      ) : null}
+      {saveError ? (
+        <div
+          role="alert"
+          style={{
+            padding: "6px 10px",
+            fontSize: 12,
+            background: "var(--danger-soft)",
+            color: "var(--danger)",
+            borderRadius: "var(--r-2)",
+          }}
+        >
+          {saveError}
+        </div>
+      ) : null}
       <button
         type="button"
         className="btn btn-ghost btn-sm"
