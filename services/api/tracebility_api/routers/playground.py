@@ -33,8 +33,9 @@ import json as _json
 import re
 import time
 import uuid
+from collections.abc import Mapping
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 import asyncpg
@@ -45,6 +46,7 @@ from pydantic import BaseModel, Field
 from .. import audit
 from ..auth import Principal, assert_workspace_role, require_user
 from ..clickhouse_client import ClickHouseQuery
+from ..llm import Message as DispatchMessage
 from .prompts import Message
 
 log = structlog.get_logger("tracebility.api.playground")
@@ -218,7 +220,7 @@ async def create_session(
     if provider == "stub":
         result_dict = await _dispatch_stub(body.model, rendered)
     else:
-        from ..llm import DispatchError, Message
+        from ..llm import DispatchError
         from ..llm import dispatch as gateway_dispatch
 
         try:
@@ -228,7 +230,7 @@ async def create_session(
                 surface="playground",
                 surface_ref_id=session_id,
                 model=f"{provider}/{body.model.removeprefix(provider + '/')}",
-                messages=[Message(role="user", content=rendered)],
+                messages=[DispatchMessage(role="user", content=rendered)],
                 temperature=body.temperature,
                 max_tokens=body.max_tokens or _DEFAULT_MAX_TOKENS,
             )
@@ -456,6 +458,41 @@ def _render_messages(
         return _coerce_var_value(variables[key])
 
     return [Message(role=m.role, content=_VAR_RE.sub(_repl, m.content)) for m in messages]
+
+
+# Single source of truth for the prompt -> dispatch role translation.
+# When AI / tool roles land (spec decision 2 deferral), extend this dict
+# and the prompt-side Message Literal in routers/prompts.py together.
+_PROMPT_TO_DISPATCH_ROLE: Mapping[
+    Literal["system", "human"],
+    Literal["system", "user", "assistant", "tool"],
+] = {
+    "system": "system",
+    "human": "user",
+}
+
+
+def _to_dispatch_messages(messages: list[Message]) -> list[DispatchMessage]:
+    """Convert prompt-side roles to dispatcher roles.
+
+    Prompt side: `system` | `human` (LangSmith vocabulary).
+    Dispatch side: `system` | `user` | `assistant` | `tool` (provider
+    vocabulary, what LiteLLM expects).
+
+    The only translation today is `human` -> `user`; system passes
+    through. AI / tool roles are deferred (spec decision 2). When they
+    land, extend `_PROMPT_TO_DISPATCH_ROLE` AND the prompt-side
+    `Message.role` Literal in `routers/prompts.py` in the same change —
+    the dispatch-side dataclass already accepts assistant / tool, so
+    only the prompt side and the bridging table need updating.
+    """
+    return [
+        DispatchMessage(
+            role=_PROMPT_TO_DISPATCH_ROLE[m.role],
+            content=m.content,
+        )
+        for m in messages
+    ]
 
 
 async def _dispatch_stub(model: str, prompt: str) -> dict[str, Any]:
