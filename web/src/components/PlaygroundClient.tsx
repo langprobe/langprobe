@@ -3,9 +3,11 @@
 import { ExternalLink, Loader2, Play, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 
 import { ModelPicker } from "@/components/ModelPicker";
+import { MessageEditor } from "@/components/playground/MessageEditor";
+import { SavePromptForm } from "@/components/playground/SavePromptForm";
 
 /**
  * Interactive Playground canvas.
@@ -22,11 +24,24 @@ import { ModelPicker } from "@/components/ModelPicker";
  * iteration without changing the storage shape).
  */
 
+export interface Message {
+  role: "system" | "human";
+  content: string;
+}
+
 export interface PromptOption {
   id: string;
   slug: string;
   name: string;
-  versions: { id: string; version: number; template: string }[];
+  versions: {
+    id: string;
+    version: number;
+    /** Structured form (Plan A+B). Always set on new versions. */
+    template_messages: Message[];
+    /** Legacy single-string field. Kept for back-compat reads from the
+     *  api during the deprecation window. We don't display this. */
+    template: string;
+  }[];
 }
 
 export interface PlaygroundSessionOut {
@@ -65,6 +80,26 @@ function extractVariables(template: string): string[] {
   return [...out];
 }
 
+/**
+ * Run the same variable-detection regex across a list of messages and
+ * return the deduped union (preserving first-seen order). Used by the
+ * composer to keep the Inputs panel in sync as the user edits System
+ * and Human bodies.
+ */
+export function extractVariablesFromMessages(messages: Message[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const m of messages) {
+    for (const v of extractVariables(m.content)) {
+      if (!seen.has(v)) {
+        seen.add(v);
+        out.push(v);
+      }
+    }
+  }
+  return out;
+}
+
 export function PlaygroundComposer({
   projectId,
   prompts,
@@ -75,10 +110,16 @@ export function PlaygroundComposer({
   const [mode, setMode] = useState<"single" | "compare">("single");
   const [promptId, setPromptId] = useState<string>("");
   const [versionId, setVersionId] = useState<string>("");
-  const [rawMode, setRawMode] = useState<boolean>(prompts.length === 0);
-  const [rawTemplate, setRawTemplate] = useState<string>(
-    "Summarize the following text in one sentence:\n\n{{ text }}",
-  );
+  // Composer state. messages is the editable list; loadedVersionId is the
+  // prompt_version we last loaded (null = unsaved free-form composition).
+  const [messages, setMessages] = useState<Message[]>([
+    { role: "system", content: "" },
+    {
+      role: "human",
+      content: "Summarize the following text in one sentence:\n\n{{ text }}",
+    },
+  ]);
+  const [loadedVersionId, setLoadedVersionId] = useState<string | null>(null);
   const [variables, setVariables] = useState<Record<string, string>>({
     text: "tracebility is a self-hosted LLM observability platform.",
   });
@@ -100,14 +141,136 @@ export function PlaygroundComposer({
     () => selectedPrompt?.versions.find((v) => v.id === versionId) ?? null,
     [selectedPrompt, versionId],
   );
-  const effectiveTemplate = rawMode
-    ? rawTemplate
-    : selectedVersion?.template ?? "";
+
+  // Loading a saved version replaces the editable messages and pins
+  // loadedVersionId so Run posts prompt_version_id (not raw_messages).
+  // Editing afterwards keeps loadedVersionId — Save then sends a new
+  // version under the same prompt; the api short-circuits identical
+  // bodies.
+  useEffect(() => {
+    if (selectedVersion === null) return;
+    const next =
+      selectedVersion.template_messages.length > 0
+        ? selectedVersion.template_messages
+        : [{ role: "human" as const, content: selectedVersion.template }];
+    setMessages(next);
+    setLoadedVersionId(selectedVersion.id);
+  }, [selectedVersion]);
 
   const detectedVars = useMemo(
-    () => extractVariables(effectiveTemplate),
-    [effectiveTemplate],
+    () => extractVariablesFromMessages(messages),
+    [messages],
   );
+
+  const isComposerEmpty = !messages.some((m) => m.content.trim().length > 0);
+
+  // Save flow. Two paths:
+  //   1. loadedVersionId !== null → POST a new version under the same prompt.
+  //      Plan B's api short-circuits identical messages and returns the
+  //      existing row (HTTP 200), so re-saving an unchanged composer is
+  //      a cheap no-op.
+  //   2. loadedVersionId === null → show the inline name+slug form; on
+  //      submit, create the prompt then post v1 and switch the composer
+  //      to the loaded state so subsequent saves create v2/v3/...
+  const [showSaveForm, setShowSaveForm] = useState(false);
+  const [savingBusy, setSavingBusy] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const canSave = !isComposerEmpty && !savingBusy && !pending;
+
+  async function postNewVersion(
+    targetPromptId: string,
+  ): Promise<{ id: string } | null> {
+    const resp = await fetch(`/api/prompts/${encodeURIComponent(targetPromptId)}/versions`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ template_messages: messages }),
+    });
+    if (!resp.ok && resp.status !== 200 && resp.status !== 201) {
+      let detail = `request failed (${resp.status})`;
+      try {
+        const data = await resp.json();
+        if (data && typeof data === "object" && "detail" in data) {
+          detail = String((data as { detail: unknown }).detail);
+        }
+      } catch {
+        /* ignore */
+      }
+      setSaveError(detail);
+      return null;
+    }
+    return (await resp.json()) as { id: string };
+  }
+
+  async function saveExisting() {
+    if (loadedVersionId === null) return;
+    const owner = prompts.find((p) =>
+      p.versions.some((v) => v.id === loadedVersionId),
+    );
+    if (!owner) {
+      setSaveError("loaded version not found in prompt catalog");
+      return;
+    }
+    setSavingBusy(true);
+    setSaveError(null);
+    try {
+      const created = await postNewVersion(owner.id);
+      if (created) {
+        setLoadedVersionId(created.id);
+        router.refresh();
+      }
+    } finally {
+      setSavingBusy(false);
+    }
+  }
+
+  async function saveNew(form: { name: string; slug: string }) {
+    setSavingBusy(true);
+    setSaveError(null);
+    try {
+      const create = await fetch("/api/prompts", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          project_id: projectId,
+          slug: form.slug,
+          name: form.name,
+        }),
+      });
+      if (!create.ok) {
+        let detail = `prompt create failed (${create.status})`;
+        try {
+          const data = await create.json();
+          if (data && typeof data === "object" && "detail" in data) {
+            detail = String((data as { detail: unknown }).detail);
+          }
+        } catch {
+          /* ignore */
+        }
+        setSaveError(detail);
+        return;
+      }
+      const prompt = (await create.json()) as { id: string };
+      const created = await postNewVersion(prompt.id);
+      if (created) {
+        setShowSaveForm(false);
+        setPromptId(prompt.id);
+        setVersionId(created.id);
+        setLoadedVersionId(created.id);
+        router.refresh();
+      }
+    } finally {
+      setSavingBusy(false);
+    }
+  }
+
+  function onClickSave() {
+    setSaveError(null);
+    if (loadedVersionId !== null) {
+      void saveExisting();
+    } else {
+      setShowSaveForm(true);
+    }
+  }
 
   function setVariable(key: string, value: string) {
     setVariables((prev) => ({ ...prev, [key]: value }));
@@ -133,14 +296,14 @@ export function PlaygroundComposer({
       temperature: tempNum,
       max_tokens: maxNum,
     };
-    if (rawMode || !selectedVersion) {
-      if (!effectiveTemplate.trim()) {
-        setError("template is empty");
+    if (loadedVersionId !== null) {
+      body.prompt_version_id = loadedVersionId;
+    } else {
+      if (isComposerEmpty) {
+        setError("prompt is empty");
         return null;
       }
-      body.raw_template = effectiveTemplate;
-    } else {
-      body.prompt_version_id = selectedVersion.id;
+      body.raw_messages = messages;
     }
     const res = await fetch("/api/playground/runs", {
       method: "POST",
@@ -186,16 +349,22 @@ export function PlaygroundComposer({
       <ModeToggle mode={mode} onChange={setMode} />
       <PromptSourceCard
         prompts={prompts}
-        rawMode={rawMode}
-        setRawMode={setRawMode}
         promptId={promptId}
         setPromptId={setPromptId}
         versionId={versionId}
         setVersionId={setVersionId}
-        rawTemplate={rawTemplate}
-        setRawTemplate={setRawTemplate}
         selectedPrompt={selectedPrompt}
-        selectedVersion={selectedVersion}
+        messages={messages}
+        setMessages={setMessages}
+        loadedVersionId={loadedVersionId}
+        setLoadedVersionId={setLoadedVersionId}
+        canSave={canSave}
+        savingBusy={savingBusy}
+        saveError={saveError}
+        showSaveForm={showSaveForm}
+        onClickSave={onClickSave}
+        onCancelSave={() => setShowSaveForm(false)}
+        onSubmitSave={saveNew}
       />
       <VariablesCard
         keys={detectedVars}
@@ -226,7 +395,7 @@ export function PlaygroundComposer({
           type="button"
           className="btn btn-primary"
           onClick={run}
-          disabled={pending || !effectiveTemplate.trim()}
+          disabled={pending || (loadedVersionId === null && isComposerEmpty)}
         >
           {pending ? <Loader2 size={14} className="spin" /> : <Play size={14} />}
           {pending ? "running…" : mode === "compare" ? "Run both" : "Run"}
@@ -269,106 +438,97 @@ function ModeToggle({
 
 function PromptSourceCard({
   prompts,
-  rawMode,
-  setRawMode,
   promptId,
   setPromptId,
   versionId,
   setVersionId,
-  rawTemplate,
-  setRawTemplate,
   selectedPrompt,
-  selectedVersion,
+  messages,
+  setMessages,
+  loadedVersionId,
+  setLoadedVersionId,
+  canSave,
+  savingBusy,
+  saveError,
+  showSaveForm,
+  onClickSave,
+  onCancelSave,
+  onSubmitSave,
 }: {
   prompts: PromptOption[];
-  rawMode: boolean;
-  setRawMode: (b: boolean) => void;
   promptId: string;
   setPromptId: (s: string) => void;
   versionId: string;
   setVersionId: (s: string) => void;
-  rawTemplate: string;
-  setRawTemplate: (s: string) => void;
   selectedPrompt: PromptOption | null;
-  selectedVersion: PromptOption["versions"][number] | null;
+  messages: Message[];
+  setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
+  loadedVersionId: string | null;
+  setLoadedVersionId: (id: string | null) => void;
+  canSave: boolean;
+  savingBusy: boolean;
+  saveError: string | null;
+  showSaveForm: boolean;
+  onClickSave: () => void;
+  onCancelSave: () => void;
+  onSubmitSave: (form: { name: string; slug: string }) => void;
 }) {
+  function clearLoaded() {
+    setPromptId("");
+    setVersionId("");
+    setLoadedVersionId(null);
+  }
+
   return (
-    <section className="card card-pad-lg">
+    <section
+      className="card card-pad-lg"
+      style={{ display: "grid", gap: 12 }}
+    >
       <div
         style={{
           display: "flex",
           alignItems: "baseline",
           justifyContent: "space-between",
-          marginBottom: 12,
         }}
       >
         <h2 style={{ margin: 0 }}>Prompt</h2>
-        <div style={{ display: "flex", gap: 4 }}>
-          <button
-            type="button"
-            className={!rawMode ? "btn btn-primary" : "btn btn-ghost"}
-            onClick={() => setRawMode(false)}
-            disabled={prompts.length === 0}
-            style={{ fontSize: 12 }}
-            title={
-              prompts.length === 0
-                ? "create a prompt under /prompts to use the picker"
-                : undefined
-            }
-          >
-            From catalog
-          </button>
-          <button
-            type="button"
-            className={rawMode ? "btn btn-primary" : "btn btn-ghost"}
-            onClick={() => setRawMode(true)}
-            style={{ fontSize: 12 }}
-          >
-            Raw
-          </button>
-        </div>
-      </div>
-      {rawMode ? (
-        <textarea
-          value={rawTemplate}
-          onChange={(e) => setRawTemplate(e.target.value)}
-          rows={6}
-          placeholder="Type a template. Use {{ variable }} for substitutions."
-          style={{ width: "100%", fontFamily: "var(--font-mono)", fontSize: 12 }}
-        />
-      ) : (
-        <div style={{ display: "grid", gap: 12 }}>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "2fr 1fr",
-              gap: 12,
-            }}
-          >
-            <Field label="Prompt">
-              <select
-                value={promptId}
-                onChange={(e) => {
-                  setPromptId(e.target.value);
-                  setVersionId("");
-                }}
-              >
-                <option value="">— pick a prompt —</option>
-                {prompts.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.slug} — {p.name}
-                  </option>
-                ))}
-              </select>
-            </Field>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <Field label="Load">
+            <select
+              value={promptId}
+              onChange={(e) => {
+                const next = e.target.value;
+                setPromptId(next);
+                setVersionId("");
+                if (next === "") {
+                  // Cleared the picker. Keep current composer messages but
+                  // detach from any loaded version so Run sends raw_messages.
+                  setLoadedVersionId(null);
+                }
+              }}
+              disabled={prompts.length === 0}
+              title={
+                prompts.length === 0
+                  ? "no prompts in catalog yet"
+                  : undefined
+              }
+            >
+              <option value="">— pick a prompt —</option>
+              {prompts.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.slug} — {p.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          {selectedPrompt ? (
             <Field label="Version">
               <select
                 value={versionId}
                 onChange={(e) => setVersionId(e.target.value)}
-                disabled={!selectedPrompt}
               >
                 <option value="">— pick —</option>
-                {(selectedPrompt?.versions || [])
+                {selectedPrompt.versions
                   .slice()
                   .sort((a, b) => b.version - a.version)
                   .map((v) => (
@@ -378,35 +538,103 @@ function PromptSourceCard({
                   ))}
               </select>
             </Field>
-          </div>
-          {selectedVersion ? (
-            <pre
-              style={{
-                margin: 0,
-                background: "var(--surface-2)",
-                padding: 12,
-                borderRadius: 8,
-                whiteSpace: "pre-wrap",
-                fontSize: 12,
-                maxHeight: 240,
-                overflow: "auto",
-              }}
+          ) : null}
+          {loadedVersionId !== null ? (
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={clearLoaded}
+              title="detach from loaded version (subsequent edits will run as raw_messages)"
+              style={{ fontSize: 12 }}
             >
-              {selectedVersion.template}
-            </pre>
-          ) : (
-            <p
-              style={{
-                color: "var(--text-3)",
-                fontSize: 13,
-                margin: 0,
-              }}
-            >
-              Pick a prompt and version to preview the template.
-            </p>
-          )}
+              Unload
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            onClick={onClickSave}
+            disabled={!canSave}
+            title={
+              loadedVersionId !== null
+                ? "save as a new version under the loaded prompt"
+                : "save as a new prompt"
+            }
+            style={{ fontSize: 12 }}
+          >
+            {savingBusy ? "Saving..." : "Save"}
+          </button>
         </div>
-      )}
+      </div>
+      {messages.map((msg, i) => (
+        <MessageEditor
+          key={i}
+          message={msg}
+          canDelete={messages.length > 1}
+          onChange={(next) =>
+            setMessages((prev) => prev.map((m, j) => (j === i ? next : m)))
+          }
+          onDelete={() => {
+            if (messages.length === 1) return; // never empty
+            setMessages((prev) => prev.filter((_, j) => j !== i));
+          }}
+          onMoveUp={
+            i === 0
+              ? undefined
+              : () =>
+                  setMessages((prev) => {
+                    const copy = [...prev];
+                    [copy[i - 1], copy[i]] = [copy[i], copy[i - 1]];
+                    return copy;
+                  })
+          }
+          onMoveDown={
+            i === messages.length - 1
+              ? undefined
+              : () =>
+                  setMessages((prev) => {
+                    const copy = [...prev];
+                    [copy[i + 1], copy[i]] = [copy[i], copy[i + 1]];
+                    return copy;
+                  })
+          }
+        />
+      ))}
+      {showSaveForm ? (
+        <SavePromptForm
+          busy={savingBusy}
+          onCancel={onCancelSave}
+          onSubmit={onSubmitSave}
+        />
+      ) : null}
+      {saveError ? (
+        <div
+          role="alert"
+          style={{
+            padding: "6px 10px",
+            fontSize: 12,
+            background: "var(--danger-soft)",
+            color: "var(--danger)",
+            borderRadius: "var(--r-2)",
+          }}
+        >
+          {saveError}
+        </div>
+      ) : null}
+      <button
+        type="button"
+        className="btn btn-ghost btn-sm"
+        onClick={() =>
+          setMessages((prev) => [...prev, { role: "human", content: "" }])
+        }
+        style={{
+          width: "fit-content",
+          fontSize: 12,
+          borderStyle: "dashed",
+        }}
+      >
+        + Add message
+      </button>
     </section>
   );
 }

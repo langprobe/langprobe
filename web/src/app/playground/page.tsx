@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Shell } from "@/components/Shell";
 import {
   PlaygroundComposer,
+  type Message,
   type PlaygroundSessionOut,
   type PromptOption,
 } from "@/components/PlaygroundClient";
@@ -34,7 +35,10 @@ interface PromptRow {
 interface PromptVersionRow {
   id: string;
   version: number;
-  template: string;
+  /** Plan B onwards; absent on very old api versions. */
+  template_messages?: Message[];
+  /** Legacy field; absent eventually. */
+  template?: string;
 }
 
 interface PromptVersionList {
@@ -85,7 +89,14 @@ export default async function PlaygroundPage() {
         versions: (versions.data?.versions ?? []).map((v) => ({
           id: v.id,
           version: v.version,
-          template: v.template,
+          // Prefer the structured field; fall back to wrapping the legacy
+          // template (defensive — Plan B's api always sends both).
+          template_messages:
+            v.template_messages ??
+            (v.template != null
+              ? [{ role: "human" as const, content: v.template }]
+              : []),
+          template: v.template ?? "",
         })),
       };
     }),
