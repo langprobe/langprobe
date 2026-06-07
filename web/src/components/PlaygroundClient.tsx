@@ -22,11 +22,24 @@ import { ModelPicker } from "@/components/ModelPicker";
  * iteration without changing the storage shape).
  */
 
+export interface Message {
+  role: "system" | "human";
+  content: string;
+}
+
 export interface PromptOption {
   id: string;
   slug: string;
   name: string;
-  versions: { id: string; version: number; template: string }[];
+  versions: {
+    id: string;
+    version: number;
+    /** Structured form (Plan A+B). Always set on new versions. */
+    template_messages: Message[];
+    /** Legacy single-string field. Kept for back-compat reads from the
+     *  api during the deprecation window. We don't display this. */
+    template: string;
+  }[];
 }
 
 export interface PlaygroundSessionOut {
