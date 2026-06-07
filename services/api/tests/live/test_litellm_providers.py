@@ -37,9 +37,11 @@ async def test_live_provider_returns_text_and_cost(model: str, env_key: str) -> 
     if not api_key:
         pytest.skip(f"{env_key} not set")
     resp = await litellm.acompletion(
-        model=model, api_key=api_key,
+        model=model,
+        api_key=api_key,
         messages=[{"role": "user", "content": "say hi"}],
-        max_tokens=8, num_retries=0,
+        max_tokens=8,
+        num_retries=0,
     )
     assert resp.choices[0].message.content
     cost = float(litellm.completion_cost(completion_response=resp) or 0)

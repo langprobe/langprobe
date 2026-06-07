@@ -174,9 +174,7 @@ async def revoke_api_key(
         api_key_id,
     )
     if row is None:
-        raise HTTPException(
-            status.HTTP_404_NOT_FOUND, "api key not found or already revoked"
-        )
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "api key not found or already revoked")
     await assert_workspace_role(
         pool,
         user_id=principal.user_id,

@@ -121,9 +121,7 @@ async def list_threads(
         rows = await ch.query(sql, parameters=params)
     except Exception as exc:  # noqa: BLE001
         log.warning("threads list query failed", error=str(exc))
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE, "data plane unavailable"
-        ) from exc
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "data plane unavailable") from exc
 
     items = [
         ThreadListItem(
@@ -151,9 +149,7 @@ async def get_thread(
     principal: Principal = Depends(require_user),
 ) -> ThreadDetail:
     if not session_id or session_id == "-":
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST, "session_id is required"
-        )
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "session_id is required")
 
     pool: asyncpg.Pool = request.app.state.pg
     await _assert_project_access(pool, project_id, principal)
@@ -173,9 +169,7 @@ async def get_thread(
         rows = await ch.query(sql, parameters=params)
     except Exception as exc:  # noqa: BLE001
         log.warning("thread detail query failed", error=str(exc))
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE, "data plane unavailable"
-        ) from exc
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "data plane unavailable") from exc
 
     if not rows:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "thread not found")

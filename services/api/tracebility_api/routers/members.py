@@ -168,38 +168,37 @@ async def set_member_role(
         workspace_id=workspace_id,
         allowed=("admin",),
     )
-    async with pool.acquire() as conn:
-        async with conn.transaction():
-            current = await conn.fetchval(
-                "select role from workspace_member where workspace_id = $1 and user_id = $2 for update",
-                workspace_id,
-                user_id,
-            )
-            if current is None:
-                raise HTTPException(status.HTTP_404_NOT_FOUND, "member not found")
-            if current == "admin" and body.role != "admin":
-                admins = await _count_admins(conn, workspace_id)
-                if admins <= 1:
-                    raise HTTPException(
-                        status.HTTP_409_CONFLICT,
-                        "cannot demote the last admin",
-                    )
-            row = await conn.fetchrow(
-                """
+    async with pool.acquire() as conn, conn.transaction():
+        current = await conn.fetchval(
+            "select role from workspace_member where workspace_id = $1 and user_id = $2 for update",
+            workspace_id,
+            user_id,
+        )
+        if current is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "member not found")
+        if current == "admin" and body.role != "admin":
+            admins = await _count_admins(conn, workspace_id)
+            if admins <= 1:
+                raise HTTPException(
+                    status.HTTP_409_CONFLICT,
+                    "cannot demote the last admin",
+                )
+        row = await conn.fetchrow(
+            """
                 update workspace_member set role = $3
                 where workspace_id = $1 and user_id = $2
                 returning user_id, role, created_at
                 """,
-                workspace_id,
-                user_id,
-                body.role,
-            )
-            assert row is not None
-            user_row = await conn.fetchrow(
-                "select email, name from app_user where id = $1",
-                user_id,
-            )
-            assert user_row is not None
+            workspace_id,
+            user_id,
+            body.role,
+        )
+        assert row is not None
+        user_row = await conn.fetchrow(
+            "select email, name from app_user where id = $1",
+            user_id,
+        )
+        assert user_row is not None
     member = MemberOut(
         user_id=user_id,
         email=user_row["email"],
@@ -238,27 +237,26 @@ async def remove_member(
         workspace_id=workspace_id,
         allowed=("admin",),
     )
-    async with pool.acquire() as conn:
-        async with conn.transaction():
-            current = await conn.fetchval(
-                "select role from workspace_member where workspace_id = $1 and user_id = $2 for update",
-                workspace_id,
-                user_id,
-            )
-            if current is None:
-                raise HTTPException(status.HTTP_404_NOT_FOUND, "member not found")
-            if current == "admin":
-                admins = await _count_admins(conn, workspace_id)
-                if admins <= 1:
-                    raise HTTPException(
-                        status.HTTP_409_CONFLICT,
-                        "cannot remove the last admin",
-                    )
-            await conn.execute(
-                "delete from workspace_member where workspace_id = $1 and user_id = $2",
-                workspace_id,
-                user_id,
-            )
+    async with pool.acquire() as conn, conn.transaction():
+        current = await conn.fetchval(
+            "select role from workspace_member where workspace_id = $1 and user_id = $2 for update",
+            workspace_id,
+            user_id,
+        )
+        if current is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "member not found")
+        if current == "admin":
+            admins = await _count_admins(conn, workspace_id)
+            if admins <= 1:
+                raise HTTPException(
+                    status.HTTP_409_CONFLICT,
+                    "cannot remove the last admin",
+                )
+        await conn.execute(
+            "delete from workspace_member where workspace_id = $1 and user_id = $2",
+            workspace_id,
+            user_id,
+        )
     await audit.record(
         pool,
         principal=principal,
@@ -331,9 +329,7 @@ async def create_invitation(
         email,
     )
     if already:
-        raise HTTPException(
-            status.HTTP_409_CONFLICT, "user is already a member of this workspace"
-        )
+        raise HTTPException(status.HTTP_409_CONFLICT, "user is already a member of this workspace")
 
     public_id = _generate_public_id()
     secret = _generate_secret()
@@ -450,9 +446,7 @@ async def accept_invitation(
     try:
         _PH.verify(row["token_hash"], secret)
     except VerifyMismatchError as exc:
-        raise HTTPException(
-            status.HTTP_401_UNAUTHORIZED, "invalid invitation token"
-        ) from exc
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid invitation token") from exc
 
     if principal.email.lower() != row["email"].lower():
         raise HTTPException(
@@ -464,38 +458,37 @@ async def accept_invitation(
     role: str = row["role"]
     invitation_id: UUID = row["id"]
 
-    async with pool.acquire() as conn:
-        async with conn.transaction():
-            await conn.execute(
-                """
+    async with pool.acquire() as conn, conn.transaction():
+        await conn.execute(
+            """
                 insert into workspace_member (workspace_id, user_id, role)
                 values ($1, $2, $3)
                 on conflict (workspace_id, user_id) do update set role = excluded.role
                 """,
-                workspace_id,
-                principal.user_id,
-                role,
-            )
-            await conn.execute(
-                """
+            workspace_id,
+            principal.user_id,
+            role,
+        )
+        await conn.execute(
+            """
                 update workspace_invitation
                 set accepted_at = now(), accepted_by = $2
                 where id = $1
                 """,
-                invitation_id,
-                principal.user_id,
-            )
-            member_row = await conn.fetchrow(
-                """
+            invitation_id,
+            principal.user_id,
+        )
+        member_row = await conn.fetchrow(
+            """
                 select wm.user_id, u.email, u.name, wm.role, wm.created_at
                 from workspace_member wm
                 join app_user u on u.id = wm.user_id
                 where wm.workspace_id = $1 and wm.user_id = $2
                 """,
-                workspace_id,
-                principal.user_id,
-            )
-            assert member_row is not None
+            workspace_id,
+            principal.user_id,
+        )
+        assert member_row is not None
 
     await audit.record(
         pool,

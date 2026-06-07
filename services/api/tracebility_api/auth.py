@@ -42,9 +42,7 @@ def _signer(settings: Settings) -> URLSafeTimedSerializer:
 
 
 def issue_session_cookie(settings: Settings, user_id: UUID) -> str:
-    return _signer(settings).dumps(
-        {"uid": str(user_id), "iat": int(datetime.now(UTC).timestamp())}
-    )
+    return _signer(settings).dumps({"uid": str(user_id), "iat": int(datetime.now(UTC).timestamp())})
 
 
 def verify_password(stored_hash: str, plain: str) -> bool:
@@ -67,9 +65,7 @@ async def require_user(
     if not session_cookie:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "not authenticated")
     try:
-        payload = _signer(settings).loads(
-            session_cookie, max_age=settings.session_max_age_seconds
-        )
+        payload = _signer(settings).loads(session_cookie, max_age=settings.session_max_age_seconds)
     except SignatureExpired as exc:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "session expired") from exc
     except BadSignature as exc:

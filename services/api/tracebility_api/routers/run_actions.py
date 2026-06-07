@@ -21,7 +21,7 @@ land in their respective stores.
 from __future__ import annotations
 
 import json as _json
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -104,23 +104,23 @@ async def add_to_dataset(
     for run_id in body.run_ids:
         row = runs_by_id.get(run_id)
         if row is None:
-            result_rows.append(
-                BulkResultRow(run_id=run_id, ok=False, error="run not found")
-            )
+            result_rows.append(BulkResultRow(run_id=run_id, ok=False, error="run not found"))
             continue
         item_id = uuid4()
-        rows.append((
-            str(body.project_id),
-            str(body.dataset_id),
-            str(item_id),
-            row.get("inputs") or "",
-            row.get("outputs") or "",
-            _json.dumps({"bulk_imported": True}),
-            str(run_id),
-            None,
-            now,
-            None,
-        ))
+        rows.append(
+            (
+                str(body.project_id),
+                str(body.dataset_id),
+                str(item_id),
+                row.get("inputs") or "",
+                row.get("outputs") or "",
+                _json.dumps({"bulk_imported": True}),
+                str(run_id),
+                None,
+                now,
+                None,
+            )
+        )
         accepted_ids.append(run_id)
         result_rows.append(BulkResultRow(run_id=run_id, ok=True))
 
@@ -130,10 +130,16 @@ async def add_to_dataset(
                 "dataset_item",
                 rows,
                 column_names=[
-                    "project_id", "dataset_id", "item_id",
-                    "input", "expected", "metadata",
-                    "source_run_id", "source_span_id",
-                    "created_at", "deleted_at",
+                    "project_id",
+                    "dataset_id",
+                    "item_id",
+                    "input",
+                    "expected",
+                    "metadata",
+                    "source_run_id",
+                    "source_span_id",
+                    "created_at",
+                    "deleted_at",
                 ],
             )
         except Exception as exc:  # noqa: BLE001
@@ -144,8 +150,7 @@ async def add_to_dataset(
             ) from exc
 
         await pool.execute(
-            "update dataset set item_count = item_count + $2, "
-            "updated_at = now() where id = $1",
+            "update dataset set item_count = item_count + $2, updated_at = now() where id = $1",
             body.dataset_id,
             len(accepted_ids),
         )
@@ -188,9 +193,7 @@ async def add_to_annotation_queue(
         body.queue_id,
     )
     if queue is None or queue["project_id"] != body.project_id:
-        raise HTTPException(
-            status.HTTP_404_NOT_FOUND, "annotation queue not found"
-        )
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "annotation queue not found")
 
     ch = _require_clickhouse(request)
     runs_by_id, missing = await _resolve_runs(ch, body.project_id, body.run_ids)
@@ -200,18 +203,15 @@ async def add_to_annotation_queue(
     pairs: list[tuple[UUID, UUID, UUID]] = []  # (queue_id, project_id, run_id)
     for run_id in body.run_ids:
         if run_id not in runs_by_id:
-            result_rows.append(
-                BulkResultRow(run_id=run_id, ok=False, error="run not found")
-            )
+            result_rows.append(BulkResultRow(run_id=run_id, ok=False, error="run not found"))
             continue
         accepted_ids.append(run_id)
         pairs.append((body.queue_id, body.project_id, run_id))
 
     if pairs:
-        async with pool.acquire() as conn:
-            async with conn.transaction():
-                inserted = await conn.fetchval(
-                    """
+        async with pool.acquire() as conn, conn.transaction():
+            inserted = await conn.fetchval(
+                """
                     with ins as (
                         insert into annotation_item (
                             queue_id, project_id, run_id, status
@@ -224,14 +224,14 @@ async def add_to_annotation_queue(
                     )
                     select count(*) from ins
                     """,
-                    [p[0] for p in pairs],
-                    [p[1] for p in pairs],
-                    [p[2] for p in pairs],
-                )
-                inserted_int = int(inserted or 0)
-                if inserted_int:
-                    await conn.execute(
-                        """update annotation_queue
+                [p[0] for p in pairs],
+                [p[1] for p in pairs],
+                [p[2] for p in pairs],
+            )
+            inserted_int = int(inserted or 0)
+            if inserted_int:
+                await conn.execute(
+                    """update annotation_queue
                               set item_total = item_total + $2,
                                   status = case
                                       when status = 'complete'
@@ -239,9 +239,9 @@ async def add_to_annotation_queue(
                                       else status
                                   end
                             where id = $1""",
-                        body.queue_id,
-                        inserted_int,
-                    )
+                    body.queue_id,
+                    inserted_int,
+                )
         # Mark dedup-skips: the run was accepted in input but already in queue.
         # We can't easily know which specific ones were dedup'd here, so we
         # leave per-row results as ok=true and let the UI count via the

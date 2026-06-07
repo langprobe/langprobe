@@ -10,15 +10,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-ProviderName = Literal[
-    "anthropic", "openai", "gemini", "mistral", "deepseek", "groq"
-]
-SurfaceName = Literal[
-    "playground", "comparisons", "studio", "luna", "eval", "poll"
-]
+ProviderName = Literal["anthropic", "openai", "gemini", "mistral", "deepseek", "groq"]
+SurfaceName = Literal["playground", "comparisons", "studio", "luna", "eval", "poll"]
 ErrorCode = Literal[
-    "no_credential", "provider_error", "bad_model",
-    "timeout", "ceiling_exceeded",
+    "no_credential",
+    "provider_error",
+    "bad_model",
+    "timeout",
+    "ceiling_exceeded",
 ]
 
 SUPPORTED_PROVIDERS: frozenset[str] = frozenset(
@@ -67,12 +66,8 @@ def provider_from_model(model: str) -> str:
     we never guess.
     """
     if "/" not in model:
-        raise DispatchError(
-            "bad_model", None, f"model must be '<provider>/<id>', got {model!r}"
-        )
+        raise DispatchError("bad_model", None, f"model must be '<provider>/<id>', got {model!r}")
     provider = model.split("/", 1)[0]
     if provider not in SUPPORTED_PROVIDERS:
-        raise DispatchError(
-            "bad_model", None, f"unsupported provider {provider!r}"
-        )
+        raise DispatchError("bad_model", None, f"unsupported provider {provider!r}")
     return provider

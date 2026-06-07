@@ -22,7 +22,6 @@ from uuid import UUID
 import asyncpg
 import structlog
 from fastapi import Request
-
 from tracebility_tenant.audit import AuditEvent, AuditWriter
 
 from .auth import Principal

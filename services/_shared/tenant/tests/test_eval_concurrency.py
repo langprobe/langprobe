@@ -5,7 +5,6 @@ from __future__ import annotations
 from uuid import uuid4
 
 import pytest
-
 from tracebility_tenant import EvalConcurrency, EvalConcurrencyExhausted
 
 pytestmark = pytest.mark.asyncio

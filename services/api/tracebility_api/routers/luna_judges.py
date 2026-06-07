@@ -32,12 +32,8 @@ Boundary:
 
 from __future__ import annotations
 
-import asyncio
 import json as _json
-import os
 import re
-import urllib.error
-import urllib.request
 from datetime import datetime
 from typing import Any
 from uuid import UUID
@@ -55,7 +51,13 @@ log = structlog.get_logger("tracebility.api.luna_judges")
 router = APIRouter(prefix="/v1/luna-judges", tags=["luna-judges"])
 
 _VALID_PROVIDERS = {
-    "anthropic", "openai", "gemini", "mistral", "deepseek", "groq", "stub",
+    "anthropic",
+    "openai",
+    "gemini",
+    "mistral",
+    "deepseek",
+    "groq",
+    "stub",
 }
 _VALID_FORMATS = {"score-rationale", "json-object"}
 _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
@@ -122,7 +124,9 @@ async def list_judges(
 ) -> list[LunaJudgeOut]:
     pool: asyncpg.Pool = request.app.state.pg
     await _assert_project_role(
-        pool, principal, project_id,
+        pool,
+        principal,
+        project_id,
         ("owner", "admin", "member", "viewer"),
     )
     rows = await pool.fetch(
@@ -229,7 +233,9 @@ async def get_judge(
     pool: asyncpg.Pool = request.app.state.pg
     row = await _fetch_judge(pool, judge_id)
     await _assert_project_role(
-        pool, principal, row["project_id"],
+        pool,
+        principal,
+        row["project_id"],
         ("owner", "admin", "member", "viewer"),
     )
     return LunaJudgeOut(**dict(row))
@@ -273,7 +279,7 @@ async def patch_judge(
     updated = await pool.fetchrow(
         f"""
         update luna_judge
-           set {', '.join(sets)}
+           set {", ".join(sets)}
          where id = ${len(args)}
         returning id, project_id, slug, name, description, rubric_prompt,
                   output_format, provider, model, temperature, max_tokens,
@@ -306,9 +312,7 @@ async def delete_judge(
     pool: asyncpg.Pool = request.app.state.pg
     row = await _fetch_judge(pool, judge_id)
     project_id: UUID = row["project_id"]
-    workspace_id = await _assert_project_role(
-        pool, principal, project_id, ("owner", "admin")
-    )
+    workspace_id = await _assert_project_role(pool, principal, project_id, ("owner", "admin"))
     await pool.execute(
         "update luna_judge set deleted_at = now() where id = $1",
         judge_id,
@@ -331,9 +335,7 @@ async def delete_judge(
 # ---------------------------------------------------------------------------
 
 
-async def resolve_judge(
-    pool: asyncpg.Pool, project_id: UUID, slug: str
-) -> dict[str, Any] | None:
+async def resolve_judge(pool: asyncpg.Pool, project_id: UUID, slug: str) -> dict[str, Any] | None:
     """Look up a luna judge by slug; returns None if missing/deleted."""
     row = await pool.fetchrow(
         """
@@ -389,14 +391,17 @@ async def apply_luna_judge(
         # exercised; the LiteLLM gateway is bypassed.
         raw = f"score: 1.0\nrationale: stub-judge ack ({rendered[-128:]})"
         score, label, rationale = _parse_response(
-            raw, judge_row.get("output_format") or "score-rationale",
+            raw,
+            judge_row.get("output_format") or "score-rationale",
         )
         return score, label, rationale, raw[:2000]
 
     bare_model = model
     if not bare_model.startswith(provider + "/"):
         bare_model = f"{provider}/{bare_model}"
-    from ..llm import DispatchError, Message, dispatch as gateway_dispatch
+    from ..llm import DispatchError, Message
+    from ..llm import dispatch as gateway_dispatch
+
     try:
         result = await gateway_dispatch(
             pool,
@@ -419,7 +424,8 @@ async def apply_luna_judge(
 
     raw = result.text
     score, label, rationale = _parse_response(
-        raw, judge_row.get("output_format") or "score-rationale",
+        raw,
+        judge_row.get("output_format") or "score-rationale",
     )
     return score, label, rationale, raw[:2000]
 

@@ -9,9 +9,8 @@ from uuid import UUID
 import pytest
 import pytest_asyncio
 import redis.asyncio as redis_async
-from tracebility_tenant import ShardRouter
-
 from tracebility_ingest.enqueue import IngestEnqueue
+from tracebility_tenant import ShardRouter
 
 
 def _redis_reachable() -> bool:

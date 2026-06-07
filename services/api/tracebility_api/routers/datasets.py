@@ -94,7 +94,9 @@ async def list_datasets(
 ) -> list[DatasetOut]:
     pool: asyncpg.Pool = request.app.state.pg
     await _assert_project_role(
-        pool, project_id, principal,
+        pool,
+        project_id,
+        principal,
         allowed=("owner", "admin", "member", "viewer"),
     )
     rows = await pool.fetch(
@@ -118,7 +120,10 @@ async def create_dataset(
 ) -> DatasetOut:
     pool: asyncpg.Pool = request.app.state.pg
     workspace_id = await _assert_project_role(
-        pool, body.project_id, principal, allowed=("owner", "admin", "member"),
+        pool,
+        body.project_id,
+        principal,
+        allowed=("owner", "admin", "member"),
     )
     try:
         row = await pool.fetchrow(
@@ -163,7 +168,9 @@ async def get_dataset(
     pool: asyncpg.Pool = request.app.state.pg
     row = await _fetch_dataset_row(pool, dataset_id)
     await _assert_project_role(
-        pool, row["project_id"], principal,
+        pool,
+        row["project_id"],
+        principal,
         allowed=("owner", "admin", "member", "viewer"),
     )
     return DatasetOut(**dict(row))
@@ -179,16 +186,16 @@ async def update_dataset(
     pool: asyncpg.Pool = request.app.state.pg
     existing = await _fetch_dataset_row(pool, dataset_id)
     workspace_id = await _assert_project_role(
-        pool, existing["project_id"], principal,
+        pool,
+        existing["project_id"],
+        principal,
         allowed=("owner", "admin", "member"),
     )
 
     updates = body.model_dump(exclude_unset=True)
     if not updates:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "no fields to update")
-    set_fragments = ", ".join(
-        f"{col} = ${i + 2}" for i, col in enumerate(updates.keys())
-    )
+    set_fragments = ", ".join(f"{col} = ${i + 2}" for i, col in enumerate(updates.keys()))
     params: list[object] = [dataset_id, *updates.values()]
     row = await pool.fetchrow(
         f"""
@@ -224,7 +231,9 @@ async def delete_dataset(
     pool: asyncpg.Pool = request.app.state.pg
     existing = await _fetch_dataset_row(pool, dataset_id)
     workspace_id = await _assert_project_role(
-        pool, existing["project_id"], principal,
+        pool,
+        existing["project_id"],
+        principal,
         allowed=("owner", "admin"),
     )
     await pool.execute(
@@ -255,7 +264,9 @@ async def list_items(
     pool: asyncpg.Pool = request.app.state.pg
     dataset = await _fetch_dataset_row(pool, dataset_id)
     await _assert_project_role(
-        pool, dataset["project_id"], principal,
+        pool,
+        dataset["project_id"],
+        principal,
         allowed=("owner", "admin", "member", "viewer"),
     )
     ch = _require_clickhouse(request)
@@ -280,9 +291,7 @@ async def list_items(
         rows = await ch.query(sql, parameters=params)
     except Exception as exc:  # noqa: BLE001
         log.warning("dataset items query failed", error=str(exc))
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE, "data plane unavailable"
-        ) from exc
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "data plane unavailable") from exc
 
     items = [
         DatasetItemOut(
@@ -314,7 +323,9 @@ async def create_item(
     pool: asyncpg.Pool = request.app.state.pg
     dataset = await _fetch_dataset_row(pool, dataset_id)
     workspace_id = await _assert_project_role(
-        pool, dataset["project_id"], principal,
+        pool,
+        dataset["project_id"],
+        principal,
         allowed=("owner", "admin", "member"),
     )
     ch = _require_clickhouse(request)
@@ -326,34 +337,39 @@ async def create_item(
     try:
         await ch.insert(
             "dataset_item",
-            [(
-                str(dataset["project_id"]),
-                str(dataset_id),
-                str(item_id),
-                body.input,
-                body.expected,
-                metadata_json,
-                str(body.source_run_id) if body.source_run_id else None,
-                str(body.source_span_id) if body.source_span_id else None,
-                created_at,
-                None,
-            )],
+            [
+                (
+                    str(dataset["project_id"]),
+                    str(dataset_id),
+                    str(item_id),
+                    body.input,
+                    body.expected,
+                    metadata_json,
+                    str(body.source_run_id) if body.source_run_id else None,
+                    str(body.source_span_id) if body.source_span_id else None,
+                    created_at,
+                    None,
+                )
+            ],
             column_names=[
-                "project_id", "dataset_id", "item_id",
-                "input", "expected", "metadata",
-                "source_run_id", "source_span_id",
-                "created_at", "deleted_at",
+                "project_id",
+                "dataset_id",
+                "item_id",
+                "input",
+                "expected",
+                "metadata",
+                "source_run_id",
+                "source_span_id",
+                "created_at",
+                "deleted_at",
             ],
         )
     except Exception as exc:  # noqa: BLE001
         log.warning("dataset item insert failed", error=str(exc))
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE, "data plane unavailable"
-        ) from exc
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "data plane unavailable") from exc
 
     await pool.execute(
-        "update dataset set item_count = item_count + 1, updated_at = now() "
-        "where id = $1",
+        "update dataset set item_count = item_count + 1, updated_at = now() where id = $1",
         dataset_id,
     )
     await audit.record(
@@ -380,9 +396,7 @@ async def create_item(
     )
 
 
-@router.delete(
-    "/{dataset_id}/items/{item_id}", status_code=status.HTTP_204_NO_CONTENT
-)
+@router.delete("/{dataset_id}/items/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_item(
     request: Request,
     dataset_id: UUID,
@@ -392,7 +406,9 @@ async def delete_item(
     pool: asyncpg.Pool = request.app.state.pg
     dataset = await _fetch_dataset_row(pool, dataset_id)
     workspace_id = await _assert_project_role(
-        pool, dataset["project_id"], principal,
+        pool,
+        dataset["project_id"],
+        principal,
         allowed=("owner", "admin", "member"),
     )
     ch = _require_clickhouse(request)
@@ -414,9 +430,7 @@ async def delete_item(
         await ch.command(sql, parameters=params)
     except Exception as exc:  # noqa: BLE001
         log.warning("dataset item delete failed", error=str(exc))
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE, "data plane unavailable"
-        ) from exc
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "data plane unavailable") from exc
 
     await pool.execute(
         "update dataset set item_count = greatest(item_count - 1, 0), "
@@ -436,9 +450,7 @@ async def delete_item(
     )
 
 
-async def _fetch_dataset_row(
-    pool: asyncpg.Pool, dataset_id: UUID
-) -> asyncpg.Record:
+async def _fetch_dataset_row(pool: asyncpg.Pool, dataset_id: UUID) -> asyncpg.Record:
     row = await pool.fetchrow(
         """
         select id, project_id, slug, name, description, item_count,

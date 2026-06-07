@@ -6,16 +6,15 @@ import socket
 from uuid import uuid4
 
 import pytest
-
 from tracebility_worker.writer import (
     _MISSING_TENANT_UUID,
+    _REPLAY_CAPTURE_COLUMNS,
+    _RUN_COLUMNS,
+    _SPAN_COLUMNS,
+    ClickHouseWriter,
     _row_for_replay_capture,
     _row_for_run,
     _row_for_span,
-    _RUN_COLUMNS,
-    _SPAN_COLUMNS,
-    _REPLAY_CAPTURE_COLUMNS,
-    ClickHouseWriter,
 )
 
 
@@ -109,9 +108,7 @@ def test_legacy_envelope_uses_sentinel(caplog) -> None:
     """Pre-Phase-5 envelope (no org/workspace) writes the sentinel UUID
     and emits a structured warning."""
     proj = str(uuid4())
-    env = _envelope(
-        with_tenant=False, project_id=proj, org_id="unused", workspace_id="unused"
-    )
+    env = _envelope(with_tenant=False, project_id=proj, org_id="unused", workspace_id="unused")
     run = env["payload"]["runs"][0]
     row = _row_for_run(env, run)
     assert row[0] == _MISSING_TENANT_UUID

@@ -81,9 +81,7 @@ def create_app() -> FastAPI:
             disk_buffer_path=settings.disk_buffer_path,
             shard_router=shard_router,
         )
-        app.state.resolver = Resolver(
-            ResolverConfig(pg_pool=app.state.pg, redis=app.state.redis)
-        )
+        app.state.resolver = Resolver(ResolverConfig(pg_pool=app.state.pg, redis=app.state.redis))
         await app.state.resolver.start_invalidator()
         app.state.rate_limiter = RateLimiter(app.state.redis)
         app.state.quota_meter = QuotaMeter(app.state.redis)

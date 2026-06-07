@@ -106,14 +106,10 @@ class ClickHouseQuery:
         cols_list = list(column_names)
         await loop.run_in_executor(
             None,
-            lambda: self._run(
-                lambda c: c.insert(table, rows_list, column_names=cols_list)
-            ),
+            lambda: self._run(lambda c: c.insert(table, rows_list, column_names=cols_list)),
         )
 
-    async def command(
-        self, sql: str, parameters: dict[str, Any] | None = None
-    ) -> None:
+    async def command(self, sql: str, parameters: dict[str, Any] | None = None) -> None:
         """Run a DDL/DML command (ALTER ... DELETE, etc.) without a result set."""
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(

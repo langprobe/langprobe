@@ -74,9 +74,7 @@ async def ingest_runs(
         await quota_meter.record(
             org_id=ctx.org_id, meter=INGEST_GATING_METER, amount=span_count, limit=-1
         )
-        await quota_meter.record(
-            org_id=ctx.org_id, meter="span_bytes", amount=bytes_in, limit=-1
-        )
+        await quota_meter.record(org_id=ctx.org_id, meter="span_bytes", amount=bytes_in, limit=-1)
     except Exception:  # noqa: BLE001 — quota counter is best-effort; reconciler corrects
         log.warning("quota record failed", org_id=str(ctx.org_id))
 

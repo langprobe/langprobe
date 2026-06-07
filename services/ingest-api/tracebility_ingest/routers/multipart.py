@@ -97,9 +97,7 @@ async def ingest_runs_multipart(
 
     settings = request.app.state.settings if hasattr(request.app.state, "settings") else None
     buffer_path = (
-        getattr(settings, "disk_buffer_path", None)
-        if settings is not None
-        else None
+        getattr(settings, "disk_buffer_path", None) if settings is not None else None
     ) or "/var/lib/tracebility/ingest-buffer"
 
     written: list[dict[str, Any]] = []

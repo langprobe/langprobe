@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from tracebility_api.llm.types import (
     SUPPORTED_PROVIDERS,
     DispatchError,
@@ -42,8 +41,9 @@ def test_provider_from_model_no_prefix_raises_bad_model() -> None:
 
 
 def test_supported_providers_is_six() -> None:
-    assert SUPPORTED_PROVIDERS == frozenset(
-        ["anthropic", "openai", "gemini", "mistral", "deepseek", "groq"]
+    assert (
+        frozenset(["anthropic", "openai", "gemini", "mistral", "deepseek", "groq"])
+        == SUPPORTED_PROVIDERS
     )
 
 

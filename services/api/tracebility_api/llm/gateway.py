@@ -42,22 +42,14 @@ litellm.telemetry = False
 _AUTOMATED_SURFACES: frozenset[str] = frozenset(["luna", "eval", "poll"])
 
 
-async def _workspace_id_for_project(
-    pool: asyncpg.Pool, project_id: UUID
-) -> UUID:
-    ws = await pool.fetchval(
-        "select workspace_id from project where id = $1", project_id
-    )
+async def _workspace_id_for_project(pool: asyncpg.Pool, project_id: UUID) -> UUID:
+    ws = await pool.fetchval("select workspace_id from project where id = $1", project_id)
     if ws is None:
-        raise DispatchError(
-            "no_credential", None, f"unknown project {project_id}"
-        )
+        raise DispatchError("no_credential", None, f"unknown project {project_id}")
     return ws
 
 
-async def _check_ceiling(
-    pool: asyncpg.Pool, project_id: UUID
-) -> None:
+async def _check_ceiling(pool: asyncpg.Pool, project_id: UUID) -> None:
     """Raise ceiling_exceeded if rolling-24h spend ≥ project ceiling.
     Called only on automated surfaces. Caller catches and translates."""
     row = await pool.fetchrow(
@@ -100,7 +92,7 @@ async def _record_cost(
     error_code: str | None,
     error_detail: str | None,
 ) -> None:
-    detail = (error_detail[:500] if error_detail else None)
+    detail = error_detail[:500] if error_detail else None
     await pool.execute(
         """
         insert into dispatch_cost (
@@ -145,9 +137,11 @@ async def dispatch(
     row-failure shape.
     """
     from ..config import load as _load_settings
+
     if _load_settings().llm_gateway != "litellm":
         raise DispatchError(
-            "provider_error", None,
+            "provider_error",
+            None,
             "LLM_GATEWAY != litellm: dispatch refused. "
             "Set LLM_GATEWAY=litellm or roll back the deploy.",
         )
@@ -161,55 +155,75 @@ async def dispatch(
         except DispatchError as exc:
             await _record_cost(
                 pool,
-                project_id=project_id, workspace_id=workspace_id,
-                surface=surface, surface_ref_id=surface_ref_id,
-                provider=provider, model=model,
-                prompt_tokens=None, completion_tokens=None, cost_usd=0,
-                error_code=exc.code, error_detail=exc.detail,
+                project_id=project_id,
+                workspace_id=workspace_id,
+                surface=surface,
+                surface_ref_id=surface_ref_id,
+                provider=provider,
+                model=model,
+                prompt_tokens=None,
+                completion_tokens=None,
+                cost_usd=0,
+                error_code=exc.code,
+                error_detail=exc.detail,
             )
             if await should_emit_audit(
-                pool, project_id=project_id, provider=provider,
+                pool,
+                project_id=project_id,
+                provider=provider,
                 action="dispatch.ceiling_exceeded",
             ):
                 await audit.record(
-                    pool, principal=None,
+                    pool,
+                    principal=None,
                     action="dispatch.ceiling_exceeded",
-                    target_kind="project", target_id=project_id,
+                    target_kind="project",
+                    target_id=project_id,
                     payload={
                         "provider": provider,
                         "surface": surface,
                         "detail": exc.detail,
                     },
-                    project_id=project_id, workspace_id=workspace_id,
+                    project_id=project_id,
+                    workspace_id=workspace_id,
                 )
             raise
 
-    api_key = await resolve_secret(
-        pool, project_id=project_id, provider=provider
-    )
+    api_key = await resolve_secret(pool, project_id=project_id, provider=provider)
     if api_key is None:
         await _record_cost(
             pool,
-            project_id=project_id, workspace_id=workspace_id,
-            surface=surface, surface_ref_id=surface_ref_id,
-            provider=provider, model=model,
-            prompt_tokens=None, completion_tokens=None, cost_usd=0,
+            project_id=project_id,
+            workspace_id=workspace_id,
+            surface=surface,
+            surface_ref_id=surface_ref_id,
+            provider=provider,
+            model=model,
+            prompt_tokens=None,
+            completion_tokens=None,
+            cost_usd=0,
             error_code="no_credential",
             error_detail=f"no {provider} credential resolved",
         )
         if await should_emit_audit(
-            pool, project_id=project_id, provider=provider,
+            pool,
+            project_id=project_id,
+            provider=provider,
             action="dispatch.no_credential",
         ):
             await audit.record(
-                pool, principal=None,
+                pool,
+                principal=None,
                 action="dispatch.no_credential",
-                target_kind="project", target_id=project_id,
+                target_kind="project",
+                target_id=project_id,
                 payload={"provider": provider, "surface": surface},
-                project_id=project_id, workspace_id=workspace_id,
+                project_id=project_id,
+                workspace_id=workspace_id,
             )
         raise DispatchError(
-            "no_credential", provider,
+            "no_credential",
+            provider,
             f"no {provider} credential resolved",
         )
 
@@ -228,33 +242,51 @@ async def dispatch(
         detail = str(exc)[:500]
         await _record_cost(
             pool,
-            project_id=project_id, workspace_id=workspace_id,
-            surface=surface, surface_ref_id=surface_ref_id,
-            provider=provider, model=model,
-            prompt_tokens=None, completion_tokens=None, cost_usd=0,
-            error_code="no_credential", error_detail=detail,
+            project_id=project_id,
+            workspace_id=workspace_id,
+            surface=surface,
+            surface_ref_id=surface_ref_id,
+            provider=provider,
+            model=model,
+            prompt_tokens=None,
+            completion_tokens=None,
+            cost_usd=0,
+            error_code="no_credential",
+            error_detail=detail,
         )
         raise DispatchError("no_credential", provider, detail) from exc
     except litellm_errors.Timeout as exc:
         detail = str(exc)[:500]
         await _record_cost(
             pool,
-            project_id=project_id, workspace_id=workspace_id,
-            surface=surface, surface_ref_id=surface_ref_id,
-            provider=provider, model=model,
-            prompt_tokens=None, completion_tokens=None, cost_usd=0,
-            error_code="timeout", error_detail=detail,
+            project_id=project_id,
+            workspace_id=workspace_id,
+            surface=surface,
+            surface_ref_id=surface_ref_id,
+            provider=provider,
+            model=model,
+            prompt_tokens=None,
+            completion_tokens=None,
+            cost_usd=0,
+            error_code="timeout",
+            error_detail=detail,
         )
         raise DispatchError("timeout", provider, detail) from exc
     except (litellm_errors.APIError, litellm_errors.RateLimitError) as exc:
         detail = str(exc)[:500]
         await _record_cost(
             pool,
-            project_id=project_id, workspace_id=workspace_id,
-            surface=surface, surface_ref_id=surface_ref_id,
-            provider=provider, model=model,
-            prompt_tokens=None, completion_tokens=None, cost_usd=0,
-            error_code="provider_error", error_detail=detail,
+            project_id=project_id,
+            workspace_id=workspace_id,
+            surface=surface,
+            surface_ref_id=surface_ref_id,
+            provider=provider,
+            model=model,
+            prompt_tokens=None,
+            completion_tokens=None,
+            cost_usd=0,
+            error_code="provider_error",
+            error_detail=detail,
         )
         raise DispatchError("provider_error", provider, detail) from exc
 
@@ -273,11 +305,17 @@ async def dispatch(
 
     await _record_cost(
         pool,
-        project_id=project_id, workspace_id=workspace_id,
-        surface=surface, surface_ref_id=surface_ref_id,
-        provider=provider, model=getattr(resp, "model", model) or model,
-        prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
-        cost_usd=cost_usd, error_code=None, error_detail=None,
+        project_id=project_id,
+        workspace_id=workspace_id,
+        surface=surface,
+        surface_ref_id=surface_ref_id,
+        provider=provider,
+        model=getattr(resp, "model", model) or model,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        cost_usd=cost_usd,
+        error_code=None,
+        error_detail=None,
     )
 
     return DispatchResult(

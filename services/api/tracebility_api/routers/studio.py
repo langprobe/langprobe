@@ -28,7 +28,7 @@ from __future__ import annotations
 import json as _json
 import time
 import uuid as _uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -40,7 +40,7 @@ from pydantic import BaseModel, Field
 from .. import audit
 from ..auth import Principal, assert_workspace_role, require_user
 from ..clickhouse_client import ClickHouseQuery
-from . import llm_credentials, playground as playground_module
+from . import playground as playground_module
 
 log = structlog.get_logger("tracebility.api.studio")
 
@@ -105,7 +105,9 @@ async def list_branches(
 ) -> StudioBranchList:
     pool: asyncpg.Pool = request.app.state.pg
     await _assert_project_role(
-        pool, principal, project_id,
+        pool,
+        principal,
+        project_id,
         ("owner", "admin", "member", "viewer"),
     )
     rows = await pool.fetch(
@@ -192,7 +194,9 @@ async def get_branch(
     pool: asyncpg.Pool = request.app.state.pg
     row = await _fetch_branch(pool, branch_id)
     await _assert_project_role(
-        pool, principal, row["project_id"],
+        pool,
+        principal,
+        row["project_id"],
         ("owner", "admin", "member", "viewer"),
     )
     return _branch_out(row)
@@ -276,9 +280,7 @@ async def delete_branch(
     pool: asyncpg.Pool = request.app.state.pg
     row = await _fetch_branch(pool, branch_id)
     project_id: UUID = row["project_id"]
-    workspace_id = await _assert_project_role(
-        pool, principal, project_id, ("owner", "admin")
-    )
+    workspace_id = await _assert_project_role(pool, principal, project_id, ("owner", "admin"))
     await pool.execute("delete from studio_branch where id = $1", branch_id)
     await audit.record(
         pool,
@@ -368,7 +370,7 @@ async def replay_branch(
         """,
         branch_id,
         diff_summary,
-        datetime.now(timezone.utc),
+        datetime.now(UTC),
         new_run_id,
     )
     assert updated is not None
@@ -493,11 +495,7 @@ def _summarize_edits(edits: list[StudioEdit]) -> str:
             length = len(str(edit.value)) if edit.value is not None else 0
             parts.append(f"prompt@{target} ({length} chars)")
         elif edit.field == "tool_args":
-            keys = (
-                ", ".join(sorted(edit.value.keys()))
-                if isinstance(edit.value, dict)
-                else "[...]"
-            )
+            keys = ", ".join(sorted(edit.value.keys())) if isinstance(edit.value, dict) else "[...]"
             parts.append(f"tool_args@{target} ({keys})")
         else:
             parts.append(f"{edit.field}@{target}")
@@ -585,17 +583,13 @@ async def _execute_replay(
     The Replay panel on /runs already surfaces the captures so an
     operator can see how the boundary I/O would have differed.
     """
-    ch: ClickHouseQuery | None = getattr(
-        request.app.state, "clickhouse", None
-    )
+    ch: ClickHouseQuery | None = getattr(request.app.state, "clickhouse", None)
     if ch is None:
         return None, "", "clickhouse not configured"
 
     # 1) Resolve the source span we're replacing. If source_span_id
     #    is unset, pick the run root (parent_span_id is null).
-    source_data = await _resolve_source_span(
-        ch, project_id, source_run_id, source_span_id
-    )
+    source_data = await _resolve_source_span(ch, project_id, source_run_id, source_span_id)
     if source_data is None:
         return None, "", "source span not found in clickhouse"
 
@@ -652,7 +646,9 @@ async def _execute_replay(
     bare_model = new_model
     if not bare_model.startswith(provider + "/"):
         bare_model = f"{provider}/{bare_model}"
-    from ..llm import DispatchError, Message, dispatch as gateway_dispatch
+    from ..llm import DispatchError, Message
+    from ..llm import dispatch as gateway_dispatch
+
     try:
         result = await gateway_dispatch(
             pool,
@@ -683,7 +679,7 @@ async def _execute_replay(
     total_tokens = prompt_tokens + completion_tokens
 
     # 5) Write the new run + its single replay span to ClickHouse.
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     inputs_json = _json.dumps({"prompt": new_prompt})
     outputs_json = _json.dumps({"output": output_text})
     metadata = {
@@ -697,78 +693,118 @@ async def _execute_replay(
     try:
         await ch.insert(
             "run",
-            [(
-                str(project_id),
-                new_run_id,
-                None,
-                "studio_replay",
-                "llm",
-                "ok",
-                "studio",
-                now,
-                now,
-                now,
-                inputs_json,
-                outputs_json,
-                None,
-                None,
-                prompt_tokens,
-                completion_tokens,
-                total_tokens,
-                0,
-                str(branch_id),
-                "",
-                ["studio", "replay"],
-                _json.dumps(metadata),
-                "",
-                "",
-                1,
-            )],
+            [
+                (
+                    str(project_id),
+                    new_run_id,
+                    None,
+                    "studio_replay",
+                    "llm",
+                    "ok",
+                    "studio",
+                    now,
+                    now,
+                    now,
+                    inputs_json,
+                    outputs_json,
+                    None,
+                    None,
+                    prompt_tokens,
+                    completion_tokens,
+                    total_tokens,
+                    0,
+                    str(branch_id),
+                    "",
+                    ["studio", "replay"],
+                    _json.dumps(metadata),
+                    "",
+                    "",
+                    1,
+                )
+            ],
             column_names=[
-                "project_id", "run_id", "parent_run_id", "name", "kind",
-                "status", "sdk", "start_time", "end_time", "received_at",
-                "inputs", "outputs", "inputs_obj_ref", "outputs_obj_ref",
-                "prompt_tokens", "completion_tokens", "total_tokens",
-                "cost_usd", "session_id", "user_id", "tags", "metadata",
-                "error_kind", "error_message", "schema_version",
+                "project_id",
+                "run_id",
+                "parent_run_id",
+                "name",
+                "kind",
+                "status",
+                "sdk",
+                "start_time",
+                "end_time",
+                "received_at",
+                "inputs",
+                "outputs",
+                "inputs_obj_ref",
+                "outputs_obj_ref",
+                "prompt_tokens",
+                "completion_tokens",
+                "total_tokens",
+                "cost_usd",
+                "session_id",
+                "user_id",
+                "tags",
+                "metadata",
+                "error_kind",
+                "error_message",
+                "schema_version",
             ],
         )
         await ch.insert(
             "span",
-            [(
-                str(project_id),
-                new_run_id,
-                new_span_id,
-                None,
-                f"replay:{new_model}",
-                "llm",
-                "ok",
-                now,
-                now,
-                now,
-                new_model,
-                new_temperature,
-                inputs_json,
-                outputs_json,
-                None,
-                None,
-                prompt_tokens,
-                completion_tokens,
-                total_tokens,
-                0,
-                _json.dumps(metadata),
-                "",
-                "",
-                1,
-            )],
+            [
+                (
+                    str(project_id),
+                    new_run_id,
+                    new_span_id,
+                    None,
+                    f"replay:{new_model}",
+                    "llm",
+                    "ok",
+                    now,
+                    now,
+                    now,
+                    new_model,
+                    new_temperature,
+                    inputs_json,
+                    outputs_json,
+                    None,
+                    None,
+                    prompt_tokens,
+                    completion_tokens,
+                    total_tokens,
+                    0,
+                    _json.dumps(metadata),
+                    "",
+                    "",
+                    1,
+                )
+            ],
             column_names=[
-                "project_id", "run_id", "span_id", "parent_span_id",
-                "name", "kind", "status", "start_time", "end_time",
-                "received_at", "model", "temperature", "inputs",
-                "outputs", "inputs_obj_ref", "outputs_obj_ref",
-                "prompt_tokens", "completion_tokens", "total_tokens",
-                "cost_usd", "attributes", "error_kind",
-                "error_message", "schema_version",
+                "project_id",
+                "run_id",
+                "span_id",
+                "parent_span_id",
+                "name",
+                "kind",
+                "status",
+                "start_time",
+                "end_time",
+                "received_at",
+                "model",
+                "temperature",
+                "inputs",
+                "outputs",
+                "inputs_obj_ref",
+                "outputs_obj_ref",
+                "prompt_tokens",
+                "completion_tokens",
+                "total_tokens",
+                "cost_usd",
+                "attributes",
+                "error_kind",
+                "error_message",
+                "schema_version",
             ],
         )
     except Exception as exc:  # noqa: BLE001

@@ -65,9 +65,7 @@ async def require_ingest_key(
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid api key") from exc
     except ResolverUnavailable as exc:
         # ER-09: fail closed
-        raise HTTPException(
-            status.HTTP_401_UNAUTHORIZED, "auth backend unavailable"
-        ) from exc
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "auth backend unavailable") from exc
 
     try:
         secret_row = await pool.fetchrow(
@@ -75,9 +73,7 @@ async def require_ingest_key(
             ctx.api_key_id,
         )
     except (asyncpg.PostgresError, OSError) as exc:
-        raise HTTPException(
-            status.HTTP_401_UNAUTHORIZED, "auth backend unavailable"
-        ) from exc
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "auth backend unavailable") from exc
 
     if secret_row is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid api key")

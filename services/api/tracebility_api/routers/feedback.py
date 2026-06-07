@@ -20,7 +20,7 @@ issuance/revocation, which `feedback_keys.py` already covers.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import UUID
 
 import asyncpg
@@ -97,32 +97,44 @@ async def post_feedback(request: Request, body: FeedbackIn) -> FeedbackAck:
         },
         separators=(",", ":"),
     )
-    judged_at = datetime.now(timezone.utc)
+    judged_at = datetime.now(UTC)
 
     try:
         await ch.insert(
             "eval_score",
-            [(
-                str(key_row["project_id"]),
-                str(body.run_id),
-                None,                       # span_id
-                _NO_EVAL_CONFIG,            # eval_config_id
-                "user",                     # judge_name
-                "browser",                  # judge_endpoint
-                "v1",                       # judge_version
-                float(body.score),
-                label,
-                body.comment or "",
-                raw_output,
-                "ok",
-                judged_at,
-                0,                          # cost_usd
-            )],
+            [
+                (
+                    str(key_row["project_id"]),
+                    str(body.run_id),
+                    None,  # span_id
+                    _NO_EVAL_CONFIG,  # eval_config_id
+                    "user",  # judge_name
+                    "browser",  # judge_endpoint
+                    "v1",  # judge_version
+                    float(body.score),
+                    label,
+                    body.comment or "",
+                    raw_output,
+                    "ok",
+                    judged_at,
+                    0,  # cost_usd
+                )
+            ],
             column_names=[
-                "project_id", "run_id", "span_id", "eval_config_id",
-                "judge_name", "judge_endpoint", "judge_version",
-                "score", "label", "rationale", "raw_output",
-                "outcome", "judged_at", "cost_usd",
+                "project_id",
+                "run_id",
+                "span_id",
+                "eval_config_id",
+                "judge_name",
+                "judge_endpoint",
+                "judge_version",
+                "score",
+                "label",
+                "rationale",
+                "raw_output",
+                "outcome",
+                "judged_at",
+                "cost_usd",
             ],
         )
     except Exception as exc:  # noqa: BLE001
@@ -150,6 +162,7 @@ async def post_feedback(request: Request, body: FeedbackIn) -> FeedbackAck:
 
 
 # ----- helpers -------------------------------------------------------------
+
 
 def _parse_key(raw: str) -> str:
     if not raw.startswith("tbf_pub_"):

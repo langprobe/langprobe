@@ -36,7 +36,7 @@ import secrets
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -44,7 +44,7 @@ import asyncpg
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import RedirectResponse
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, Field
 
 from .. import audit
 from ..auth import Principal, assert_workspace_role, issue_session_cookie, require_user
@@ -275,7 +275,7 @@ async def patch_config(
     updated = await pool.fetchrow(
         f"""
         update workspace_sso_config
-           set {', '.join(sets)}
+           set {", ".join(sets)}
          where id = ${len(args)}
         returning id, workspace_id, issuer, client_id, client_secret_encrypted,
                   authorization_endpoint, token_endpoint, jwks_uri,
@@ -318,9 +318,7 @@ async def delete_config(
         workspace_id=workspace_id,
         allowed=("owner", "admin"),
     )
-    await pool.execute(
-        "delete from workspace_sso_config where id = $1", config_id
-    )
+    await pool.execute("delete from workspace_sso_config where id = $1", config_id)
     await audit.record(
         pool,
         principal=principal,
@@ -369,16 +367,12 @@ async def sso_start(
             "no SSO config for this workspace",
         )
 
-    auth_endpoint, token_endpoint, jwks_uri = await _ensure_discovery(
-        pool, cfg
-    )
+    auth_endpoint, token_endpoint, jwks_uri = await _ensure_discovery(pool, cfg)
 
     state = secrets.token_urlsafe(32)
     code_verifier = secrets.token_urlsafe(48)
     code_challenge = (
-        base64.urlsafe_b64encode(
-            hashlib.sha256(code_verifier.encode("ascii")).digest()
-        )
+        base64.urlsafe_b64encode(hashlib.sha256(code_verifier.encode("ascii")).digest())
         .decode("ascii")
         .rstrip("=")
     )
@@ -392,7 +386,7 @@ async def sso_start(
     )
     redirect_uri = f"{public_base}/v1/auth/sso/callback"
 
-    expires_at = datetime.now(timezone.utc) + timedelta(seconds=_STATE_TTL_SECONDS)
+    expires_at = datetime.now(UTC) + timedelta(seconds=_STATE_TTL_SECONDS)
     await pool.execute(
         """
         insert into sso_state (state, workspace_id, code_verifier, redirect_uri, return_to, expires_at)
@@ -406,19 +400,16 @@ async def sso_start(
         expires_at,
     )
 
-    auth_url = (
-        f"{auth_endpoint}?"
-        + urllib.parse.urlencode(
-            {
-                "response_type": "code",
-                "client_id": cfg["client_id"],
-                "redirect_uri": redirect_uri,
-                "scope": "openid email profile",
-                "state": state,
-                "code_challenge": code_challenge,
-                "code_challenge_method": "S256",
-            }
-        )
+    auth_url = f"{auth_endpoint}?" + urllib.parse.urlencode(
+        {
+            "response_type": "code",
+            "client_id": cfg["client_id"],
+            "redirect_uri": redirect_uri,
+            "scope": "openid email profile",
+            "state": state,
+            "code_challenge": code_challenge,
+            "code_challenge_method": "S256",
+        }
     )
 
     await audit.record(
@@ -457,7 +448,7 @@ async def sso_callback(
     )
     if state_row is None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid sso state")
-    if state_row["expires_at"] < datetime.now(timezone.utc):
+    if state_row["expires_at"] < datetime.now(UTC):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "sso state expired")
 
     workspace_id: UUID = state_row["workspace_id"]
@@ -471,19 +462,15 @@ async def sso_callback(
         workspace_id,
     )
     if cfg is None:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST, "sso disabled for this workspace"
-        )
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "sso disabled for this workspace")
     token_endpoint = cfg["token_endpoint"]
     if not token_endpoint:
         # Re-discover if the cached endpoint went missing (e.g. after
         # an issuer rotation).
         await _ensure_discovery(pool, cfg)
-        token_endpoint = (
-            await pool.fetchval(
-                "select token_endpoint from workspace_sso_config where id = $1",
-                cfg["id"],
-            )
+        token_endpoint = await pool.fetchval(
+            "select token_endpoint from workspace_sso_config where id = $1",
+            cfg["id"],
         )
     if not token_endpoint:
         raise HTTPException(
@@ -569,9 +556,7 @@ async def sso_callback(
 # ---------------------------------------------------------------------------
 
 
-async def _ensure_discovery(
-    pool: asyncpg.Pool, cfg: asyncpg.Record
-) -> tuple[str, str, str | None]:
+async def _ensure_discovery(pool: asyncpg.Pool, cfg: asyncpg.Record) -> tuple[str, str, str | None]:
     """Resolve the IdP's authorization/token/jwks endpoints.
 
     Cached on the row; null cache forces a fresh fetch. Returns
@@ -676,24 +661,18 @@ def _decode_id_token_payload(id_token: str) -> dict[str, Any]:
     """
     parts = id_token.split(".")
     if len(parts) != 3:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST, "id_token is not a JWT"
-        )
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "id_token is not a JWT")
     raw = parts[1]
     # JWT base64url is unpadded; pad before decode.
     padded = raw + "=" * ((4 - len(raw) % 4) % 4)
     try:
         decoded = base64.urlsafe_b64decode(padded)
     except (ValueError, base64.binascii.Error) as exc:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST, "id_token payload not base64url"
-        ) from exc
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "id_token payload not base64url") from exc
     try:
         return _json.loads(decoded)
     except _json.JSONDecodeError as exc:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST, "id_token payload not JSON"
-        ) from exc
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "id_token payload not JSON") from exc
 
 
 async def _resolve_or_provision_user(
@@ -706,51 +685,50 @@ async def _resolve_or_provision_user(
     default_role: str,
 ) -> dict[str, Any]:
     """Find or create the app_user; ensure workspace membership."""
-    async with pool.acquire() as conn:
-        async with conn.transaction():
-            existing = await conn.fetchrow(
-                "select id, email, is_root, deleted_at from app_user where email = $1",
-                email,
+    async with pool.acquire() as conn, conn.transaction():
+        existing = await conn.fetchrow(
+            "select id, email, is_root, deleted_at from app_user where email = $1",
+            email,
+        )
+        if existing is not None and existing["deleted_at"] is not None:
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "user account is deactivated",
             )
-            if existing is not None and existing["deleted_at"] is not None:
+        if existing is None:
+            if auto_provision != "auto":
                 raise HTTPException(
                     status.HTTP_403_FORBIDDEN,
-                    "user account is deactivated",
+                    "user not provisioned (auto_provision='match-only')",
                 )
-            if existing is None:
-                if auto_provision != "auto":
-                    raise HTTPException(
-                        status.HTTP_403_FORBIDDEN,
-                        "user not provisioned (auto_provision='match-only')",
-                    )
-                user_row = await conn.fetchrow(
-                    """
+            user_row = await conn.fetchrow(
+                """
                     insert into app_user (email, password_hash, full_name)
                     values ($1, NULL, $2)
                     returning id, email, is_root
                     """,
-                    email,
-                    full_name or email,
-                )
-                assert user_row is not None
-            else:
-                user_row = {
-                    "id": existing["id"],
-                    "email": existing["email"],
-                    "is_root": existing["is_root"],
-                }
+                email,
+                full_name or email,
+            )
+            assert user_row is not None
+        else:
+            user_row = {
+                "id": existing["id"],
+                "email": existing["email"],
+                "is_root": existing["is_root"],
+            }
 
-            # Ensure membership; do not downgrade existing higher roles.
-            await conn.execute(
-                """
+        # Ensure membership; do not downgrade existing higher roles.
+        await conn.execute(
+            """
                 insert into workspace_member (workspace_id, user_id, role)
                 values ($1, $2, $3)
                 on conflict (workspace_id, user_id) do nothing
                 """,
-                workspace_id,
-                user_row["id"],
-                default_role,
-            )
+            workspace_id,
+            user_row["id"],
+            default_role,
+        )
     return dict(user_row)
 
 
@@ -767,9 +745,7 @@ def _default_return_to(_settings: Settings) -> str:
     return "/"
 
 
-async def _fetch_config_full(
-    pool: asyncpg.Pool, config_id: UUID
-) -> asyncpg.Record:
+async def _fetch_config_full(pool: asyncpg.Pool, config_id: UUID) -> asyncpg.Record:
     row = await pool.fetchrow(
         """
         select id, workspace_id, issuer, client_id, client_secret_encrypted,

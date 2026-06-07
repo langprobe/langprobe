@@ -128,7 +128,9 @@ async def list_views(
         )
     pool: asyncpg.Pool = request.app.state.pg
     await _assert_project_role(
-        pool, principal, project_id,
+        pool,
+        principal,
+        project_id,
         ("owner", "admin", "member", "viewer"),
     )
     rows = await pool.fetch(
@@ -231,9 +233,7 @@ async def patch_view(
 
     if row["is_shared"]:
         # shared: owner/admin only can edit
-        workspace_id = await _assert_project_role(
-            pool, principal, project_id, ("owner", "admin")
-        )
+        workspace_id = await _assert_project_role(pool, principal, project_id, ("owner", "admin"))
     else:
         if row["created_by"] != principal.user_id:
             raise HTTPException(
@@ -269,7 +269,7 @@ async def patch_view(
         updated = await pool.fetchrow(
             f"""
             update saved_view
-               set {', '.join(sets)}
+               set {", ".join(sets)}
              where id = ${len(args)}
             returning id, project_id, name, surface, filters, is_shared, pinned,
                       sort_index, created_by, created_at, updated_at
@@ -308,9 +308,7 @@ async def delete_view(
     project_id: UUID = row["project_id"]
 
     if row["is_shared"]:
-        workspace_id = await _assert_project_role(
-            pool, principal, project_id, ("owner", "admin")
-        )
+        workspace_id = await _assert_project_role(pool, principal, project_id, ("owner", "admin"))
     else:
         if row["created_by"] != principal.user_id:
             raise HTTPException(
@@ -390,7 +388,8 @@ def _coerce_filters(raw: Any) -> SavedViewFilters:
         return SavedViewFilters()
     # Drop unknown keys quietly so v2 clients can't poison v1 reads.
     keep = {
-        k: v for k, v in data.items()
+        k: v
+        for k, v in data.items()
         if k in {"status", "kind", "search", "window_seconds", "window", "model"}
     }
     try:

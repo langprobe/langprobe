@@ -146,9 +146,7 @@ async def list_runs(
         rows = await ch.query(sql, parameters=params)
     except Exception as exc:  # noqa: BLE001
         log.warning("clickhouse query failed", error=str(exc))
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE, "data plane unavailable"
-        ) from exc
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "data plane unavailable") from exc
 
     items = [
         RunListItem(
@@ -195,9 +193,7 @@ async def get_run(
         rows = await ch.query(sql, parameters=params)
     except Exception as exc:  # noqa: BLE001
         log.warning("run detail query failed", error=str(exc))
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE, "data plane unavailable"
-        ) from exc
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "data plane unavailable") from exc
 
     if not rows:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "run not found")
@@ -257,9 +253,7 @@ async def list_spans(
         rows = await ch.query(sql, parameters=params)
     except Exception as exc:  # noqa: BLE001
         log.warning("span list query failed", error=str(exc))
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE, "data plane unavailable"
-        ) from exc
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "data plane unavailable") from exc
 
     items = [
         SpanItem(
@@ -274,11 +268,7 @@ async def list_spans(
             inputs=row.get("inputs") or "",
             outputs=row.get("outputs") or "",
             model=row.get("model") or "",
-            temperature=(
-                float(row["temperature"])
-                if row.get("temperature") is not None
-                else None
-            ),
+            temperature=(float(row["temperature"]) if row.get("temperature") is not None else None),
             prompt_tokens=int(row.get("prompt_tokens") or 0),
             completion_tokens=int(row.get("completion_tokens") or 0),
             total_tokens=int(row.get("total_tokens") or 0),

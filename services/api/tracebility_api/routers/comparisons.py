@@ -30,7 +30,7 @@ from __future__ import annotations
 import json as _json
 import re
 import uuid as _uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -42,7 +42,7 @@ from pydantic import BaseModel, Field
 from .. import audit
 from ..auth import Principal, assert_workspace_role, require_user
 from ..clickhouse_client import ClickHouseQuery
-from . import llm_credentials, playground as playground_module
+from . import playground as playground_module
 
 _VAR_RE = re.compile(r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}")
 _DEFAULT_MAX_TOKENS = 1024
@@ -107,7 +107,9 @@ async def list_comparisons(
 ) -> list[ComparisonOut]:
     pool: asyncpg.Pool = request.app.state.pg
     await _assert_project_role(
-        pool, project_id, principal,
+        pool,
+        project_id,
+        principal,
         allowed=("owner", "admin", "member", "viewer"),
     )
     rows = await pool.fetch(
@@ -136,7 +138,9 @@ async def create_comparison(
 ) -> ComparisonOut:
     pool: asyncpg.Pool = request.app.state.pg
     workspace_id = await _assert_project_role(
-        pool, body.project_id, principal,
+        pool,
+        body.project_id,
+        principal,
         allowed=("owner", "admin", "member"),
     )
     if body.judge_kind not in _JUDGE_KINDS:
@@ -240,7 +244,9 @@ async def get_comparison(
     pool: asyncpg.Pool = request.app.state.pg
     row = await _fetch_comparison(pool, comparison_id)
     await _assert_project_role(
-        pool, row["project_id"], principal,
+        pool,
+        row["project_id"],
+        principal,
         allowed=("owner", "admin", "member", "viewer"),
     )
     return ComparisonOut(**dict(row))
@@ -256,7 +262,9 @@ async def list_items(
     pool: asyncpg.Pool = request.app.state.pg
     row = await _fetch_comparison(pool, comparison_id)
     await _assert_project_role(
-        pool, row["project_id"], principal,
+        pool,
+        row["project_id"],
+        principal,
         allowed=("owner", "admin", "member", "viewer"),
     )
     ch = _require_clickhouse(request)
@@ -298,9 +306,7 @@ async def list_items(
         rows = await ch.query(sql, parameters=params)
     except Exception as exc:  # noqa: BLE001
         log.warning("comparison items query failed", error=str(exc))
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE, "data plane unavailable"
-        ) from exc
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "data plane unavailable") from exc
 
     items = [
         ComparisonItemRow(
@@ -319,6 +325,7 @@ async def list_items(
 
 
 # ----- background runner ---------------------------------------------------
+
 
 async def _run_comparison(
     pool: asyncpg.Pool,
@@ -370,12 +377,11 @@ async def _run_comparison(
         variant_a = _build_variant("a", ver_by_id.get(cmp_row["prompt_version_id_a"]))
         variant_b = _build_variant("b", ver_by_id.get(cmp_row["prompt_version_id_b"]))
 
-        items = await _fetch_dataset_items(
-            ch, cmp_row["project_id"], cmp_row["dataset_id"]
-        )
+        items = await _fetch_dataset_items(ch, cmp_row["project_id"], cmp_row["dataset_id"])
         await pool.execute(
             "update comparison set item_total=$2 where id=$1",
-            comparison_id, len(items),
+            comparison_id,
+            len(items),
         )
 
         rows: list[tuple[Any, ...]] = []
@@ -385,10 +391,18 @@ async def _run_comparison(
         project_id = cmp_row["project_id"]
         for item in items:
             output_a, run_id_a, err_a = await _dispatch_variant(
-                pool, project_id, comparison_id, variant_a, item,
+                pool,
+                project_id,
+                comparison_id,
+                variant_a,
+                item,
             )
             output_b, run_id_b, err_b = await _dispatch_variant(
-                pool, project_id, comparison_id, variant_b, item,
+                pool,
+                project_id,
+                comparison_id,
+                variant_b,
+                item,
             )
             score_a, label_a, rationale_a = _judge(
                 cmp_row["judge_kind"], output_a, item["expected"]
@@ -434,16 +448,36 @@ async def _run_comparison(
                     error=err_b,
                 )
 
-            rows.append(_score_row(
-                cmp_row["project_id"], item["item_id"], comparison_id,
-                "cmp:a", score_a, label_a, rationale_a, output_a, judged_at,
-                run_id=run_id_a, ok=err_a is None,
-            ))
-            rows.append(_score_row(
-                cmp_row["project_id"], item["item_id"], comparison_id,
-                "cmp:b", score_b, label_b, rationale_b, output_b, judged_at,
-                run_id=run_id_b, ok=err_b is None,
-            ))
+            rows.append(
+                _score_row(
+                    cmp_row["project_id"],
+                    item["item_id"],
+                    comparison_id,
+                    "cmp:a",
+                    score_a,
+                    label_a,
+                    rationale_a,
+                    output_a,
+                    judged_at,
+                    run_id=run_id_a,
+                    ok=err_a is None,
+                )
+            )
+            rows.append(
+                _score_row(
+                    cmp_row["project_id"],
+                    item["item_id"],
+                    comparison_id,
+                    "cmp:b",
+                    score_b,
+                    label_b,
+                    rationale_b,
+                    output_b,
+                    judged_at,
+                    run_id=run_id_b,
+                    ok=err_b is None,
+                )
+            )
 
         if rows:
             try:
@@ -451,10 +485,20 @@ async def _run_comparison(
                     "eval_score",
                     rows,
                     column_names=[
-                        "project_id", "run_id", "span_id", "eval_config_id",
-                        "judge_name", "judge_endpoint", "judge_version",
-                        "score", "label", "rationale", "raw_output",
-                        "outcome", "judged_at", "cost_usd",
+                        "project_id",
+                        "run_id",
+                        "span_id",
+                        "eval_config_id",
+                        "judge_name",
+                        "judge_endpoint",
+                        "judge_version",
+                        "score",
+                        "label",
+                        "rationale",
+                        "raw_output",
+                        "outcome",
+                        "judged_at",
+                        "cost_usd",
                     ],
                 )
             except Exception as exc:  # noqa: BLE001
@@ -474,12 +518,19 @@ async def _run_comparison(
                 finished_at=now()
             where id=$1
             """,
-            comparison_id, n, n, score_sum_a, score_sum_b, avg_a, avg_b,
+            comparison_id,
+            n,
+            n,
+            score_sum_a,
+            score_sum_b,
+            avg_a,
+            avg_b,
         )
     except Exception as exc:  # noqa: BLE001
         log.warning(
             "comparison run failed",
-            comparison_id=str(comparison_id), error=str(exc),
+            comparison_id=str(comparison_id),
+            error=str(exc),
         )
         await _mark_failed(pool, comparison_id, str(exc))
 
@@ -506,18 +557,18 @@ def _score_row(
     return (
         str(project_id),
         run_id if run_id is not None else str(item_id),
-        None,                       # span_id
-        str(comparison_id),         # eval_config_id = our comparison id
-        side,                       # 'cmp:a' or 'cmp:b'
-        "comparison",               # judge_endpoint
-        "v2",                       # judge_version (v2 = real dispatch)
+        None,  # span_id
+        str(comparison_id),  # eval_config_id = our comparison id
+        side,  # 'cmp:a' or 'cmp:b'
+        "comparison",  # judge_endpoint
+        "v2",  # judge_version (v2 = real dispatch)
         float(score),
         label,
         rationale,
-        raw_output[:8000],          # cap raw_output
+        raw_output[:8000],  # cap raw_output
         "ok" if ok else "failed",
         judged_at,
-        0,                          # cost_usd (model cost is on run row)
+        0,  # cost_usd (model cost is on run row)
     )
 
 
@@ -672,7 +723,9 @@ async def _dispatch_variant(
         output = f"[stub:{variant.model}] {rendered[-512:]}"
         return output, run_id, None
 
-    from ..llm import DispatchError, Message, dispatch as gateway_dispatch
+    from ..llm import DispatchError, Message
+    from ..llm import dispatch as gateway_dispatch
+
     bare_model = variant.model
     if not bare_model.startswith(variant.provider + "/"):
         bare_model = f"{variant.provider}/{bare_model}"
@@ -718,101 +771,144 @@ async def _write_comparison_trace(
     Failures here are logged; the score row still goes in via the
     batched insert downstream.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     inputs_json = _json.dumps({"prompt": rendered})
     outputs_json = _json.dumps({"output": output})
-    metadata = _json.dumps({
-        "comparison": True,
-        "comparison_id": str(comparison_id),
-        "comparison_side": variant.side,
-        "dataset_item_id": str(item.get("item_id")) if item.get("item_id") else None,
-        "prompt_version_id": str(variant.version_id) if variant.version_id else None,
-        "fallback_provider": variant.provider == "stub" and variant.model.startswith("stub-"),
-    })
+    metadata = _json.dumps(
+        {
+            "comparison": True,
+            "comparison_id": str(comparison_id),
+            "comparison_side": variant.side,
+            "dataset_item_id": str(item.get("item_id")) if item.get("item_id") else None,
+            "prompt_version_id": str(variant.version_id) if variant.version_id else None,
+            "fallback_provider": variant.provider == "stub" and variant.model.startswith("stub-"),
+        }
+    )
     status_str = "ok" if error is None else "error"
     error_kind = "" if error is None else "DispatchError"
     error_message = "" if error is None else error[:2000]
     try:
         await ch.insert(
             "run",
-            [(
-                str(project_id),
-                run_id,
-                None,
-                f"comparison:{variant.side}:{variant.model}",
-                "llm",
-                status_str,
-                now,
-                now,
-                now,
-                inputs_json,
-                outputs_json,
-                None,
-                None,
-                0,
-                0,
-                0,
-                0,
-                "comparison",
-                str(comparison_id),
-                "",
-                ["comparison", f"side:{variant.side}"],
-                metadata,
-                error_kind,
-                error_message,
-                1,
-            )],
+            [
+                (
+                    str(project_id),
+                    run_id,
+                    None,
+                    f"comparison:{variant.side}:{variant.model}",
+                    "llm",
+                    status_str,
+                    now,
+                    now,
+                    now,
+                    inputs_json,
+                    outputs_json,
+                    None,
+                    None,
+                    0,
+                    0,
+                    0,
+                    0,
+                    "comparison",
+                    str(comparison_id),
+                    "",
+                    ["comparison", f"side:{variant.side}"],
+                    metadata,
+                    error_kind,
+                    error_message,
+                    1,
+                )
+            ],
             column_names=[
-                "project_id", "run_id", "parent_run_id", "name", "kind",
-                "status", "start_time", "end_time", "received_at",
-                "inputs", "outputs", "inputs_obj_ref", "outputs_obj_ref",
-                "prompt_tokens", "completion_tokens", "total_tokens",
-                "cost_usd", "sdk", "session_id", "user_id", "tags",
-                "metadata", "error_kind", "error_message", "schema_version",
+                "project_id",
+                "run_id",
+                "parent_run_id",
+                "name",
+                "kind",
+                "status",
+                "start_time",
+                "end_time",
+                "received_at",
+                "inputs",
+                "outputs",
+                "inputs_obj_ref",
+                "outputs_obj_ref",
+                "prompt_tokens",
+                "completion_tokens",
+                "total_tokens",
+                "cost_usd",
+                "sdk",
+                "session_id",
+                "user_id",
+                "tags",
+                "metadata",
+                "error_kind",
+                "error_message",
+                "schema_version",
             ],
         )
         await ch.insert(
             "span",
-            [(
-                str(project_id),
-                run_id,
-                str(_uuid.uuid4()),
-                None,
-                f"comparison:{variant.model}",
-                "llm",
-                status_str,
-                now,
-                now,
-                now,
-                variant.model,
-                variant.temperature,
-                inputs_json,
-                outputs_json,
-                None,
-                None,
-                0,
-                0,
-                0,
-                0,
-                metadata,
-                error_kind,
-                error_message,
-                1,
-            )],
+            [
+                (
+                    str(project_id),
+                    run_id,
+                    str(_uuid.uuid4()),
+                    None,
+                    f"comparison:{variant.model}",
+                    "llm",
+                    status_str,
+                    now,
+                    now,
+                    now,
+                    variant.model,
+                    variant.temperature,
+                    inputs_json,
+                    outputs_json,
+                    None,
+                    None,
+                    0,
+                    0,
+                    0,
+                    0,
+                    metadata,
+                    error_kind,
+                    error_message,
+                    1,
+                )
+            ],
             column_names=[
-                "project_id", "run_id", "span_id", "parent_span_id",
-                "name", "kind", "status", "start_time", "end_time",
-                "received_at", "model", "temperature", "inputs",
-                "outputs", "inputs_obj_ref", "outputs_obj_ref",
-                "prompt_tokens", "completion_tokens", "total_tokens",
-                "cost_usd", "attributes", "error_kind",
-                "error_message", "schema_version",
+                "project_id",
+                "run_id",
+                "span_id",
+                "parent_span_id",
+                "name",
+                "kind",
+                "status",
+                "start_time",
+                "end_time",
+                "received_at",
+                "model",
+                "temperature",
+                "inputs",
+                "outputs",
+                "inputs_obj_ref",
+                "outputs_obj_ref",
+                "prompt_tokens",
+                "completion_tokens",
+                "total_tokens",
+                "cost_usd",
+                "attributes",
+                "error_kind",
+                "error_message",
+                "schema_version",
             ],
         )
     except Exception as exc:  # noqa: BLE001
         log.warning(
             "comparison trace write failed",
-            run_id=run_id, error=str(exc),
+            run_id=run_id,
+            error=str(exc),
         )
 
 
@@ -863,11 +959,13 @@ async def _mark_failed(pool: asyncpg.Pool, comparison_id: UUID, reason: str) -> 
         set status='failed', error=$2, finished_at=now()
         where id=$1
         """,
-        comparison_id, reason[:2000],
+        comparison_id,
+        reason[:2000],
     )
 
 
 # ----- helpers -------------------------------------------------------------
+
 
 async def _fetch_comparison(pool: asyncpg.Pool, comparison_id: UUID) -> asyncpg.Record:
     row = await pool.fetchrow(

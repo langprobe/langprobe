@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import os
 from datetime import datetime
-from typing import Any
 from uuid import UUID
 
 import asyncpg
@@ -36,7 +35,12 @@ log = structlog.get_logger("tracebility.api.llm_credentials")
 router = APIRouter(prefix="/v1/llm-credentials", tags=["llm-credentials"])
 
 _VALID_PROVIDERS = {
-    "anthropic", "openai", "gemini", "mistral", "deepseek", "groq",
+    "anthropic",
+    "openai",
+    "gemini",
+    "mistral",
+    "deepseek",
+    "groq",
 }
 
 
@@ -237,10 +241,9 @@ async def patch_credential(
 
     flipped_to_true = (not cur["default_enabled"]) and body.default_enabled
 
-    async with pool.acquire() as conn:
-        async with conn.transaction():
-            row = await conn.fetchrow(
-                """
+    async with pool.acquire() as conn, conn.transaction():
+        row = await conn.fetchrow(
+            """
                 update workspace_llm_credential
                    set default_enabled = $2, updated_at = now()
                  where id = $1
@@ -248,17 +251,17 @@ async def patch_credential(
                           default_enabled,
                           created_at, updated_at, revoked_at
                 """,
-                credential_id,
-                body.default_enabled,
+            credential_id,
+            body.default_enabled,
+        )
+        assert row is not None
+        if flipped_to_true:
+            await _propagate_default_enabled(
+                conn,
+                credential_id=credential_id,
+                workspace_id=cur["workspace_id"],
+                user_id=principal.user_id,
             )
-            assert row is not None
-            if flipped_to_true:
-                await _propagate_default_enabled(
-                    conn,
-                    credential_id=credential_id,
-                    workspace_id=cur["workspace_id"],
-                    user_id=principal.user_id,
-                )
 
     await audit.record(
         pool,
@@ -311,11 +314,11 @@ async def _propagate_default_enabled(
 
 _ENV_KEY_BY_PROVIDER = {
     "anthropic": "ANTHROPIC_API_KEY",
-    "openai":    "OPENAI_API_KEY",
-    "gemini":    "GEMINI_API_KEY",
-    "mistral":   "MISTRAL_API_KEY",
-    "deepseek":  "DEEPSEEK_API_KEY",
-    "groq":      "GROQ_API_KEY",
+    "openai": "OPENAI_API_KEY",
+    "gemini": "GEMINI_API_KEY",
+    "mistral": "MISTRAL_API_KEY",
+    "deepseek": "DEEPSEEK_API_KEY",
+    "groq": "GROQ_API_KEY",
 }
 
 

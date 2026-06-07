@@ -64,9 +64,7 @@ _PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ),
     (
         "JWT",
-        re.compile(
-            r"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b"
-        ),
+        re.compile(r"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b"),
     ),
     (
         "API_KEY",
@@ -81,9 +79,7 @@ _PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
         "PHONE",
         # E.164-ish or US-style. Last so SSN/CC patterns win first.
-        re.compile(
-            r"(?:(?<!\d)\+?\d{1,3}[ -]?)?(?<!\d)\(?\d{3}\)?[ -]?\d{3}[ -]?\d{4}(?!\d)"
-        ),
+        re.compile(r"(?:(?<!\d)\+?\d{1,3}[ -]?)?(?<!\d)\(?\d{3}\)?[ -]?\d{3}[ -]?\d{4}(?!\d)"),
     ),
 )
 

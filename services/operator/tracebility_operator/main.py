@@ -90,8 +90,7 @@ async def on_delete(
     block back to the Tracebility CR), but we still emit a log line
     so operators can see the deletion path in operator logs.
     """
-    logger.info("deleting tracebility/%s in %s (owner-references will cascade)",
-                name, namespace)
+    logger.info("deleting tracebility/%s in %s (owner-references will cascade)", name, namespace)
 
 
 # Re-export for tooling that imports the top-level handlers.
