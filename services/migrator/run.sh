@@ -22,9 +22,13 @@ for f in /schemas/postgres/*.sql; do
 done
 echo "==> Postgres: applied $count_applied, skipped $count_skipped"
 
-# All ClickHouse migrations must be idempotent (CREATE TABLE IF NOT EXISTS).
-# ALTER migrations require a version-tracking table before being added.
-echo "==> ClickHouse: applying all migrations (CREATE IF NOT EXISTS)"
+# ClickHouse migrations are version-tracked via the `schema_migrations`
+# table (created by 0000_schema_migrations.sql, always run first; its
+# CREATE IF NOT EXISTS is itself idempotent). Subsequent migration files
+# only run if their version isn't already in schema_migrations. Each file
+# may use any DDL — CREATE, ALTER, RENAME, DROP — without needing to be
+# self-idempotent.
+echo "==> ClickHouse: applying migrations with version tracking"
 
 # We talk to ClickHouse over HTTP rather than the native binary protocol,
 # because the DSN we get (TRACEBILITY_CLICKHOUSE_URL) already targets the
@@ -41,30 +45,67 @@ else
   ch_endpoint="$CH_URL"   # already has /?... form, send as-is
 fi
 
-# ClickHouse's HTTP endpoint doesn't accept multi-statement bodies (no
-# `multi_statements` setting in 24.x), so split each .sql file into
-# individual statements on `;` followed by newline, drop empty/whitespace-
-# only chunks, and POST each one separately.
-ch_total=0
-for f in /schemas/clickhouse/*.sql; do
-  echo "  apply: $(basename "$f" .sql)"
-  # awk produces a NUL-delimited stream of statements; while-loop reads them
-  # without subshell issues.
+# Helper: POST one statement to the CH HTTP endpoint, fail loud on non-200.
+# Usage: ch_post "<sql>" "<context-for-error-msg>"
+ch_post() {
+  local stmt="$1"
+  local ctx="$2"
+  local http_status
+  http_status=$(printf '%s' "$stmt" | curl -sS -o /tmp/ch_response -w "%{http_code}" \
+    --data-binary @- "$ch_endpoint" || true)
+  if [ "$http_status" != "200" ]; then
+    echo "ERROR: ClickHouse returned HTTP $http_status on statement from $ctx"
+    cat /tmp/ch_response
+    exit 1
+  fi
+}
+
+# Apply 0000 unconditionally so the tracking table exists.
+# ClickHouse HTTP endpoint doesn't accept multi-statement bodies (no
+# `multi_statements` setting in 24.x), so split files on `;` followed by
+# newline, drop empty/comment-only chunks, and POST each statement.
+apply_file() {
+  local f="$1"
   while IFS= read -r -d '' stmt; do
-    # Skip pure-whitespace / comment-only chunks.
     case "$(printf '%s' "$stmt" | tr -d '[:space:]' | sed -E 's/--[^\\n]*//g')" in
       "") continue ;;
     esac
-    http_status=$(printf '%s' "$stmt" | curl -sS -o /tmp/ch_response -w "%{http_code}" \
-      --data-binary @- "$ch_endpoint" || true)
-    if [ "$http_status" != "200" ]; then
-      echo "ERROR: ClickHouse returned HTTP $http_status on statement from $(basename "$f")"
-      cat /tmp/ch_response
-      exit 1
-    fi
+    ch_post "$stmt" "$(basename "$f")"
   done < <(awk 'BEGIN{RS=";\n"; ORS="\0"} { print }' "$f")
-  ch_total=$((ch_total + 1))
+}
+
+bootstrap_file="/schemas/clickhouse/0000_schema_migrations.sql"
+if [ -f "$bootstrap_file" ]; then
+  echo "  bootstrap: $(basename "$bootstrap_file" .sql)"
+  apply_file "$bootstrap_file"
+fi
+
+# Read which versions are already applied. The query format is TabSeparated;
+# one version per line. An empty result is fine (fresh DB, just bootstrapped).
+ch_applied="$(printf '%s' "select version from schema_migrations" | curl -sS \
+  --data-binary @- "$ch_endpoint" || true)"
+
+ch_applied_count=0
+ch_skipped_count=0
+for f in /schemas/clickhouse/*.sql; do
+  v="$(basename "$f" .sql)"
+  # 0000 was bootstrapped above; record-if-missing so subsequent runs skip.
+  if [ "$v" = "0000_schema_migrations" ]; then
+    if ! printf '%s\n' "$ch_applied" | grep -qx "$v"; then
+      ch_post "insert into schema_migrations (version) values ('$v')" "$v (record bootstrap)"
+    fi
+    continue
+  fi
+  if printf '%s\n' "$ch_applied" | grep -qx "$v"; then
+    echo "  skip: $v"
+    ch_skipped_count=$((ch_skipped_count + 1))
+    continue
+  fi
+  echo "  apply: $v"
+  apply_file "$f"
+  ch_post "insert into schema_migrations (version) values ('$v')" "$v (record apply)"
+  ch_applied_count=$((ch_applied_count + 1))
 done
-echo "==> ClickHouse: applied $ch_total file(s)"
+echo "==> ClickHouse: applied $ch_applied_count, skipped $ch_skipped_count"
 
 echo "==> migrator: done"
