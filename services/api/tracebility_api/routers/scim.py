@@ -44,7 +44,7 @@ from __future__ import annotations
 
 import re
 import secrets
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -305,9 +305,7 @@ async def revoke_token(
 @router.get("/ServiceProviderConfig")
 async def service_provider_config() -> dict[str, Any]:
     return {
-        "schemas": [
-            "urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig"
-        ],
+        "schemas": ["urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig"],
         "documentationUri": "https://github.com/tracebility-ai/tracebility",
         "patch": {"supported": True},
         "bulk": {"supported": False, "maxOperations": 0, "maxPayloadSize": 0},
@@ -431,53 +429,52 @@ async def create_user(
     # Match-or-create the underlying app_user by email; this lets a
     # user already in tracebility get attached to a SCIM-provisioned
     # workspace without a duplicate row.
-    async with pool.acquire() as conn:
-        async with conn.transaction():
-            existing_user = await conn.fetchrow(
-                "select id, email, deleted_at from app_user where lower(email) = lower($1)",
-                user_name,
-            )
-            if existing_user is not None:
-                if existing_user["deleted_at"] is not None:
-                    _scim_error(
-                        409,
-                        "User account is deactivated",
-                        scim_type="uniqueness",
-                    )
-                user_id = existing_user["id"]
-            else:
-                user_id_row = await conn.fetchrow(
-                    """
+    async with pool.acquire() as conn, conn.transaction():
+        existing_user = await conn.fetchrow(
+            "select id, email, deleted_at from app_user where lower(email) = lower($1)",
+            user_name,
+        )
+        if existing_user is not None:
+            if existing_user["deleted_at"] is not None:
+                _scim_error(
+                    409,
+                    "User account is deactivated",
+                    scim_type="uniqueness",
+                )
+            user_id = existing_user["id"]
+        else:
+            user_id_row = await conn.fetchrow(
+                """
                     insert into app_user (email, password_hash, full_name)
                     values ($1, NULL, $2)
                     returning id
                     """,
-                    user_name,
-                    full_name or user_name,
-                )
-                assert user_id_row is not None
-                user_id = user_id_row["id"]
+                user_name,
+                full_name or user_name,
+            )
+            assert user_id_row is not None
+            user_id = user_id_row["id"]
 
-            # Reject duplicate provisioning into the same workspace.
-            existing_map = await conn.fetchrow(
-                """
+        # Reject duplicate provisioning into the same workspace.
+        existing_map = await conn.fetchrow(
+            """
                 select id from scim_user_mapping
                  where workspace_id = $1
                    and (external_id = $2 or user_id = $3)
                 """,
-                workspace_id,
-                external_id,
-                user_id,
+            workspace_id,
+            external_id,
+            user_id,
+        )
+        if existing_map is not None:
+            _scim_error(
+                409,
+                "User already provisioned in this workspace",
+                scim_type="uniqueness",
             )
-            if existing_map is not None:
-                _scim_error(
-                    409,
-                    "User already provisioned in this workspace",
-                    scim_type="uniqueness",
-                )
 
-            map_row = await conn.fetchrow(
-                """
+        map_row = await conn.fetchrow(
+            """
                 insert into scim_user_mapping (
                     workspace_id, external_id, user_id, role, active
                 )
@@ -485,26 +482,26 @@ async def create_user(
                 returning id, external_id, workspace_id, role, active,
                           created_at, updated_at
                 """,
-                workspace_id,
-                external_id,
-                user_id,
-                role,
-                active,
-            )
-            assert map_row is not None
+            workspace_id,
+            external_id,
+            user_id,
+            role,
+            active,
+        )
+        assert map_row is not None
 
-            if active:
-                await conn.execute(
-                    """
+        if active:
+            await conn.execute(
+                """
                     insert into workspace_member (workspace_id, user_id, role)
                     values ($1, $2, $3)
                     on conflict (workspace_id, user_id)
                     do update set role = excluded.role
                     """,
-                    workspace_id,
-                    user_id,
-                    role,
-                )
+                workspace_id,
+                user_id,
+                role,
+            )
 
     await audit.record(
         pool,
@@ -544,52 +541,51 @@ async def replace_user(
     active = True if active is None else bool(active)
     user_name = _required_str(body, "userName")
 
-    async with pool.acquire() as conn:
-        async with conn.transaction():
-            row = await _fetch_mapping_for_update(conn, ctx.workspace_id, mapping_id)
-            await conn.execute(
-                """
+    async with pool.acquire() as conn, conn.transaction():
+        row = await _fetch_mapping_for_update(conn, ctx.workspace_id, mapping_id)
+        await conn.execute(
+            """
                 update app_user
                    set email = $2,
                        full_name = $3
                  where id = $1
                 """,
-                row["user_id"],
-                user_name,
-                full_name or row["full_name"],
-            )
-            await conn.execute(
-                """
+            row["user_id"],
+            user_name,
+            full_name or row["full_name"],
+        )
+        await conn.execute(
+            """
                 update scim_user_mapping
                    set role = $2,
                        active = $3
                  where id = $1
                 """,
-                mapping_id,
-                role,
-                active,
-            )
-            if active:
-                await conn.execute(
-                    """
+            mapping_id,
+            role,
+            active,
+        )
+        if active:
+            await conn.execute(
+                """
                     insert into workspace_member (workspace_id, user_id, role)
                     values ($1, $2, $3)
                     on conflict (workspace_id, user_id)
                     do update set role = excluded.role
                     """,
-                    ctx.workspace_id,
-                    row["user_id"],
-                    role,
-                )
-            else:
-                await conn.execute(
-                    """
+                ctx.workspace_id,
+                row["user_id"],
+                role,
+            )
+        else:
+            await conn.execute(
+                """
                     delete from workspace_member
                      where workspace_id = $1 and user_id = $2
                     """,
-                    ctx.workspace_id,
-                    row["user_id"],
-                )
+                ctx.workspace_id,
+                row["user_id"],
+            )
 
     await audit.record(
         pool,
@@ -616,110 +612,105 @@ async def patch_user(
         _scim_error(400, "Operations must be a list")
 
     pool: asyncpg.Pool = request.app.state.pg
-    async with pool.acquire() as conn:
-        async with conn.transaction():
-            row = await _fetch_mapping_for_update(conn, ctx.workspace_id, mapping_id)
-            user_id: UUID = row["user_id"]
-            new_role: str = row["role"]
-            new_active: bool = row["active"]
-            new_email: str = row["email"]
-            new_full_name: str | None = row["full_name"]
+    async with pool.acquire() as conn, conn.transaction():
+        row = await _fetch_mapping_for_update(conn, ctx.workspace_id, mapping_id)
+        user_id: UUID = row["user_id"]
+        new_role: str = row["role"]
+        new_active: bool = row["active"]
+        new_email: str = row["email"]
+        new_full_name: str | None = row["full_name"]
 
-            for raw_op in operations:
-                if not isinstance(raw_op, dict):
-                    continue
-                op = str(raw_op.get("op") or "").lower()
-                path = str(raw_op.get("path") or "").strip()
-                value = raw_op.get("value")
-                if op not in {"add", "replace", "remove"}:
-                    _scim_error(400, f"Unsupported op: {op}")
-                if path == "" and op == "replace" and isinstance(value, dict):
-                    if "userName" in value:
-                        new_email = str(value["userName"])
-                    if "active" in value:
-                        new_active = bool(value["active"])
-                    if "displayName" in value:
-                        new_full_name = str(value["displayName"])
-                    if "name" in value and isinstance(value["name"], dict):
-                        f = value["name"].get("formatted")
-                        if isinstance(f, str):
-                            new_full_name = f
-                    enterprise = value.get(
-                        "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User"
-                    )
-                    if isinstance(enterprise, dict):
-                        new_role = _coerce_role(enterprise.get("role")) or new_role
-                    continue
-                if path == "active":
-                    if op == "remove":
-                        new_active = False
-                    else:
-                        new_active = bool(value)
-                elif path == "userName":
-                    if op == "remove":
-                        _scim_error(400, "Cannot remove userName")
-                    new_email = str(value)
-                elif path == "displayName" or path == "name.formatted":
-                    if op == "remove":
-                        new_full_name = None
-                    else:
-                        new_full_name = str(value)
-                elif path.startswith(
-                    "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User:role"
-                ):
-                    if op == "remove":
-                        new_role = "member"
-                    else:
-                        new_role = _coerce_role(value) or new_role
-                elif path == "emails":
-                    if isinstance(value, list) and value:
-                        first = value[0] if isinstance(value[0], dict) else {}
-                        v = first.get("value")
-                        if isinstance(v, str):
-                            new_email = v
+        for raw_op in operations:
+            if not isinstance(raw_op, dict):
+                continue
+            op = str(raw_op.get("op") or "").lower()
+            path = str(raw_op.get("path") or "").strip()
+            value = raw_op.get("value")
+            if op not in {"add", "replace", "remove"}:
+                _scim_error(400, f"Unsupported op: {op}")
+            if path == "" and op == "replace" and isinstance(value, dict):
+                if "userName" in value:
+                    new_email = str(value["userName"])
+                if "active" in value:
+                    new_active = bool(value["active"])
+                if "displayName" in value:
+                    new_full_name = str(value["displayName"])
+                if "name" in value and isinstance(value["name"], dict):
+                    f = value["name"].get("formatted")
+                    if isinstance(f, str):
+                        new_full_name = f
+                enterprise = value.get("urn:ietf:params:scim:schemas:extension:enterprise:2.0:User")
+                if isinstance(enterprise, dict):
+                    new_role = _coerce_role(enterprise.get("role")) or new_role
+                continue
+            if path == "active":
+                if op == "remove":
+                    new_active = False
+                else:
+                    new_active = bool(value)
+            elif path == "userName":
+                if op == "remove":
+                    _scim_error(400, "Cannot remove userName")
+                new_email = str(value)
+            elif path == "displayName" or path == "name.formatted":
+                if op == "remove":
+                    new_full_name = None
+                else:
+                    new_full_name = str(value)
+            elif path.startswith("urn:ietf:params:scim:schemas:extension:enterprise:2.0:User:role"):
+                if op == "remove":
+                    new_role = "member"
+                else:
+                    new_role = _coerce_role(value) or new_role
+            elif path == "emails":
+                if isinstance(value, list) and value:
+                    first = value[0] if isinstance(value[0], dict) else {}
+                    v = first.get("value")
+                    if isinstance(v, str):
+                        new_email = v
 
-            await conn.execute(
-                """
+        await conn.execute(
+            """
                 update app_user
                    set email = $2,
                        full_name = $3
                  where id = $1
                 """,
-                user_id,
-                new_email,
-                new_full_name,
-            )
-            await conn.execute(
-                """
+            user_id,
+            new_email,
+            new_full_name,
+        )
+        await conn.execute(
+            """
                 update scim_user_mapping
                    set role = $2, active = $3
                  where id = $1
                 """,
-                mapping_id,
-                new_role,
-                new_active,
-            )
-            if new_active:
-                await conn.execute(
-                    """
+            mapping_id,
+            new_role,
+            new_active,
+        )
+        if new_active:
+            await conn.execute(
+                """
                     insert into workspace_member (workspace_id, user_id, role)
                     values ($1, $2, $3)
                     on conflict (workspace_id, user_id)
                     do update set role = excluded.role
                     """,
-                    ctx.workspace_id,
-                    user_id,
-                    new_role,
-                )
-            else:
-                await conn.execute(
-                    """
+                ctx.workspace_id,
+                user_id,
+                new_role,
+            )
+        else:
+            await conn.execute(
+                """
                     delete from workspace_member
                      where workspace_id = $1 and user_id = $2
                     """,
-                    ctx.workspace_id,
-                    user_id,
-                )
+                ctx.workspace_id,
+                user_id,
+            )
 
     await audit.record(
         pool,
@@ -748,21 +739,20 @@ async def delete_user(
     mapping marked inactive.
     """
     pool: asyncpg.Pool = request.app.state.pg
-    async with pool.acquire() as conn:
-        async with conn.transaction():
-            row = await _fetch_mapping_for_update(conn, ctx.workspace_id, mapping_id)
-            await conn.execute(
-                "update scim_user_mapping set active = false where id = $1",
-                mapping_id,
-            )
-            await conn.execute(
-                """
+    async with pool.acquire() as conn, conn.transaction():
+        row = await _fetch_mapping_for_update(conn, ctx.workspace_id, mapping_id)
+        await conn.execute(
+            "update scim_user_mapping set active = false where id = $1",
+            mapping_id,
+        )
+        await conn.execute(
+            """
                 delete from workspace_member
                  where workspace_id = $1 and user_id = $2
                 """,
-                ctx.workspace_id,
-                row["user_id"],
-            )
+            ctx.workspace_id,
+            row["user_id"],
+        )
     await audit.record(
         pool,
         principal=None,
@@ -806,9 +796,7 @@ def _name_from_body(body: dict[str, Any]) -> str:
 
 
 def _role_from_body(body: dict[str, Any]) -> str:
-    enterprise = body.get(
-        "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User"
-    )
+    enterprise = body.get("urn:ietf:params:scim:schemas:extension:enterprise:2.0:User")
     if isinstance(enterprise, dict):
         role = _coerce_role(enterprise.get("role"))
         if role:
@@ -863,9 +851,7 @@ async def _fetch_and_render(
 
 
 def _render_user(row: asyncpg.Record, request: Request) -> dict[str, Any]:
-    base = (
-        f"{request.url.scheme}://{request.url.netloc}/scim/v2/Users/{row['id']}"
-    )
+    base = f"{request.url.scheme}://{request.url.netloc}/scim/v2/Users/{row['id']}"
     return {
         "schemas": [
             "urn:ietf:params:scim:schemas:core:2.0:User",
@@ -896,7 +882,7 @@ def _iso(value: datetime | None) -> str | None:
     if value is None:
         return None
     if value.tzinfo is None:
-        value = value.replace(tzinfo=timezone.utc)
+        value = value.replace(tzinfo=UTC)
     return value.isoformat()
 
 

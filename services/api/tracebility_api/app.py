@@ -23,7 +23,6 @@ from .routers import (
     alerts,
     annotations,
     api_keys,
-    auth as auth_router,
     comparisons,
     datasets,
     evals,
@@ -44,11 +43,18 @@ from .routers import (
     runs_query,
     saved_views,
     scim,
-    setup as setup_router,
-    sso as sso_router,
     studio,
     threads_query,
     workspaces_me,
+)
+from .routers import (
+    auth as auth_router,
+)
+from .routers import (
+    setup as setup_router,
+)
+from .routers import (
+    sso as sso_router,
 )
 
 log = structlog.get_logger("tracebility.api.app")
@@ -79,9 +85,7 @@ def create_app() -> FastAPI:
             command_timeout=10,
         )
         app.state.clickhouse = (
-            ClickHouseQuery(settings.clickhouse_url)
-            if settings.clickhouse_url
-            else None
+            ClickHouseQuery(settings.clickhouse_url) if settings.clickhouse_url else None
         )
         # Audit writer: every egress event lands here (export, share-link,
         # webhook fan-out, read API inputs/outputs return). Postgres

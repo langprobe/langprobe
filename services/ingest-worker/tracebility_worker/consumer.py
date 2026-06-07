@@ -96,10 +96,8 @@ class Consumer:
     async def _consume_id(self, start_id: str) -> None:
         """One XREADGROUP across every stream key. Round-robin happens
         naturally because the call returns from any shard with data."""
-        streams = {sk: start_id for sk in self._settings.stream_keys()}
-        per_stream_count = max(
-            1, self._settings.batch_size // max(1, len(streams))
-        )
+        streams = dict.fromkeys(self._settings.stream_keys(), start_id)
+        per_stream_count = max(1, self._settings.batch_size // max(1, len(streams)))
         resp = await self._redis.xreadgroup(
             groupname=self._settings.consumer_group,
             consumername=self._settings.consumer_name,

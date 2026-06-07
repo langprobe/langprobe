@@ -49,9 +49,7 @@ def load() -> Settings:
         clickhouse_user=os.environ.get("TRACEBILITY_CLICKHOUSE_USER", "default"),
         clickhouse_password=os.environ.get("TRACEBILITY_CLICKHOUSE_PASSWORD", ""),
         clickhouse_database=os.environ.get("TRACEBILITY_CLICKHOUSE_DATABASE", "default"),
-        inline_blob_max_bytes=int(
-            os.environ.get("TRACEBILITY_INLINE_BLOB_MAX_BYTES", "1000000")
-        ),
+        inline_blob_max_bytes=int(os.environ.get("TRACEBILITY_INLINE_BLOB_MAX_BYTES", "1000000")),
         disk_buffer_path=os.environ.get(
             "TRACEBILITY_DISK_BUFFER_PATH", "/var/lib/tracebility/ingest-buffer"
         ),

@@ -51,9 +51,7 @@ class SetupResponse(BaseModel):
 
 
 async def _is_initialized(pool: asyncpg.Pool) -> bool:
-    return bool(
-        await pool.fetchval("select exists (select 1 from app_user)")
-    )
+    return bool(await pool.fetchval("select exists (select 1 from app_user)"))
 
 
 @router.get("/status", response_model=SetupStatus)
@@ -75,79 +73,74 @@ async def setup(
     settings: Settings = request.app.state.settings
     pool: asyncpg.Pool = request.app.state.pg
 
-    async with pool.acquire() as conn:
-        async with conn.transaction():
-            already = await conn.fetchval(
-                "select exists (select 1 from app_user)"
-            )
-            if already:
-                raise HTTPException(
-                    status.HTTP_409_CONFLICT, "setup already completed"
-                )
+    async with pool.acquire() as conn, conn.transaction():
+        already = await conn.fetchval("select exists (select 1 from app_user)")
+        if already:
+            raise HTTPException(status.HTTP_409_CONFLICT, "setup already completed")
 
-            user_row = await conn.fetchrow(
-                """
+        user_row = await conn.fetchrow(
+            """
                 insert into app_user (email, name, password_hash, is_root)
                 values ($1, $2, $3, true)
                 returning id, email, is_root
                 """,
-                body.email,
-                body.name,
-                hash_password(body.password),
-            )
-            assert user_row is not None
-            user_id = user_row["id"]
+            body.email,
+            body.name,
+            hash_password(body.password),
+        )
+        assert user_row is not None
+        user_id = user_row["id"]
 
-            org_row = await conn.fetchrow(
-                """
+        org_row = await conn.fetchrow(
+            """
                 insert into org (slug, name) values ($1, $2)
                 returning id
                 """,
-                "default",
-                body.org_name,
-            )
-            assert org_row is not None
-            org_id = org_row["id"]
+            "default",
+            body.org_name,
+        )
+        assert org_row is not None
+        org_id = org_row["id"]
 
-            await conn.execute(
-                """
+        await conn.execute(
+            """
                 insert into org_member (org_id, user_id, role)
                 values ($1, $2, 'owner')
                 """,
-                org_id,
-                user_id,
-            )
+            org_id,
+            user_id,
+        )
 
-            workspace_row = await conn.fetchrow(
-                """
+        workspace_row = await conn.fetchrow(
+            """
                 insert into workspace (org_id, slug, name)
                 values ($1, 'default', 'Default')
                 returning id
                 """,
-                org_id,
-            )
-            assert workspace_row is not None
-            workspace_id = workspace_row["id"]
+            org_id,
+        )
+        assert workspace_row is not None
+        workspace_id = workspace_row["id"]
 
-            await conn.execute(
-                """
+        await conn.execute(
+            """
                 insert into workspace_member (workspace_id, user_id, role)
                 values ($1, $2, 'admin')
                 """,
-                workspace_id,
-                user_id,
-            )
+            workspace_id,
+            user_id,
+        )
 
-            project_row = await conn.fetchrow(
-                """
+        project_row = await conn.fetchrow(
+            """
                 insert into project (workspace_id, slug, name)
                 values ($1, 'default', 'Default')
                 returning id
                 """,
-                workspace_id,
-            )
-            assert project_row is not None
-            project_id = project_row["id"]
+            workspace_id,
+        )
+        assert project_row is not None
+        project_id = project_row["id"]
 
     cookie_value = issue_session_cookie(settings, user_id)
     response.set_cookie(

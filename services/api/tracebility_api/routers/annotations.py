@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import json as _json
 import random
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -119,7 +119,9 @@ async def list_queues(
 ) -> list[AnnotationQueueOut]:
     pool: asyncpg.Pool = request.app.state.pg
     await _assert_project_role(
-        pool, principal, project_id,
+        pool,
+        principal,
+        project_id,
         ("owner", "admin", "member", "viewer"),
     )
     rows = await pool.fetch(
@@ -172,10 +174,9 @@ async def create_queue(
     sampling_json = _json.dumps(body.sampling.model_dump())
     rubric_json = _json.dumps(body.rubric.model_dump())
 
-    async with pool.acquire() as conn:
-        async with conn.transaction():
-            queue_row = await conn.fetchrow(
-                """
+    async with pool.acquire() as conn, conn.transaction():
+        queue_row = await conn.fetchrow(
+            """
                 insert into annotation_queue (
                     project_id, name, description, sampling, rubric,
                     item_total, item_done, status, created_by
@@ -187,31 +188,28 @@ async def create_queue(
                           rubric, item_total, item_done, status,
                           created_at, updated_at
                 """,
-                body.project_id,
-                body.name,
-                body.description,
-                sampling_json,
-                rubric_json,
-                len(sampled_run_ids),
-                principal.user_id,
-            )
-            assert queue_row is not None
-            queue_id: UUID = queue_row["id"]
+            body.project_id,
+            body.name,
+            body.description,
+            sampling_json,
+            rubric_json,
+            len(sampled_run_ids),
+            principal.user_id,
+        )
+        assert queue_row is not None
+        queue_id: UUID = queue_row["id"]
 
-            if sampled_run_ids:
-                await conn.executemany(
-                    """
+        if sampled_run_ids:
+            await conn.executemany(
+                """
                     insert into annotation_item (
                         queue_id, project_id, run_id, status
                     )
                     values ($1, $2, $3, 'pending')
                     on conflict (queue_id, run_id) do nothing
                     """,
-                    [
-                        (queue_id, body.project_id, run_id)
-                        for run_id in sampled_run_ids
-                    ],
-                )
+                [(queue_id, body.project_id, run_id) for run_id in sampled_run_ids],
+            )
 
     await audit.record(
         pool,
@@ -251,7 +249,9 @@ async def get_queue(
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "queue not found")
     await _assert_project_role(
-        pool, principal, row["project_id"],
+        pool,
+        principal,
+        row["project_id"],
         ("owner", "admin", "member", "viewer"),
     )
     return _queue_out(row)
@@ -264,15 +264,11 @@ async def delete_queue(
     principal: Principal = Depends(require_user),
 ) -> None:
     pool: asyncpg.Pool = request.app.state.pg
-    row = await pool.fetchrow(
-        "select project_id from annotation_queue where id = $1", queue_id
-    )
+    row = await pool.fetchrow("select project_id from annotation_queue where id = $1", queue_id)
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "queue not found")
     project_id: UUID = row["project_id"]
-    workspace_id = await _assert_project_role(
-        pool, principal, project_id, ("owner", "admin")
-    )
+    workspace_id = await _assert_project_role(pool, principal, project_id, ("owner", "admin"))
     await pool.execute("delete from annotation_queue where id = $1", queue_id)
     await audit.record(
         pool,
@@ -301,13 +297,13 @@ async def list_items(
     principal: Principal = Depends(require_user),
 ) -> AnnotationItemList:
     pool: asyncpg.Pool = request.app.state.pg
-    queue = await pool.fetchrow(
-        "select project_id from annotation_queue where id = $1", queue_id
-    )
+    queue = await pool.fetchrow("select project_id from annotation_queue where id = $1", queue_id)
     if queue is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "queue not found")
     await _assert_project_role(
-        pool, principal, queue["project_id"],
+        pool,
+        principal,
+        queue["project_id"],
         ("owner", "admin", "member", "viewer"),
     )
 
@@ -320,18 +316,14 @@ async def list_items(
     """
     if status_filter is not None:
         if status_filter not in _ITEM_STATUSES:
-            raise HTTPException(
-                status.HTTP_400_BAD_REQUEST, "invalid status filter"
-            )
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid status filter")
         args.append(status_filter)
         sql += f" and status = ${len(args)}"
     args.append(limit)
     sql += f" order by created_at asc limit ${len(args)}"
 
     rows = await pool.fetch(sql, *args)
-    return AnnotationItemList(
-        items=[_item_out(r) for r in rows]
-    )
+    return AnnotationItemList(items=[_item_out(r) for r in rows])
 
 
 @router.post(
@@ -361,7 +353,8 @@ async def submit_item(
     item = await pool.fetchrow(
         """select id, run_id, status from annotation_item
              where id = $1 and queue_id = $2""",
-        item_id, queue_id,
+        item_id,
+        queue_id,
     )
     if item is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "item not found")
@@ -388,10 +381,9 @@ async def submit_item(
 
     was_pending = item["status"] == "pending"
 
-    async with pool.acquire() as conn:
-        async with conn.transaction():
-            updated = await conn.fetchrow(
-                """
+    async with pool.acquire() as conn, conn.transaction():
+        updated = await conn.fetchrow(
+            """
                 update annotation_item
                    set status = 'done',
                        label = $2,
@@ -403,27 +395,27 @@ async def submit_item(
                 returning id, queue_id, project_id, run_id, status,
                           label, score, rationale, reviewed_at, created_at
                 """,
-                item_id,
-                body.label,
-                score,
-                body.rationale,
-                principal.user_id,
-            )
-            assert updated is not None
+            item_id,
+            body.label,
+            score,
+            body.rationale,
+            principal.user_id,
+        )
+        assert updated is not None
 
-            if was_pending:
-                # Only count first-time submissions toward item_done so a
-                # reviewer fixing their answer doesn't inflate the counter.
-                await conn.execute(
-                    """update annotation_queue
+        if was_pending:
+            # Only count first-time submissions toward item_done so a
+            # reviewer fixing their answer doesn't inflate the counter.
+            await conn.execute(
+                """update annotation_queue
                           set item_done = item_done + 1,
                               status = case
                                   when item_done + 1 >= item_total then 'complete'
                                   else status
                               end
                         where id = $1""",
-                    queue_id,
-                )
+                queue_id,
+            )
 
     # ClickHouse write: best-effort but we still surface failures so
     # the UI can show the operator something is wrong with the analytics
@@ -433,27 +425,39 @@ async def submit_item(
         try:
             await ch.insert(
                 "eval_score",
-                [(
-                    str(project_id),
-                    str(updated["run_id"]),
-                    None,
-                    str(queue_id),
-                    "human",
-                    "annotation",
-                    "v1",
-                    float(score),
-                    body.label,
-                    body.rationale or "",
-                    "",
-                    "ok",
-                    datetime.now(timezone.utc),
-                    0,
-                )],
+                [
+                    (
+                        str(project_id),
+                        str(updated["run_id"]),
+                        None,
+                        str(queue_id),
+                        "human",
+                        "annotation",
+                        "v1",
+                        float(score),
+                        body.label,
+                        body.rationale or "",
+                        "",
+                        "ok",
+                        datetime.now(UTC),
+                        0,
+                    )
+                ],
                 column_names=[
-                    "project_id", "run_id", "span_id", "eval_config_id",
-                    "judge_name", "judge_endpoint", "judge_version",
-                    "score", "label", "rationale", "raw_output",
-                    "outcome", "judged_at", "cost_usd",
+                    "project_id",
+                    "run_id",
+                    "span_id",
+                    "eval_config_id",
+                    "judge_name",
+                    "judge_endpoint",
+                    "judge_version",
+                    "score",
+                    "label",
+                    "rationale",
+                    "raw_output",
+                    "outcome",
+                    "judged_at",
+                    "cost_usd",
                 ],
             )
         except Exception as exc:  # noqa: BLE001
@@ -493,14 +497,10 @@ async def skip_item(
     principal: Principal = Depends(require_user),
 ) -> AnnotationItemOut:
     pool: asyncpg.Pool = request.app.state.pg
-    queue = await pool.fetchrow(
-        "select project_id from annotation_queue where id = $1", queue_id
-    )
+    queue = await pool.fetchrow("select project_id from annotation_queue where id = $1", queue_id)
     if queue is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "queue not found")
-    await _assert_project_role(
-        pool, principal, queue["project_id"], ("owner", "admin", "member")
-    )
+    await _assert_project_role(pool, principal, queue["project_id"], ("owner", "admin", "member"))
 
     updated = await pool.fetchrow(
         """update annotation_item
@@ -508,12 +508,11 @@ async def skip_item(
             where id = $1 and queue_id = $2 and status = 'pending'
             returning id, queue_id, project_id, run_id, status, label, score,
                       rationale, reviewed_at, created_at""",
-        item_id, queue_id,
+        item_id,
+        queue_id,
     )
     if updated is None:
-        raise HTTPException(
-            status.HTTP_404_NOT_FOUND, "item not found or already actioned"
-        )
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "item not found or already actioned")
     return _item_out(updated)
 
 

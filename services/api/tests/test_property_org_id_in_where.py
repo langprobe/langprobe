@@ -112,8 +112,7 @@ def test_every_clickhouse_query_filters_by_org_id():
     if pending_offenders:
         # Just print; don't fail. The other assertion above is the gate.
         print(  # noqa: T201
-            "Pending router migrations:\n  - "
-            + "\n  - ".join(pending_offenders)
+            "Pending router migrations:\n  - " + "\n  - ".join(pending_offenders)
         )
 
 

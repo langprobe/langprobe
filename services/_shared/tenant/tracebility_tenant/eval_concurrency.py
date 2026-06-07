@@ -91,15 +91,11 @@ class EvalConcurrency:
             return False
         acq_sha, _ = await self._ensure_loaded()
         try:
-            granted = await self._redis.evalsha(
-                acq_sha, 1, _key(org_id), cap, self._stuck_after_s
-            )
+            granted = await self._redis.evalsha(acq_sha, 1, _key(org_id), cap, self._stuck_after_s)
         except redis_async.NoScriptError:
             self._acq_sha = None
             acq_sha, _ = await self._ensure_loaded()
-            granted = await self._redis.evalsha(
-                acq_sha, 1, _key(org_id), cap, self._stuck_after_s
-            )
+            granted = await self._redis.evalsha(acq_sha, 1, _key(org_id), cap, self._stuck_after_s)
         return bool(int(granted))
 
     async def release(self, *, org_id: UUID) -> int:

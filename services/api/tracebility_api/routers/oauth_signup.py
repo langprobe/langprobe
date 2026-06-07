@@ -49,7 +49,7 @@ import secrets
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -117,12 +117,8 @@ async def list_providers(request: Request) -> dict[str, Any]:
     """
     settings: Settings = request.app.state.settings
     return {
-        "google": bool(
-            settings.oauth_google_client_id and settings.oauth_google_client_secret
-        ),
-        "github": bool(
-            settings.oauth_github_client_id and settings.oauth_github_client_secret
-        ),
+        "google": bool(settings.oauth_google_client_id and settings.oauth_google_client_secret),
+        "github": bool(settings.oauth_github_client_id and settings.oauth_github_client_secret),
     }
 
 
@@ -143,7 +139,7 @@ async def start(
     redirect_uri = _redirect_uri(provider, settings)
     safe_return_to = _safe_return_to(return_to, settings)
 
-    expires_at = datetime.now(timezone.utc) + timedelta(seconds=_STATE_TTL_SECONDS)
+    expires_at = datetime.now(UTC) + timedelta(seconds=_STATE_TTL_SECONDS)
     await pool.execute(
         """
         insert into oauth_state (
@@ -215,7 +211,7 @@ async def callback(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid oauth state")
     if state_row["provider"] != provider:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "oauth state provider mismatch")
-    if state_row["expires_at"] < datetime.now(timezone.utc):
+    if state_row["expires_at"] < datetime.now(UTC):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "oauth state expired")
 
     client_id, client_secret = _provider_creds(provider, settings)
@@ -237,9 +233,7 @@ async def callback(
                 redirect_uri=state_row["redirect_uri"],
             )
     except RuntimeError as exc:
-        log.warning(
-            "oauth userinfo failed", provider=provider, error=str(exc)
-        )
+        log.warning("oauth userinfo failed", provider=provider, error=str(exc))
         raise HTTPException(
             status.HTTP_502_BAD_GATEWAY,
             f"{provider} oauth handshake failed: {exc}",
@@ -363,45 +357,46 @@ async def _github_userinfo(
     sub = user.get("id")
     if not isinstance(sub, (int, str)):
         raise RuntimeError("github user response missing id")
-    name = user.get("name") if isinstance(user.get("name"), str) else (
-        user.get("login") if isinstance(user.get("login"), str) else ""
+    name = (
+        user.get("name")
+        if isinstance(user.get("name"), str)
+        else (user.get("login") if isinstance(user.get("login"), str) else "")
     )
     email_v = user.get("email")
     # GitHub omits email when the user has it private; we hit the
     # /emails endpoint to find a verified primary one.
     if not isinstance(email_v, str) or "@" not in email_v:
-        emails = await asyncio.to_thread(
-            _get_json, url=_GITHUB_EMAILS, headers=headers
-        )
+        emails = await asyncio.to_thread(_get_json, url=_GITHUB_EMAILS, headers=headers)
         if not isinstance(emails, list):
             raise RuntimeError("github /user/emails returned unexpected shape")
         email_v = None
         for entry in emails:
             if not isinstance(entry, dict):
                 continue
-            if entry.get("primary") and entry.get("verified") and isinstance(
-                entry.get("email"), str
+            if (
+                entry.get("primary")
+                and entry.get("verified")
+                and isinstance(entry.get("email"), str)
             ):
                 email_v = str(entry["email"])
                 break
         if email_v is None:
             for entry in emails:
-                if isinstance(entry, dict) and entry.get("verified") and isinstance(
-                    entry.get("email"), str
+                if (
+                    isinstance(entry, dict)
+                    and entry.get("verified")
+                    and isinstance(entry.get("email"), str)
                 ):
                     email_v = str(entry["email"])
                     break
         if email_v is None:
             raise RuntimeError(
-                "no verified github email found "
-                "(check the user:email scope is granted)"
+                "no verified github email found (check the user:email scope is granted)"
             )
     return str(email_v).lower(), str(name), str(sub)
 
 
-def _post_form(
-    *, url: str, data: dict[str, str], accept_json: bool = False
-) -> dict[str, Any]:
+def _post_form(*, url: str, data: dict[str, str], accept_json: bool = False) -> dict[str, Any]:
     body = urllib.parse.urlencode(data).encode("utf-8")
     headers = {"Content-Type": "application/x-www-form-urlencoded"}
     if accept_json:
@@ -458,24 +453,23 @@ async def _resolve_or_provision_user(
     signup is a common UX mistake. We just record the audit action
     differently so operators can tell signups apart from logins.
     """
-    async with pool.acquire() as conn:
-        async with conn.transaction():
-            existing = await conn.fetchrow(
-                """select id, email, is_root, deleted_at
+    async with pool.acquire() as conn, conn.transaction():
+        existing = await conn.fetchrow(
+            """select id, email, is_root, deleted_at
                      from app_user where email = $1""",
-                email,
+            email,
+        )
+        if existing is not None and existing["deleted_at"] is not None:
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "user account is deactivated",
             )
-            if existing is not None and existing["deleted_at"] is not None:
-                raise HTTPException(
-                    status.HTTP_403_FORBIDDEN,
-                    "user account is deactivated",
-                )
-            if existing is not None:
-                # Refresh the IdP linkage on every login so the most
-                # recent provider is recorded; we don't track per-
-                # provider linkages in v1.
-                await conn.execute(
-                    """
+        if existing is not None:
+            # Refresh the IdP linkage on every login so the most
+            # recent provider is recorded; we don't track per-
+            # provider linkages in v1.
+            await conn.execute(
+                """
                     update app_user
                        set external_idp = $2,
                            external_subject = $3,
@@ -483,91 +477,91 @@ async def _resolve_or_provision_user(
                      where id = $1
                        and password_hash is null
                     """,
-                    existing["id"],
-                    f"oauth:{provider}",
-                    subject,
-                )
-                return {
-                    "id": existing["id"],
-                    "email": existing["email"],
-                    "is_root": existing["is_root"],
-                }, False
+                existing["id"],
+                f"oauth:{provider}",
+                subject,
+            )
+            return {
+                "id": existing["id"],
+                "email": existing["email"],
+                "is_root": existing["is_root"],
+            }, False
 
-            # Brand new user: create app_user + personal org/workspace/project.
-            display_name = full_name or email.split("@", 1)[0]
-            user_row = await conn.fetchrow(
-                """
+        # Brand new user: create app_user + personal org/workspace/project.
+        display_name = full_name or email.split("@", 1)[0]
+        user_row = await conn.fetchrow(
+            """
                 insert into app_user (
                     email, name, password_hash,
                     external_idp, external_subject, last_login_at
                 ) values ($1, $2, NULL, $3, $4, now())
                 returning id, email, is_root
                 """,
-                email,
-                display_name,
-                f"oauth:{provider}",
-                subject,
-            )
-            assert user_row is not None
-            user_id = user_row["id"]
+            email,
+            display_name,
+            f"oauth:{provider}",
+            subject,
+        )
+        assert user_row is not None
+        user_id = user_row["id"]
 
-            slug_base = _slug_from_email(email)
-            slug = await _unique_org_slug(conn, slug_base)
+        slug_base = _slug_from_email(email)
+        slug = await _unique_org_slug(conn, slug_base)
 
-            org_row = await conn.fetchrow(
-                """
+        org_row = await conn.fetchrow(
+            """
                 insert into org (slug, name)
                 values ($1, $2)
                 returning id
                 """,
-                slug,
-                f"{display_name}'s workspace",
-            )
-            assert org_row is not None
-            org_id = org_row["id"]
-            await conn.execute(
-                """
+            slug,
+            f"{display_name}'s workspace",
+        )
+        assert org_row is not None
+        org_id = org_row["id"]
+        await conn.execute(
+            """
                 insert into org_member (org_id, user_id, role)
                 values ($1, $2, 'owner')
                 """,
-                org_id,
-                user_id,
-            )
+            org_id,
+            user_id,
+        )
 
-            workspace_row = await conn.fetchrow(
-                """
+        workspace_row = await conn.fetchrow(
+            """
                 insert into workspace (org_id, slug, name)
                 values ($1, $2, $3)
                 returning id
                 """,
-                org_id,
-                slug,
-                "Personal",
-            )
-            assert workspace_row is not None
-            workspace_id = workspace_row["id"]
-            await conn.execute(
-                """
+            org_id,
+            slug,
+            "Personal",
+        )
+        assert workspace_row is not None
+        workspace_id = workspace_row["id"]
+        await conn.execute(
+            """
                 insert into workspace_member (workspace_id, user_id, role)
                 values ($1, $2, 'admin')
                 """,
-                workspace_id,
-                user_id,
-            )
+            workspace_id,
+            user_id,
+        )
 
-            await conn.execute(
-                """
+        await conn.execute(
+            """
                 insert into project (workspace_id, slug, name)
                 values ($1, 'default', 'Default')
                 """,
-                workspace_id,
-            )
+            workspace_id,
+        )
 
-            return {
-                "id": user_row["id"],
-                "email": user_row["email"],
-                "is_root": user_row["is_root"],
-            }, True
+        return {
+            "id": user_row["id"],
+            "email": user_row["email"],
+            "is_root": user_row["is_root"],
+        }, True
 
 
 def _slug_from_email(email: str) -> str:
@@ -644,7 +638,7 @@ def _default_return_to(settings: Settings) -> str:
 
 
 def _utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 # Keep type-checkers happy when the field is unused in the helper above.

@@ -259,9 +259,7 @@ def _stringify(value: Any) -> str:
 
 def _resolve_io(attrs: dict[str, Any]) -> tuple[str | None, str | None]:
     inputs: Any = (
-        attrs.get("input.value")
-        or attrs.get("llm.input_messages")
-        or attrs.get("gen_ai.prompt")
+        attrs.get("input.value") or attrs.get("llm.input_messages") or attrs.get("gen_ai.prompt")
     )
     outputs: Any = (
         attrs.get("output.value")
@@ -314,9 +312,7 @@ def _translate_spans(
     for rs in resource_spans:
         if not isinstance(rs, dict):
             continue
-        resource_attrs = _decode_attributes(
-            (rs.get("resource") or {}).get("attributes") or []
-        )
+        resource_attrs = _decode_attributes((rs.get("resource") or {}).get("attributes") or [])
         for ss in rs.get("scopeSpans") or []:
             if not isinstance(ss, dict):
                 continue
@@ -395,8 +391,7 @@ def _translate_spans(
                 # Track the root: prefer a span with no parent; if
                 # ambiguous, the earliest-starting wins.
                 if parent_uuid is None and (
-                    bucket["root_span"] is None
-                    or start < bucket["root_span"].start_time
+                    bucket["root_span"] is None or start < bucket["root_span"].start_time
                 ):
                     bucket["root_span"] = span_obj
 

@@ -116,9 +116,7 @@ async def get_metrics(
         rows = await ch.query(sql, parameters=params)
     except Exception as exc:  # noqa: BLE001
         log.warning("metrics query failed", error=str(exc))
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE, "data plane unavailable"
-        ) from exc
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "data plane unavailable") from exc
 
     row = rows[0] if rows else {}
     runs = int(row.get("runs", 0) or 0)
@@ -190,9 +188,7 @@ async def get_timeseries(
         rows = await ch.query(sql, parameters=params)
     except Exception as exc:  # noqa: BLE001
         log.warning("timeseries query failed", error=str(exc))
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE, "data plane unavailable"
-        ) from exc
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "data plane unavailable") from exc
 
     buckets = [
         TimeseriesBucket(
@@ -267,9 +263,7 @@ async def get_model_breakdown(
         rows = await ch.query(sql, parameters=params)
     except Exception as exc:  # noqa: BLE001
         log.warning("by-model query failed", error=str(exc))
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE, "data plane unavailable"
-        ) from exc
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "data plane unavailable") from exc
 
     items = [
         ModelBreakdownItem(

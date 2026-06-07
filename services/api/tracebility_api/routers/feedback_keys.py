@@ -66,7 +66,9 @@ async def list_feedback_keys(
 ) -> list[FeedbackKeyOut]:
     pool: asyncpg.Pool = request.app.state.pg
     await _assert_project_role(
-        pool, project_id, principal,
+        pool,
+        project_id,
+        principal,
         allowed=("owner", "admin", "member", "viewer"),
     )
     rows = await pool.fetch(
@@ -94,7 +96,9 @@ async def create_feedback_key(
 ) -> FeedbackKeyCreateResponse:
     pool: asyncpg.Pool = request.app.state.pg
     workspace_id = await _assert_project_role(
-        pool, body.project_id, principal,
+        pool,
+        body.project_id,
+        principal,
         allowed=("owner", "admin"),
     )
     # very light origin sanity — full URL parsing is overkill for an allowlist
@@ -192,6 +196,7 @@ async def revoke_feedback_key(
 
 
 # ----- helpers -------------------------------------------------------------
+
 
 async def _assert_project_role(
     pool: asyncpg.Pool,

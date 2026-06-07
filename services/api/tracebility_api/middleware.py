@@ -20,8 +20,6 @@ that's the kind of "helpful" magic that masks bugs. Surface it instead.
 
 from __future__ import annotations
 
-import asyncio
-
 import asyncpg
 import structlog
 from fastapi import FastAPI, Request
@@ -52,7 +50,7 @@ class AuditFailClosedMiddleware(BaseHTTPMiddleware):
             try:
                 async with pool.acquire(timeout=_PG_PING_TIMEOUT_SECONDS) as conn:
                     await conn.fetchval("select 1")
-            except (asyncpg.PostgresError, OSError, asyncio.TimeoutError) as exc:
+            except (TimeoutError, asyncpg.PostgresError, OSError) as exc:
                 log.warning(
                     "pg unreachable on write request",
                     method=request.method,

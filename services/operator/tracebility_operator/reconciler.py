@@ -15,7 +15,7 @@ documentation to apply equally.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 
@@ -40,7 +40,8 @@ async def reconcile(*, name: str, namespace: str, spec: dict[str, Any]) -> Recon
     manifests = build_manifests(name=name, namespace=namespace, spec=spec)
 
     try:
-        from kubernetes import client, config as k8s_config  # type: ignore[import]
+        from kubernetes import client  # type: ignore[import]
+        from kubernetes import config as k8s_config
     except ImportError as exc:  # pragma: no cover
         return ReconcileSummary(
             ok=False,
@@ -124,9 +125,7 @@ async def reconcile(*, name: str, namespace: str, spec: dict[str, Any]) -> Recon
 # ---------------------------------------------------------------------------
 
 
-def build_manifests(
-    *, name: str, namespace: str, spec: dict[str, Any]
-) -> list[dict[str, Any]]:
+def build_manifests(*, name: str, namespace: str, spec: dict[str, Any]) -> list[dict[str, Any]]:
     """Build the ordered list of k8s objects for one Tracebility CR."""
     image_cfg = spec.get("image") or {}
     registry = image_cfg.get("registry") or "ghcr.io/tracebility-ai"
@@ -191,10 +190,12 @@ def build_manifests(
         if e:
             api_envs.append(e)
     if api.get("publicApiBase"):
-        api_envs.append({
-            "name": "TRACEBILITY_CORS_ALLOW_ORIGIN",
-            "value": api["publicApiBase"],
-        })
+        api_envs.append(
+            {
+                "name": "TRACEBILITY_CORS_ALLOW_ORIGIN",
+                "value": api["publicApiBase"],
+            }
+        )
 
     ingest_envs: list[dict[str, Any]] = [
         {"name": "TRACEBILITY_BIND_HOST", "value": "0.0.0.0"},
@@ -232,10 +233,12 @@ def build_manifests(
         },
     ]
     if web.get("publicApiBase") or api.get("publicApiBase"):
-        web_envs.append({
-            "name": "NEXT_PUBLIC_API_BASE",
-            "value": web.get("publicApiBase") or api.get("publicApiBase"),
-        })
+        web_envs.append(
+            {
+                "name": "NEXT_PUBLIC_API_BASE",
+                "value": web.get("publicApiBase") or api.get("publicApiBase"),
+            }
+        )
 
     manifests: list[dict[str, Any]] = []
 
@@ -249,9 +252,7 @@ def build_manifests(
             replicas=int(api.get("replicas", 2)),
             container={
                 "name": "api",
-                "image": container_image(
-                    "tracebility-api", api.get("repository")
-                ),
+                "image": container_image("tracebility-api", api.get("repository")),
                 "ports": [{"name": "http", "containerPort": api_port}],
                 "env": api_envs,
                 "readinessProbe": _http_probe(api_port, "/healthz", 5, 10),
@@ -291,9 +292,7 @@ def build_manifests(
             strategy="Recreate",
             container={
                 "name": "ingest-api",
-                "image": container_image(
-                    "tracebility-ingest-api", ingest_api.get("repository")
-                ),
+                "image": container_image("tracebility-ingest-api", ingest_api.get("repository")),
                 "ports": [{"name": "http", "containerPort": ingest_port}],
                 "env": ingest_envs,
                 "readinessProbe": _http_probe(ingest_port, "/healthz", 5, 10),
@@ -353,9 +352,7 @@ def build_manifests(
             replicas=int(web.get("replicas", 2)),
             container={
                 "name": "web",
-                "image": container_image(
-                    "tracebility-web", web.get("repository")
-                ),
+                "image": container_image("tracebility-web", web.get("repository")),
                 "ports": [{"name": "http", "containerPort": web_port}],
                 "env": web_envs,
                 "readinessProbe": _http_probe(web_port, "/", 5, 10),
@@ -606,4 +603,4 @@ def _server_side_apply(
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()

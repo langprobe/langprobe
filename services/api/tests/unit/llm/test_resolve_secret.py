@@ -6,7 +6,6 @@ import uuid
 from unittest.mock import AsyncMock
 
 import pytest
-
 from tracebility_api.routers.llm_credentials import resolve_secret
 
 pytestmark = pytest.mark.asyncio
@@ -31,8 +30,14 @@ async def test_falls_back_to_env_when_no_link(fake_pool, monkeypatch) -> None:
 async def test_returns_none_when_neither(fake_pool, monkeypatch) -> None:
     project_id = uuid.uuid4()
     fake_pool.fetchrow = AsyncMock(return_value=None)
-    for var in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY",
-                "MISTRAL_API_KEY", "DEEPSEEK_API_KEY", "GROQ_API_KEY"):
+    for var in (
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "GEMINI_API_KEY",
+        "MISTRAL_API_KEY",
+        "DEEPSEEK_API_KEY",
+        "GROQ_API_KEY",
+    ):
         monkeypatch.delenv(var, raising=False)
     got = await resolve_secret(fake_pool, project_id=project_id, provider="gemini")
     assert got is None

@@ -20,10 +20,20 @@ async def test_dispatch_cost_columns(integration_dsn: str) -> None:
         )
         names = [r["column_name"] for r in cols]
         assert names == [
-            "id", "project_id", "workspace_id", "surface", "surface_ref_id",
-            "provider", "model", "prompt_tokens", "completion_tokens",
-            "cost_usd", "cost_calculated_via", "dispatched_at",
-            "error_code", "error_detail",
+            "id",
+            "project_id",
+            "workspace_id",
+            "surface",
+            "surface_ref_id",
+            "provider",
+            "model",
+            "prompt_tokens",
+            "completion_tokens",
+            "cost_usd",
+            "cost_calculated_via",
+            "dispatched_at",
+            "error_code",
+            "error_detail",
         ]
     finally:
         await pool.close()
@@ -45,7 +55,9 @@ async def test_surface_check_constraint_rejects_unknown(integration_dsn: str) ->
                         provider, model
                     ) values ($1, $2, 'banana', $3, 'openai', 'gpt-4o')
                     """,
-                    proj, ws, proj,
+                    proj,
+                    ws,
+                    proj,
                 )
     finally:
         await pool.close()

@@ -35,7 +35,7 @@ from pydantic import BaseModel, Field
 from .. import audit
 from ..auth import Principal, assert_workspace_role, require_user
 from ..clickhouse_client import ClickHouseQuery
-from . import llm_credentials, luna_judges
+from . import luna_judges
 
 log = structlog.get_logger("tracebility.api.evals")
 
@@ -93,7 +93,9 @@ async def list_runs(
 ) -> list[EvalRunOut]:
     pool: asyncpg.Pool = request.app.state.pg
     await _assert_project_role(
-        pool, project_id, principal,
+        pool,
+        project_id,
+        principal,
         allowed=("owner", "admin", "member", "viewer"),
     )
     rows = await pool.fetch(
@@ -119,7 +121,9 @@ async def create_run(
 ) -> EvalRunOut:
     pool: asyncpg.Pool = request.app.state.pg
     workspace_id = await _assert_project_role(
-        pool, body.project_id, principal,
+        pool,
+        body.project_id,
+        principal,
         allowed=("owner", "admin", "member"),
     )
     # judge_kind accepts the built-in deterministic judges plus
@@ -210,7 +214,9 @@ async def get_run(
     pool: asyncpg.Pool = request.app.state.pg
     row = await _fetch_run(pool, run_id)
     await _assert_project_role(
-        pool, row["project_id"], principal,
+        pool,
+        row["project_id"],
+        principal,
         allowed=("owner", "admin", "member", "viewer"),
     )
     return EvalRunOut(**dict(row))
@@ -226,7 +232,9 @@ async def list_scores(
     pool: asyncpg.Pool = request.app.state.pg
     row = await _fetch_run(pool, run_id)
     await _assert_project_role(
-        pool, row["project_id"], principal,
+        pool,
+        row["project_id"],
+        principal,
         allowed=("owner", "admin", "member", "viewer"),
     )
     ch = _require_clickhouse(request)
@@ -248,9 +256,7 @@ async def list_scores(
         rows = await ch.query(sql, parameters=params)
     except Exception as exc:  # noqa: BLE001
         log.warning("eval scores query failed", error=str(exc))
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE, "data plane unavailable"
-        ) from exc
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "data plane unavailable") from exc
 
     scores = [
         EvalScoreOut(
@@ -268,9 +274,8 @@ async def list_scores(
 
 # ----- background runner ---------------------------------------------------
 
-async def _run_eval(
-    pool: asyncpg.Pool, ch: ClickHouseQuery, run_id: UUID
-) -> None:
+
+async def _run_eval(pool: asyncpg.Pool, ch: ClickHouseQuery, run_id: UUID) -> None:
     """Score every item in the dataset, write one ClickHouse row per item.
 
     Best-effort: failures bubble into `eval_run.error` with status='failed';
@@ -293,12 +298,11 @@ async def _run_eval(
             run_id,
         )
 
-        items = await _fetch_dataset_items(
-            ch, run["project_id"], run["dataset_id"]
-        )
+        items = await _fetch_dataset_items(ch, run["project_id"], run["dataset_id"])
         await pool.execute(
             "update eval_run set item_total=$2 where id=$1",
-            run_id, len(items),
+            run_id,
+            len(items),
         )
 
         # Resolve luna judge once (if applicable) so per-item dispatch
@@ -307,12 +311,12 @@ async def _run_eval(
         luna_row: dict[str, Any] | None = None
         luna_api_key: str | None = None
         if luna_slug is not None:
-            luna_row = await luna_judges.resolve_judge(
-                pool, run["project_id"], luna_slug
-            )
+            luna_row = await luna_judges.resolve_judge(pool, run["project_id"], luna_slug)
             if luna_row is None:
                 await _mark_failed(
-                    pool, run_id, f"luna judge '{luna_slug}' not found",
+                    pool,
+                    run_id,
+                    f"luna judge '{luna_slug}' not found",
                 )
                 return
         rows: list[tuple[Any, ...]] = []
@@ -320,43 +324,41 @@ async def _run_eval(
         judged_at = datetime.utcnow()
         for item in items:
             if luna_row is not None:
-                score, label, rationale, raw_output = (
-                    await luna_judges.apply_luna_judge(
-                        luna_row,
-                        pool=pool,
-                        project_id=run["project_id"],
-                        surface="eval",
-                        surface_ref_id=run_id,
-                        input_text=item["input"],
-                        expected=item["expected"],
-                    )
+                score, label, rationale, raw_output = await luna_judges.apply_luna_judge(
+                    luna_row,
+                    pool=pool,
+                    project_id=run["project_id"],
+                    surface="eval",
+                    surface_ref_id=run_id,
+                    input_text=item["input"],
+                    expected=item["expected"],
                 )
                 judge_endpoint = luna_row["provider"]
                 outcome = "ok" if label != "error" else "failed"
             else:
-                score, label, rationale = _judge(
-                    base_kind, item["input"], item["expected"]
-                )
+                score, label, rationale = _judge(base_kind, item["input"], item["expected"])
                 raw_output = ""
                 judge_endpoint = "builtin"
                 outcome = "ok"
             score_sum += score
-            rows.append((
-                str(run["project_id"]),
-                str(item["item_id"]),       # carry item_id in run_id slot
-                None,                       # span_id
-                str(run_id),                # eval_config_id = our run id
-                run["judge_kind"],          # judge_name (carries luna:slug)
-                judge_endpoint,             # judge_endpoint
-                "v1",                       # judge_version
-                float(score),
-                label,
-                rationale,
-                raw_output,                 # raw_output (LLM response, if any)
-                outcome,
-                judged_at,
-                0,                          # cost_usd
-            ))
+            rows.append(
+                (
+                    str(run["project_id"]),
+                    str(item["item_id"]),  # carry item_id in run_id slot
+                    None,  # span_id
+                    str(run_id),  # eval_config_id = our run id
+                    run["judge_kind"],  # judge_name (carries luna:slug)
+                    judge_endpoint,  # judge_endpoint
+                    "v1",  # judge_version
+                    float(score),
+                    label,
+                    rationale,
+                    raw_output,  # raw_output (LLM response, if any)
+                    outcome,
+                    judged_at,
+                    0,  # cost_usd
+                )
+            )
 
         if rows:
             try:
@@ -364,10 +366,20 @@ async def _run_eval(
                     "eval_score",
                     rows,
                     column_names=[
-                        "project_id", "run_id", "span_id", "eval_config_id",
-                        "judge_name", "judge_endpoint", "judge_version",
-                        "score", "label", "rationale", "raw_output",
-                        "outcome", "judged_at", "cost_usd",
+                        "project_id",
+                        "run_id",
+                        "span_id",
+                        "eval_config_id",
+                        "judge_name",
+                        "judge_endpoint",
+                        "judge_version",
+                        "score",
+                        "label",
+                        "rationale",
+                        "raw_output",
+                        "outcome",
+                        "judged_at",
+                        "cost_usd",
                     ],
                 )
             except Exception as exc:  # noqa: BLE001
@@ -382,7 +394,10 @@ async def _run_eval(
                 finished_at=now()
             where id=$1
             """,
-            run_id, len(rows), score_sum, avg,
+            run_id,
+            len(rows),
+            score_sum,
+            avg,
         )
     except Exception as exc:  # noqa: BLE001
         log.warning("eval run failed", run_id=str(run_id), error=str(exc))
@@ -436,11 +451,13 @@ async def _mark_failed(pool: asyncpg.Pool, run_id: UUID, reason: str) -> None:
         set status='failed', error=$2, finished_at=now()
         where id=$1
         """,
-        run_id, reason[:2000],
+        run_id,
+        reason[:2000],
     )
 
 
 # ----- helpers -------------------------------------------------------------
+
 
 async def _fetch_run(pool: asyncpg.Pool, run_id: UUID) -> asyncpg.Record:
     row = await pool.fetchrow(

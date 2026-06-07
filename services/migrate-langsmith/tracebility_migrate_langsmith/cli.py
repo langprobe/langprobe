@@ -33,15 +33,14 @@ import argparse
 import json
 import os
 import sys
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 try:
     import httpx
 except ImportError as exc:  # pragma: no cover
-    raise SystemExit(
-        "tracebility-migrate-langsmith requires httpx; pip install httpx"
-    ) from exc
+    raise SystemExit("tracebility-migrate-langsmith requires httpx; pip install httpx") from exc
 
 
 _DEFAULT_BATCH_SIZE = 100
@@ -68,8 +67,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--api-key",
-        default=os.environ.get("TRACEBILITY_INGEST_KEY")
-        or os.environ.get("LANGSMITH_API_KEY"),
+        default=os.environ.get("TRACEBILITY_INGEST_KEY") or os.environ.get("LANGSMITH_API_KEY"),
         help="Bearer token for the ingest host (default: env TRACEBILITY_INGEST_KEY).",
     )
     parser.add_argument(
@@ -150,8 +148,7 @@ def main(argv: list[str] | None = None) -> int:
                 continue
             if resp.status_code >= 400:
                 msg = (
-                    f"batch {posted_batches}: ingest returned {resp.status_code}: "
-                    f"{resp.text[:200]}"
+                    f"batch {posted_batches}: ingest returned {resp.status_code}: {resp.text[:200]}"
                 )
                 print(msg, file=sys.stderr)
                 failed_batches.append(msg)
@@ -192,9 +189,7 @@ def _stream_rows(source: str, limit: int | None) -> Iterator[dict[str, Any]]:
         if not path.exists():
             raise SystemExit(f"input not found: {source}")
         if path.is_dir():
-            jsonl_files = sorted(
-                p for p in path.rglob("*") if p.suffix in (".jsonl", ".json")
-            )
+            jsonl_files = sorted(p for p in path.rglob("*") if p.suffix in (".jsonl", ".json"))
             if not jsonl_files:
                 raise SystemExit(f"no .jsonl/.json files under {source}")
             files = [(str(p), open(p)) for p in jsonl_files]  # type: ignore[arg-type]

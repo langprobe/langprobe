@@ -318,9 +318,7 @@ class ClickHouseWriter:
     def __init__(self, url: str) -> None:
         self._client: Client = clickhouse_connect.get_client(dsn=url)
 
-    def insert_envelope(
-        self, envelope: dict[str, Any]
-    ) -> tuple[int, int, int]:
+    def insert_envelope(self, envelope: dict[str, Any]) -> tuple[int, int, int]:
         """Translate one envelope into row inserts.
 
         Returns ``(runs, spans, replay_captures)`` counts. The third
@@ -339,12 +337,8 @@ class ClickHouseWriter:
         for r in runs:
             run_rows.append(_row_for_run(envelope, r))
             for s in r.get("spans") or []:
-                span_rows.append(
-                    _row_for_span(envelope, s, parent_run_id=r["run_id"])
-                )
-                cap = _row_for_replay_capture(
-                    envelope, s, parent_run_id=r["run_id"]
-                )
+                span_rows.append(_row_for_span(envelope, s, parent_run_id=r["run_id"]))
+                cap = _row_for_replay_capture(envelope, s, parent_run_id=r["run_id"])
                 if cap is not None:
                     capture_rows.append(cap)
         for s in loose_spans:

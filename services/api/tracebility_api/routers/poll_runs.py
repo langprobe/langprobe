@@ -38,7 +38,7 @@ from pydantic import BaseModel, Field
 from .. import audit
 from ..auth import Principal, assert_workspace_role, require_user
 from ..clickhouse_client import ClickHouseQuery
-from . import llm_credentials, luna_judges
+from . import luna_judges
 from .evals import _judge  # reuse the built-in deterministic judge bench
 
 log = structlog.get_logger("tracebility.api.poll_runs")
@@ -99,7 +99,9 @@ async def list_runs(
 ) -> list[PollRunOut]:
     pool: asyncpg.Pool = request.app.state.pg
     await _assert_project_role(
-        pool, principal, project_id,
+        pool,
+        principal,
+        project_id,
         ("owner", "admin", "member", "viewer"),
     )
     rows = await pool.fetch(
@@ -142,9 +144,7 @@ async def create_run(
     for j in unique_judges:
         base_kind, luna_slug = luna_judges.parse_judge_kind(j)
         if luna_slug is not None:
-            judge_row = await luna_judges.resolve_judge(
-                pool, body.project_id, luna_slug
-            )
+            judge_row = await luna_judges.resolve_judge(pool, body.project_id, luna_slug)
             if judge_row is None:
                 raise HTTPException(
                     status.HTTP_404_NOT_FOUND,
@@ -222,7 +222,9 @@ async def get_run(
     pool: asyncpg.Pool = request.app.state.pg
     row = await _fetch_poll(pool, poll_id)
     await _assert_project_role(
-        pool, principal, row["project_id"],
+        pool,
+        principal,
+        row["project_id"],
         ("owner", "admin", "member", "viewer"),
     )
     return PollRunOut(**dict(row))
@@ -238,7 +240,9 @@ async def list_items(
     pool: asyncpg.Pool = request.app.state.pg
     row = await _fetch_poll(pool, poll_id)
     await _assert_project_role(
-        pool, principal, row["project_id"],
+        pool,
+        principal,
+        row["project_id"],
         ("owner", "admin", "member", "viewer"),
     )
     ch = _require_clickhouse(request)
@@ -265,9 +269,7 @@ async def list_items(
         rows = await ch.query(sql, parameters=params)
     except Exception as exc:  # noqa: BLE001
         log.warning("poll items query failed", error=str(exc))
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE, "data plane unavailable"
-        ) from exc
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "data plane unavailable") from exc
 
     aggregation = row["aggregation"]
     judges = list(row["judges"])
@@ -345,9 +347,7 @@ async def _run_poll(
         for judge in judges:
             base, slug = luna_judges.parse_judge_kind(judge)
             if slug is not None:
-                row = await luna_judges.resolve_judge(
-                    pool, poll["project_id"], slug
-                )
+                row = await luna_judges.resolve_judge(pool, poll["project_id"], slug)
                 if row is None:
                     await _mark_failed(
                         pool,
@@ -357,12 +357,11 @@ async def _run_poll(
                     return
                 luna_rows[judge] = row
 
-        items = await _fetch_dataset_items(
-            ch, poll["project_id"], poll["dataset_id"]
-        )
+        items = await _fetch_dataset_items(ch, poll["project_id"], poll["dataset_id"])
         await pool.execute(
             "update poll_run set item_total=$2 where id=$1",
-            poll_id, len(items),
+            poll_id,
+            len(items),
         )
 
         rows: list[tuple[Any, ...]] = []
@@ -373,43 +372,41 @@ async def _run_poll(
             for judge in judges:
                 if judge in luna_rows:
                     luna_row = luna_rows[judge]
-                    score, label, rationale, raw_output = (
-                        await luna_judges.apply_luna_judge(
-                            luna_row,
-                            pool=pool,
-                            project_id=poll["project_id"],
-                            surface="poll",
-                            surface_ref_id=poll_id,
-                            input_text=item["input"],
-                            expected=item["expected"],
-                        )
+                    score, label, rationale, raw_output = await luna_judges.apply_luna_judge(
+                        luna_row,
+                        pool=pool,
+                        project_id=poll["project_id"],
+                        surface="poll",
+                        surface_ref_id=poll_id,
+                        input_text=item["input"],
+                        expected=item["expected"],
                     )
                     judge_endpoint = luna_row["provider"]
                     outcome = "ok" if label != "error" else "failed"
                 else:
-                    score, label, rationale = _judge(
-                        judge, item["input"], item["expected"]
-                    )
+                    score, label, rationale = _judge(judge, item["input"], item["expected"])
                     raw_output = ""
                     judge_endpoint = "builtin"
                     outcome = "ok"
                 scores_for_item.append((judge, score))
-                rows.append((
-                    str(poll["project_id"]),
-                    str(item["item_id"]),     # carry item_id in run_id slot
-                    None,                     # span_id
-                    str(poll_id),             # eval_config_id = poll_run.id
-                    judge,                    # judge_name (carries luna:slug)
-                    judge_endpoint,           # judge_endpoint
-                    "v1",                     # judge_version
-                    float(score),
-                    label,
-                    rationale,
-                    raw_output,               # raw_output (LLM response, if any)
-                    outcome,
-                    judged_at,
-                    0,                        # cost_usd
-                ))
+                rows.append(
+                    (
+                        str(poll["project_id"]),
+                        str(item["item_id"]),  # carry item_id in run_id slot
+                        None,  # span_id
+                        str(poll_id),  # eval_config_id = poll_run.id
+                        judge,  # judge_name (carries luna:slug)
+                        judge_endpoint,  # judge_endpoint
+                        "v1",  # judge_version
+                        float(score),
+                        label,
+                        rationale,
+                        raw_output,  # raw_output (LLM response, if any)
+                        outcome,
+                        judged_at,
+                        0,  # cost_usd
+                    )
+                )
             per_item_scores[str(item["item_id"])] = scores_for_item
 
         if rows:
@@ -418,10 +415,20 @@ async def _run_poll(
                     "eval_score",
                     rows,
                     column_names=[
-                        "project_id", "run_id", "span_id", "eval_config_id",
-                        "judge_name", "judge_endpoint", "judge_version",
-                        "score", "label", "rationale", "raw_output",
-                        "outcome", "judged_at", "cost_usd",
+                        "project_id",
+                        "run_id",
+                        "span_id",
+                        "eval_config_id",
+                        "judge_name",
+                        "judge_endpoint",
+                        "judge_version",
+                        "score",
+                        "label",
+                        "rationale",
+                        "raw_output",
+                        "outcome",
+                        "judged_at",
+                        "cost_usd",
                     ],
                 )
             except Exception as exc:  # noqa: BLE001
@@ -443,7 +450,10 @@ async def _run_poll(
                    finished_at=now()
              where id=$1
             """,
-            poll_id, len(items), consensus_avg, agreement,
+            poll_id,
+            len(items),
+            consensus_avg,
+            agreement,
         )
     except Exception as exc:  # noqa: BLE001
         log.warning("poll run failed", poll_id=str(poll_id), error=str(exc))
@@ -554,7 +564,8 @@ async def _mark_failed(pool: asyncpg.Pool, poll_id: UUID, reason: str) -> None:
         """update poll_run
               set status='failed', error=$2, finished_at=now()
             where id=$1""",
-        poll_id, reason[:2000],
+        poll_id,
+        reason[:2000],
     )
 
 

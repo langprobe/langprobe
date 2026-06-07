@@ -15,7 +15,6 @@ import clickhouse_connect
 import pytest
 import pytest_asyncio
 import redis.asyncio as redis_async
-
 from tracebility_tenant.quota import current_period
 from tracebility_tenant.reconciler_quota import reconcile_once
 
@@ -79,9 +78,7 @@ async def test_reconcile_writes_postgres_and_redis(pg_pool, ch_client, redis_cli
     """Insert one billing_meter row, run reconciler, verify the
     quota_period row + redis counter + over-flag all line up."""
     # Pick a real org from the live db so FKs are satisfied.
-    org_row = await pg_pool.fetchrow(
-        "select id from org where deleted_at is null limit 1"
-    )
+    org_row = await pg_pool.fetchrow("select id from org where deleted_at is null limit 1")
     if org_row is None:
         pytest.skip("no orgs in postgres")
     org_id = org_row["id"]

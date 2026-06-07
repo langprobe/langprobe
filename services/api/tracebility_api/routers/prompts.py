@@ -99,7 +99,9 @@ async def list_prompts(
 ) -> list[PromptOut]:
     pool: asyncpg.Pool = request.app.state.pg
     await _assert_project_role(
-        pool, project_id, principal,
+        pool,
+        project_id,
+        principal,
         allowed=("owner", "admin", "member", "viewer"),
     )
     rows = await pool.fetch(
@@ -140,7 +142,9 @@ async def create_prompt(
 ) -> PromptOut:
     pool: asyncpg.Pool = request.app.state.pg
     workspace_id = await _assert_project_role(
-        pool, body.project_id, principal,
+        pool,
+        body.project_id,
+        principal,
         allowed=("owner", "admin", "member"),
     )
     try:
@@ -161,9 +165,7 @@ async def create_prompt(
             status.HTTP_409_CONFLICT, "prompt slug already exists in project"
         ) from exc
     assert row is not None
-    prompt = PromptOut(
-        latest_version=None, version_count=0, aliases=[], **dict(row)
-    )
+    prompt = PromptOut(latest_version=None, version_count=0, aliases=[], **dict(row))
     await audit.record(
         pool,
         principal=principal,
@@ -187,7 +189,9 @@ async def get_prompt(
     pool: asyncpg.Pool = request.app.state.pg
     row = await _fetch_prompt_full(pool, prompt_id)
     await _assert_project_role(
-        pool, row["project_id"], principal,
+        pool,
+        row["project_id"],
+        principal,
         allowed=("owner", "admin", "member", "viewer"),
     )
     return PromptOut(**dict(row))
@@ -203,15 +207,15 @@ async def update_prompt(
     pool: asyncpg.Pool = request.app.state.pg
     existing = await _fetch_prompt_row(pool, prompt_id)
     workspace_id = await _assert_project_role(
-        pool, existing["project_id"], principal,
+        pool,
+        existing["project_id"],
+        principal,
         allowed=("owner", "admin", "member"),
     )
     updates = body.model_dump(exclude_unset=True)
     if not updates:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "no fields to update")
-    set_fragments = ", ".join(
-        f"{col} = ${i + 2}" for i, col in enumerate(updates.keys())
-    )
+    set_fragments = ", ".join(f"{col} = ${i + 2}" for i, col in enumerate(updates.keys()))
     params: list[object] = [prompt_id, *updates.values()]
     await pool.execute(
         f"update prompt set {set_fragments}, updated_at = now() where id = $1",
@@ -241,7 +245,9 @@ async def delete_prompt(
     pool: asyncpg.Pool = request.app.state.pg
     existing = await _fetch_prompt_row(pool, prompt_id)
     workspace_id = await _assert_project_role(
-        pool, existing["project_id"], principal,
+        pool,
+        existing["project_id"],
+        principal,
         allowed=("owner", "admin"),
     )
     await pool.execute(
@@ -270,7 +276,9 @@ async def list_versions(
     pool: asyncpg.Pool = request.app.state.pg
     prompt = await _fetch_prompt_row(pool, prompt_id)
     await _assert_project_role(
-        pool, prompt["project_id"], principal,
+        pool,
+        prompt["project_id"],
+        principal,
         allowed=("owner", "admin", "member", "viewer"),
     )
     rows = await pool.fetch(
@@ -300,41 +308,38 @@ async def create_version(
     pool: asyncpg.Pool = request.app.state.pg
     prompt = await _fetch_prompt_row(pool, prompt_id)
     workspace_id = await _assert_project_role(
-        pool, prompt["project_id"], principal,
+        pool,
+        prompt["project_id"],
+        principal,
         allowed=("owner", "admin", "member"),
     )
 
     aliases = _normalize_aliases(body.aliases)
-    input_schema_json = (
-        _json.dumps(body.input_schema) if body.input_schema is not None else None
-    )
-    model_params_json = (
-        _json.dumps(body.model_params) if body.model_params is not None else None
-    )
+    input_schema_json = _json.dumps(body.input_schema) if body.input_schema is not None else None
+    model_params_json = _json.dumps(body.model_params) if body.model_params is not None else None
 
-    async with pool.acquire() as conn:
-        async with conn.transaction():
-            next_version = await conn.fetchval(
-                """
+    async with pool.acquire() as conn, conn.transaction():
+        next_version = await conn.fetchval(
+            """
                 select coalesce(max(version), 0) + 1
                 from prompt_version where prompt_id = $1
                 """,
-                prompt_id,
-            )
-            if aliases:
-                await conn.execute(
-                    """
+            prompt_id,
+        )
+        if aliases:
+            await conn.execute(
+                """
                     update prompt_version
                     set aliases = array(
                         select unnest(aliases) except select unnest($2::text[])
                     )
                     where prompt_id = $1 and aliases && $2::text[]
                     """,
-                    prompt_id,
-                    aliases,
-                )
-            row = await conn.fetchrow(
-                """
+                prompt_id,
+                aliases,
+            )
+        row = await conn.fetchrow(
+            """
                 insert into prompt_version (
                     prompt_id, version, template, input_schema, model_params,
                     aliases, commit_message, created_by
@@ -343,19 +348,19 @@ async def create_version(
                 returning id, prompt_id, version, template, input_schema,
                           model_params, aliases, commit_message, created_at
                 """,
-                prompt_id,
-                next_version,
-                body.template,
-                input_schema_json,
-                model_params_json,
-                aliases,
-                body.commit_message,
-                principal.user_id,
-            )
-            await conn.execute(
-                "update prompt set updated_at = now() where id = $1",
-                prompt_id,
-            )
+            prompt_id,
+            next_version,
+            body.template,
+            input_schema_json,
+            model_params_json,
+            aliases,
+            body.commit_message,
+            principal.user_id,
+        )
+        await conn.execute(
+            "update prompt set updated_at = now() where id = $1",
+            prompt_id,
+        )
     assert row is not None
     version = _version_from_row(row)
     await audit.record(
@@ -376,9 +381,7 @@ async def create_version(
     return version
 
 
-@router.get(
-    "/{prompt_id}/versions/{version}", response_model=PromptVersionOut
-)
+@router.get("/{prompt_id}/versions/{version}", response_model=PromptVersionOut)
 async def get_version(
     request: Request,
     prompt_id: UUID,
@@ -388,7 +391,9 @@ async def get_version(
     pool: asyncpg.Pool = request.app.state.pg
     prompt = await _fetch_prompt_row(pool, prompt_id)
     await _assert_project_role(
-        pool, prompt["project_id"], principal,
+        pool,
+        prompt["project_id"],
+        principal,
         allowed=("owner", "admin", "member", "viewer"),
     )
     row = await pool.fetchrow(
@@ -416,7 +421,9 @@ async def assign_alias(
     pool: asyncpg.Pool = request.app.state.pg
     prompt = await _fetch_prompt_row(pool, prompt_id)
     workspace_id = await _assert_project_role(
-        pool, prompt["project_id"], principal,
+        pool,
+        prompt["project_id"],
+        principal,
         allowed=("owner", "admin", "member"),
     )
     target = await pool.fetchval(
@@ -427,20 +434,19 @@ async def assign_alias(
     if target is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "version not found")
 
-    async with pool.acquire() as conn:
-        async with conn.transaction():
-            await conn.execute(
-                """
+    async with pool.acquire() as conn, conn.transaction():
+        await conn.execute(
+            """
                 update prompt_version
                 set aliases = array_remove(aliases, $2)
                 where prompt_id = $1 and version <> $3 and $2 = any(aliases)
                 """,
-                prompt_id,
-                body.alias,
-                body.version,
-            )
-            row = await conn.fetchrow(
-                """
+            prompt_id,
+            body.alias,
+            body.version,
+        )
+        row = await conn.fetchrow(
+            """
                 update prompt_version
                 set aliases = case
                     when $2 = any(aliases) then aliases
@@ -450,14 +456,14 @@ async def assign_alias(
                 returning id, prompt_id, version, template, input_schema,
                           model_params, aliases, commit_message, created_at
                 """,
-                prompt_id,
-                body.alias,
-                body.version,
-            )
-            await conn.execute(
-                "update prompt set updated_at = now() where id = $1",
-                prompt_id,
-            )
+            prompt_id,
+            body.alias,
+            body.version,
+        )
+        await conn.execute(
+            "update prompt set updated_at = now() where id = $1",
+            prompt_id,
+        )
     assert row is not None
     version = _version_from_row(row)
     await audit.record(
@@ -524,9 +530,7 @@ def _jsonb(raw: object) -> dict[str, Any] | None:
     return None
 
 
-async def _fetch_prompt_row(
-    pool: asyncpg.Pool, prompt_id: UUID
-) -> asyncpg.Record:
+async def _fetch_prompt_row(pool: asyncpg.Pool, prompt_id: UUID) -> asyncpg.Record:
     row = await pool.fetchrow(
         """
         select id, project_id, slug, name, description, created_at, updated_at
@@ -540,9 +544,7 @@ async def _fetch_prompt_row(
     return row
 
 
-async def _fetch_prompt_full(
-    pool: asyncpg.Pool, prompt_id: UUID
-) -> asyncpg.Record:
+async def _fetch_prompt_full(pool: asyncpg.Pool, prompt_id: UUID) -> asyncpg.Record:
     row = await pool.fetchrow(
         """
         select

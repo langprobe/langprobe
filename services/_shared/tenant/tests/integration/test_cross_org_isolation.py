@@ -251,12 +251,8 @@ async def test_two_workspaces_in_one_org_isolate(pg_pool, ch_client):
         ws_b,
     )
     try:
-        _insert_run(
-            ch_client, org_id=org_id, workspace_id=ws_a, project_id=proj_a, name="run-ws-a"
-        )
-        _insert_run(
-            ch_client, org_id=org_id, workspace_id=ws_b, project_id=proj_b, name="run-ws-b"
-        )
+        _insert_run(ch_client, org_id=org_id, workspace_id=ws_a, project_id=proj_a, name="run-ws-a")
+        _insert_run(ch_client, org_id=org_id, workspace_id=ws_b, project_id=proj_b, name="run-ws-b")
 
         res_a = ch_client.query(
             "select name from run where org_id = %(org)s and workspace_id = %(ws)s",

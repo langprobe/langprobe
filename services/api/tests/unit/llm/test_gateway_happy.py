@@ -6,7 +6,6 @@ import uuid
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
 from tracebility_api.llm import dispatch
 from tracebility_api.llm.types import Message
 
@@ -55,8 +54,9 @@ async def test_happy_path_returns_normalized_result(fake_pool, mocker) -> None:
     assert result.cost_usd == pytest.approx(0.00042)
     assert result.provider == "openai"
 
-    insert_calls = [c for c in fake_pool.execute.await_args_list
-                    if "insert into dispatch_cost" in c.args[0]]
+    insert_calls = [
+        c for c in fake_pool.execute.await_args_list if "insert into dispatch_cost" in c.args[0]
+    ]
     assert len(insert_calls) == 1
     args = insert_calls[0].args
     assert "playground" in args
@@ -65,10 +65,12 @@ async def test_happy_path_returns_normalized_result(fake_pool, mocker) -> None:
 
 
 async def test_messages_pass_through_to_litellm(fake_pool, mocker) -> None:
-    fake_pool.fetchrow = AsyncMock(side_effect=[
-        {"ceiling": None, "spent": 0},
-        {"secret_encrypted": "sk"},
-    ])
+    fake_pool.fetchrow = AsyncMock(
+        side_effect=[
+            {"ceiling": None, "spent": 0},
+            {"secret_encrypted": "sk"},
+        ]
+    )
     fake_pool.fetchval = AsyncMock(return_value=None)
     mocker.patch("tracebility_api.llm.gateway.litellm.completion_cost", return_value=0)
     mocker.patch(

@@ -52,9 +52,7 @@ class EventType:
 
 
 _VALID_EVENT_TYPES: Final = frozenset(
-    v
-    for k, v in EventType.__dict__.items()
-    if not k.startswith("_") and isinstance(v, str)
+    v for k, v in EventType.__dict__.items() if not k.startswith("_") and isinstance(v, str)
 )
 
 
@@ -103,9 +101,7 @@ class AuditWriter:
 
     async def write(self, event: AuditEvent) -> None:
         ts = event.event_time or datetime.now(UTC)
-        attributes_json = (
-            orjson.dumps(event.attributes).decode() if event.attributes else "{}"
-        )
+        attributes_json = orjson.dumps(event.attributes).decode() if event.attributes else "{}"
         try:
             await self._client.insert(
                 self._table,

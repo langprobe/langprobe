@@ -9,14 +9,12 @@ from __future__ import annotations
 from uuid import UUID
 
 import pytest
-
 from tracebility_api.auth import Principal
 from tracebility_api.tenant_scope import (
     ScopedClickHouse,
     TenantScope,
     _append_predicate,
 )
-
 
 _ORG = UUID("11111111-1111-1111-1111-111111111111")
 _WS = UUID("22222222-2222-2222-2222-222222222222")

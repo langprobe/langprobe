@@ -29,15 +29,11 @@ exactly what went wrong.
 
 from __future__ import annotations
 
-import asyncio
 import json as _json
-import os
 import re
 import time
-import urllib.error
-import urllib.request
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -49,7 +45,6 @@ from pydantic import BaseModel, Field
 from .. import audit
 from ..auth import Principal, assert_workspace_role, require_user
 from ..clickhouse_client import ClickHouseQuery
-from . import llm_credentials
 
 log = structlog.get_logger("tracebility.api.playground")
 
@@ -117,7 +112,9 @@ async def list_sessions(
 ) -> PlaygroundSessionList:
     pool: asyncpg.Pool = request.app.state.pg
     await _assert_project_role(
-        pool, principal, project_id,
+        pool,
+        principal,
+        project_id,
         ("owner", "admin", "member", "viewer"),
     )
     rows = await pool.fetch(
@@ -164,9 +161,7 @@ async def create_session(
     # Resolve the template body. If a prompt_version was provided, the
     # postgres row is authoritative; the raw_template field on the
     # request is ignored to avoid silent divergence.
-    template_body, version_row = await _resolve_template(
-        pool, body
-    )
+    template_body, version_row = await _resolve_template(pool, body)
 
     rendered = _render_template(template_body, body.variables)
 
@@ -222,7 +217,9 @@ async def create_session(
     if provider == "stub":
         result_dict = await _dispatch_stub(body.model, rendered)
     else:
-        from ..llm import DispatchError, Message, dispatch as gateway_dispatch
+        from ..llm import DispatchError, Message
+        from ..llm import dispatch as gateway_dispatch
+
         try:
             gw = await gateway_dispatch(
                 pool,
@@ -258,7 +255,7 @@ async def create_session(
                 session_id,
                 f"[{exc.code}] {exc.detail}",
                 latency_ms,
-                datetime.now(timezone.utc),
+                datetime.now(UTC),
             )
             assert failed is not None
             return _session_out(failed)
@@ -305,7 +302,7 @@ async def create_session(
             (result["prompt_tokens"] or 0) + (result["completion_tokens"] or 0),
             latency_ms,
             run_id,
-            datetime.now(timezone.utc),
+            datetime.now(UTC),
         )
         assert updated is not None
         return _session_out(updated)
@@ -334,7 +331,7 @@ async def create_session(
             session_id,
             f"{type(exc).__name__}: {exc}"[:2000],
             latency_ms,
-            datetime.now(timezone.utc),
+            datetime.now(UTC),
         )
         assert failed is not None
         return _session_out(failed)
@@ -361,7 +358,9 @@ async def get_session(
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "session not found")
     await _assert_project_role(
-        pool, principal, row["project_id"],
+        pool,
+        principal,
+        row["project_id"],
         ("owner", "admin", "member", "viewer"),
     )
     return _session_out(row)
@@ -388,8 +387,7 @@ def _resolve_provider(model: str) -> str:
         return "openai"
     raise HTTPException(
         status.HTTP_400_BAD_REQUEST,
-        f"unknown provider for model '{model}' "
-        "(expected claude-*, gpt-*, o*-*, or stub-*)",
+        f"unknown provider for model '{model}' (expected claude-*, gpt-*, o*-*, or stub-*)",
     )
 
 
@@ -404,9 +402,7 @@ async def _resolve_template(
             body.prompt_version_id,
         )
         if version_row is None:
-            raise HTTPException(
-                status.HTTP_404_NOT_FOUND, "prompt version not found"
-            )
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "prompt version not found")
         return version_row["template"], version_row
     assert body.raw_template is not None  # validated above
     return body.raw_template, None
@@ -469,85 +465,125 @@ async def _write_clickhouse_trace(
     if clickhouse is None:
         log.info("clickhouse not configured; skipping playground trace write")
         return
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     inputs_json = _json.dumps({"prompt": prompt})
     outputs_json = _json.dumps({"output": output})
     total_tokens = (prompt_tokens or 0) + (completion_tokens or 0)
     try:
         await clickhouse.insert(
             "run",
-            [(
-                str(project_id),
-                run_id,
-                None,
-                "playground",
-                "llm",
-                "ok",
-                "playground",
-                now,
-                now,
-                now,
-                inputs_json,
-                outputs_json,
-                None,
-                None,
-                int(prompt_tokens or 0),
-                int(completion_tokens or 0),
-                int(total_tokens),
-                0,
-                session_id,
-                user_id,
-                ["playground"],
-                _json.dumps({"playground": True}),
-                "",
-                "",
-                1,
-            )],
+            [
+                (
+                    str(project_id),
+                    run_id,
+                    None,
+                    "playground",
+                    "llm",
+                    "ok",
+                    "playground",
+                    now,
+                    now,
+                    now,
+                    inputs_json,
+                    outputs_json,
+                    None,
+                    None,
+                    int(prompt_tokens or 0),
+                    int(completion_tokens or 0),
+                    int(total_tokens),
+                    0,
+                    session_id,
+                    user_id,
+                    ["playground"],
+                    _json.dumps({"playground": True}),
+                    "",
+                    "",
+                    1,
+                )
+            ],
             column_names=[
-                "project_id", "run_id", "parent_run_id", "name", "kind",
-                "status", "sdk", "start_time", "end_time", "received_at",
-                "inputs", "outputs", "inputs_obj_ref", "outputs_obj_ref",
-                "prompt_tokens", "completion_tokens", "total_tokens",
-                "cost_usd", "session_id", "user_id", "tags", "metadata",
-                "error_kind", "error_message", "schema_version",
+                "project_id",
+                "run_id",
+                "parent_run_id",
+                "name",
+                "kind",
+                "status",
+                "sdk",
+                "start_time",
+                "end_time",
+                "received_at",
+                "inputs",
+                "outputs",
+                "inputs_obj_ref",
+                "outputs_obj_ref",
+                "prompt_tokens",
+                "completion_tokens",
+                "total_tokens",
+                "cost_usd",
+                "session_id",
+                "user_id",
+                "tags",
+                "metadata",
+                "error_kind",
+                "error_message",
+                "schema_version",
             ],
         )
         await clickhouse.insert(
             "span",
-            [(
-                str(project_id),
-                run_id,
-                str(uuid.uuid4()),
-                None,
-                f"playground:{model}",
-                "llm",
-                "ok",
-                now,
-                now,
-                now,
-                model,
-                temperature,
-                inputs_json,
-                outputs_json,
-                None,
-                None,
-                int(prompt_tokens or 0),
-                int(completion_tokens or 0),
-                int(total_tokens),
-                0,
-                _json.dumps({"playground": True}),
-                "",
-                "",
-                1,
-            )],
+            [
+                (
+                    str(project_id),
+                    run_id,
+                    str(uuid.uuid4()),
+                    None,
+                    f"playground:{model}",
+                    "llm",
+                    "ok",
+                    now,
+                    now,
+                    now,
+                    model,
+                    temperature,
+                    inputs_json,
+                    outputs_json,
+                    None,
+                    None,
+                    int(prompt_tokens or 0),
+                    int(completion_tokens or 0),
+                    int(total_tokens),
+                    0,
+                    _json.dumps({"playground": True}),
+                    "",
+                    "",
+                    1,
+                )
+            ],
             column_names=[
-                "project_id", "run_id", "span_id", "parent_span_id",
-                "name", "kind", "status", "start_time", "end_time",
-                "received_at", "model", "temperature", "inputs",
-                "outputs", "inputs_obj_ref", "outputs_obj_ref",
-                "prompt_tokens", "completion_tokens", "total_tokens",
-                "cost_usd", "attributes", "error_kind",
-                "error_message", "schema_version",
+                "project_id",
+                "run_id",
+                "span_id",
+                "parent_span_id",
+                "name",
+                "kind",
+                "status",
+                "start_time",
+                "end_time",
+                "received_at",
+                "model",
+                "temperature",
+                "inputs",
+                "outputs",
+                "inputs_obj_ref",
+                "outputs_obj_ref",
+                "prompt_tokens",
+                "completion_tokens",
+                "total_tokens",
+                "cost_usd",
+                "attributes",
+                "error_kind",
+                "error_message",
+                "schema_version",
             ],
         )
     except Exception as exc:  # noqa: BLE001

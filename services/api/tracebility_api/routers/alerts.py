@@ -218,9 +218,7 @@ async def patch_rule(
     principal: Principal = Depends(require_user),
 ) -> AlertRuleOut:
     pool: asyncpg.Pool = request.app.state.pg
-    existing = await pool.fetchrow(
-        "select project_id from alert_rule where id = $1", rule_id
-    )
+    existing = await pool.fetchrow("select project_id from alert_rule where id = $1", rule_id)
     if existing is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "alert rule not found")
     project_id: UUID = existing["project_id"]
@@ -235,9 +233,7 @@ async def patch_rule(
     if body.routes is not None:
         for route in body.routes:
             if route.kind not in _ROUTE_KINDS:
-                raise HTTPException(
-                    status.HTTP_400_BAD_REQUEST, "invalid route kind"
-                )
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid route kind")
 
     sets: list[str] = []
     args: list[Any] = []
@@ -314,15 +310,11 @@ async def delete_rule(
     principal: Principal = Depends(require_user),
 ) -> None:
     pool: asyncpg.Pool = request.app.state.pg
-    existing = await pool.fetchrow(
-        "select project_id from alert_rule where id = $1", rule_id
-    )
+    existing = await pool.fetchrow("select project_id from alert_rule where id = $1", rule_id)
     if existing is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "alert rule not found")
     project_id: UUID = existing["project_id"]
-    workspace_id = await _assert_project_role(
-        pool, principal, project_id, ("owner", "admin")
-    )
+    workspace_id = await _assert_project_role(pool, principal, project_id, ("owner", "admin"))
     await pool.execute("delete from alert_rule where id = $1", rule_id)
     await audit.record(
         pool,
@@ -345,9 +337,7 @@ async def list_events(
     principal: Principal = Depends(require_user),
 ) -> AlertEventList:
     pool: asyncpg.Pool = request.app.state.pg
-    await _assert_project_role(
-        pool, principal, project_id, ("owner", "admin", "member", "viewer")
-    )
+    await _assert_project_role(pool, principal, project_id, ("owner", "admin", "member", "viewer"))
     rows = await pool.fetch(
         """
         select e.id, e.rule_id, r.name as rule_name, e.project_id,
@@ -406,9 +396,7 @@ async def evaluator_loop(
             raise
 
 
-async def evaluate_due_rules(
-    pool: asyncpg.Pool, clickhouse: ClickHouseQuery | None
-) -> None:
+async def evaluate_due_rules(pool: asyncpg.Pool, clickhouse: ClickHouseQuery | None) -> None:
     """Single tick. Public for tests."""
     if clickhouse is None:
         return
@@ -434,9 +422,7 @@ async def evaluate_due_rules(
         await _apply_rule_decision(pool, rule, value)
 
 
-async def _measure(
-    clickhouse: ClickHouseQuery, rule: asyncpg.Record
-) -> float | None:
+async def _measure(clickhouse: ClickHouseQuery, rule: asyncpg.Record) -> float | None:
     metric: str = rule["metric"]
     project_id: UUID = rule["project_id"]
     window: int = rule["window_seconds"]
@@ -512,71 +498,70 @@ async def _apply_rule_decision(
 
     breaches = value is not None and _compare(value, comparator, threshold)
 
-    async with pool.acquire() as conn:
-        async with conn.transaction():
-            await conn.execute(
-                """
+    async with pool.acquire() as conn, conn.transaction():
+        await conn.execute(
+            """
                 update alert_rule
                    set last_evaluated_at = now(),
                        last_value = $2
                  where id = $1
                 """,
-                rule_id,
-                value,
-            )
+            rule_id,
+            value,
+        )
 
-            if breaches and open_event_id is None:
-                # Open a fresh incident.
-                incident_id = uuid4()
-                event_id = await conn.fetchval(
-                    """
+        if breaches and open_event_id is None:
+            # Open a fresh incident.
+            incident_id = uuid4()
+            event_id = await conn.fetchval(
+                """
                     insert into alert_event (
                         rule_id, project_id, kind, value, threshold, incident_id
                     )
                     values ($1, $2, 'fired', $3, $4, $5)
                     returning id
                     """,
-                    rule_id,
-                    project_id,
-                    value,
-                    threshold,
-                    incident_id,
-                )
+                rule_id,
+                project_id,
+                value,
+                threshold,
+                incident_id,
+            )
+            await conn.execute(
+                "update alert_rule set open_incident_id = $1 where id = $2",
+                event_id,
+                rule_id,
+            )
+        elif not breaches and open_event_id is not None:
+            # Resolve the open incident -- reuse its incident_id.
+            incident_id = await conn.fetchval(
+                "select incident_id from alert_event where id = $1",
+                open_event_id,
+            )
+            if incident_id is None:
+                # Open pointer is stale; clear it and move on.
                 await conn.execute(
-                    "update alert_rule set open_incident_id = $1 where id = $2",
-                    event_id,
+                    "update alert_rule set open_incident_id = null where id = $1",
                     rule_id,
                 )
-            elif not breaches and open_event_id is not None:
-                # Resolve the open incident -- reuse its incident_id.
-                incident_id = await conn.fetchval(
-                    "select incident_id from alert_event where id = $1",
-                    open_event_id,
-                )
-                if incident_id is None:
-                    # Open pointer is stale; clear it and move on.
-                    await conn.execute(
-                        "update alert_rule set open_incident_id = null where id = $1",
-                        rule_id,
-                    )
-                    return
-                await conn.execute(
-                    """
+                return
+            await conn.execute(
+                """
                     insert into alert_event (
                         rule_id, project_id, kind, value, threshold, incident_id
                     )
                     values ($1, $2, 'resolved', $3, $4, $5)
                     """,
-                    rule_id,
-                    project_id,
-                    value if value is not None else 0.0,
-                    threshold,
-                    incident_id,
-                )
-                await conn.execute(
-                    "update alert_rule set open_incident_id = null where id = $1",
-                    rule_id,
-                )
+                rule_id,
+                project_id,
+                value if value is not None else 0.0,
+                threshold,
+                incident_id,
+            )
+            await conn.execute(
+                "update alert_rule set open_incident_id = null where id = $1",
+                rule_id,
+            )
 
 
 def _compare(value: float, comparator: str, threshold: float) -> bool:

@@ -53,9 +53,7 @@ def load() -> Settings:
     if not postgres_dsn:
         raise RuntimeError("TRACEBILITY_PG_DSN is required")
     if not session_secret or len(session_secret) < 32:
-        raise RuntimeError(
-            "TRACEBILITY_SESSION_SECRET is required and must be >= 32 chars"
-        )
+        raise RuntimeError("TRACEBILITY_SESSION_SECRET is required and must be >= 32 chars")
     return Settings(
         postgres_dsn=postgres_dsn,
         session_secret=session_secret,
@@ -64,27 +62,19 @@ def load() -> Settings:
         clickhouse_password=os.environ.get("TRACEBILITY_CLICKHOUSE_PASSWORD", ""),
         clickhouse_database=os.environ.get("TRACEBILITY_CLICKHOUSE_DATABASE", "default"),
         redis_url=os.environ.get("TRACEBILITY_REDIS_URL"),
-        session_cookie_name=os.environ.get(
-            "TRACEBILITY_SESSION_COOKIE", "tracebility_session"
-        ),
+        session_cookie_name=os.environ.get("TRACEBILITY_SESSION_COOKIE", "tracebility_session"),
         session_max_age_seconds=int(
             os.environ.get("TRACEBILITY_SESSION_MAX_AGE_SECONDS", str(60 * 60 * 24 * 7))
         ),
         bind_host=os.environ.get("TRACEBILITY_BIND_HOST", "0.0.0.0"),
         bind_port=int(os.environ.get("TRACEBILITY_API_BIND_PORT", "7081")),
         log_level=os.environ.get("TRACEBILITY_LOG_LEVEL", "INFO"),
-        cors_allow_origin=os.environ.get(
-            "TRACEBILITY_CORS_ALLOW_ORIGIN", "http://localhost:7090"
-        ),
+        cors_allow_origin=os.environ.get("TRACEBILITY_CORS_ALLOW_ORIGIN", "http://localhost:7090"),
         oauth_google_client_id=os.environ.get("OAUTH_GOOGLE_CLIENT_ID") or None,
         oauth_google_client_secret=os.environ.get("OAUTH_GOOGLE_CLIENT_SECRET") or None,
         oauth_github_client_id=os.environ.get("OAUTH_GITHUB_CLIENT_ID") or None,
         oauth_github_client_secret=os.environ.get("OAUTH_GITHUB_CLIENT_SECRET") or None,
-        oauth_redirect_base=os.environ.get(
-            "OAUTH_REDIRECT_BASE", "http://localhost:7081"
-        ),
-        web_base_url=os.environ.get(
-            "TRACEBILITY_WEB_BASE_URL", "http://localhost:7090"
-        ),
+        oauth_redirect_base=os.environ.get("OAUTH_REDIRECT_BASE", "http://localhost:7081"),
+        web_base_url=os.environ.get("TRACEBILITY_WEB_BASE_URL", "http://localhost:7090"),
         llm_gateway=os.environ.get("LLM_GATEWAY", "litellm"),
     )
