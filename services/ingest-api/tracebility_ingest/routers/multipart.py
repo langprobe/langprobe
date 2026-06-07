@@ -35,9 +35,10 @@ from typing import Any
 
 import structlog
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
+from tracebility_tenant import QuotaMeter, TenantContext
 
-from ..auth import AuthContext, require_ingest_key
 from ..enqueue import IngestEnqueue, serialize_batch
+from ..limits import INGEST_GATING_METER, enforce_quota
 from ..redactor import Redactor
 from ..schemas import IngestAck, IngestBatch
 
@@ -68,7 +69,7 @@ async def ingest_runs_multipart(
     request: Request,
     envelope: str = Form(..., description="IngestBatch JSON"),
     attachments: list[UploadFile] = File(default=[]),
-    ctx: AuthContext = Depends(require_ingest_key),
+    ctx: TenantContext = Depends(enforce_quota),
 ) -> IngestAck:
     """Accept a JSON envelope plus N binary attachments.
 
@@ -170,8 +171,9 @@ async def ingest_runs_multipart(
     # buffer at the canonical path. We don't rewrite the envelope
     # here — refs travel verbatim.
     payload_envelope: dict[str, Any] = {
-        "project_id": str(ctx.project_id),
         "org_id": str(ctx.org_id),
+        "workspace_id": str(ctx.workspace_id),
+        "project_id": str(ctx.project_id),
         "api_key_id": str(ctx.api_key_id),
         "received_at": datetime.now(UTC).isoformat(),
         "source": "multipart",
@@ -190,9 +192,19 @@ async def ingest_runs_multipart(
         )
 
     serialized = serialize_batch(payload_envelope)
-    await enqueue.enqueue(serialized)
+    await enqueue.enqueue(serialized, org_id=ctx.org_id)
 
     accepted_spans = len(batch.spans) + sum(len(r.spans) for r in batch.runs)
+    quota_meter: QuotaMeter = request.app.state.quota_meter
+    try:
+        await quota_meter.record(
+            org_id=ctx.org_id, meter=INGEST_GATING_METER, amount=accepted_spans, limit=-1
+        )
+        await quota_meter.record(
+            org_id=ctx.org_id, meter="span_bytes", amount=len(serialized) + total_bytes, limit=-1
+        )
+    except Exception:  # noqa: BLE001
+        log.warning("quota record failed", org_id=str(ctx.org_id))
     return IngestAck(
         accepted_runs=len(batch.runs),
         accepted_spans=accepted_spans,

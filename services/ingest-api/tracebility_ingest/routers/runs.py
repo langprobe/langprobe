@@ -12,12 +12,12 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, Request, status
-
 import structlog
+from fastapi import APIRouter, Depends, Request, status
+from tracebility_tenant import QuotaMeter, TenantContext
 
-from ..auth import AuthContext, require_ingest_key
 from ..enqueue import IngestEnqueue, serialize_batch
+from ..limits import INGEST_GATING_METER, enforce_quota
 from ..redactor import Redactor
 from ..schemas import IngestAck, IngestBatch
 
@@ -26,14 +26,15 @@ log = structlog.get_logger("tracebility.ingest.runs")
 router = APIRouter(prefix="/v1", tags=["ingest"])
 
 
-def _envelope(batch: IngestBatch, ctx: AuthContext) -> dict[str, Any]:
+def _envelope(batch: IngestBatch, ctx: TenantContext) -> dict[str, Any]:
     """Wrap SDK payload with tenant identifiers the worker trusts.
 
     Tenant fields come from authenticated request state, not from SDK input.
     """
     return {
-        "project_id": str(ctx.project_id),
         "org_id": str(ctx.org_id),
+        "workspace_id": str(ctx.workspace_id),
+        "project_id": str(ctx.project_id),
         "api_key_id": str(ctx.api_key_id),
         "received_at": datetime.now(UTC).isoformat(),
         "payload": batch.model_dump(mode="json"),
@@ -48,7 +49,7 @@ def _envelope(batch: IngestBatch, ctx: AuthContext) -> dict[str, Any]:
 async def ingest_runs(
     request: Request,
     batch: IngestBatch,
-    ctx: AuthContext = Depends(require_ingest_key),
+    ctx: TenantContext = Depends(enforce_quota),
 ) -> IngestAck:
     enqueue: IngestEnqueue = request.app.state.enqueue
     redactor: Redactor = request.app.state.redactor
@@ -61,8 +62,25 @@ async def ingest_runs(
             counts=dict(counts),
         )
     serialized = serialize_batch(envelope)
-    await enqueue.enqueue(serialized)
+    await enqueue.enqueue(serialized, org_id=ctx.org_id)
+
+    span_count = len(batch.spans) + sum(len(r.spans) for r in batch.runs)
+    # Optimistic quota: increment after successful enqueue. The reconciler
+    # corrects against the authoritative ClickHouse billing_meter SUM every
+    # 60s; ingest never blocks on the increment.
+    quota_meter: QuotaMeter = request.app.state.quota_meter
+    bytes_in = len(serialized)
+    try:
+        await quota_meter.record(
+            org_id=ctx.org_id, meter=INGEST_GATING_METER, amount=span_count, limit=-1
+        )
+        await quota_meter.record(
+            org_id=ctx.org_id, meter="span_bytes", amount=bytes_in, limit=-1
+        )
+    except Exception:  # noqa: BLE001 — quota counter is best-effort; reconciler corrects
+        log.warning("quota record failed", org_id=str(ctx.org_id))
+
     return IngestAck(
         accepted_runs=len(batch.runs),
-        accepted_spans=len(batch.spans) + sum(len(r.spans) for r in batch.runs),
+        accepted_spans=span_count,
     )

@@ -48,9 +48,10 @@ from uuid import UUID
 import orjson
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from tracebility_tenant import QuotaMeter, TenantContext
 
-from ..auth import AuthContext, require_ingest_key
 from ..enqueue import IngestEnqueue, serialize_batch
+from ..limits import INGEST_GATING_METER, enforce_quota
 from ..redactor import Redactor
 from ..schemas import IngestAck, IngestBatch, RunIngest, RunKind, SpanIngest
 
@@ -449,7 +450,7 @@ def _translate_spans(
 async def otel_traces(
     request: Request,
     body: dict[str, Any],
-    ctx: AuthContext = Depends(require_ingest_key),
+    ctx: TenantContext = Depends(enforce_quota),
 ) -> IngestAck:
     """OTLP HTTP/JSON intake.
 
@@ -469,8 +470,9 @@ async def otel_traces(
 
     batch = IngestBatch(sdk="otel", runs=runs)
     envelope: dict[str, Any] = {
-        "project_id": str(ctx.project_id),
         "org_id": str(ctx.org_id),
+        "workspace_id": str(ctx.workspace_id),
+        "project_id": str(ctx.project_id),
         "api_key_id": str(ctx.api_key_id),
         "received_at": datetime.now(UTC).isoformat(),
         "source": "otel",
@@ -485,9 +487,20 @@ async def otel_traces(
             project_id=envelope["project_id"],
             counts=dict(counts),
         )
-    await enqueue.enqueue(serialize_batch(envelope))
+    serialized = serialize_batch(envelope)
+    await enqueue.enqueue(serialized, org_id=ctx.org_id)
 
     accepted_spans = sum(len(r.spans) for r in runs)
+    quota_meter: QuotaMeter = request.app.state.quota_meter
+    try:
+        await quota_meter.record(
+            org_id=ctx.org_id, meter=INGEST_GATING_METER, amount=accepted_spans, limit=-1
+        )
+        await quota_meter.record(
+            org_id=ctx.org_id, meter="span_bytes", amount=len(serialized), limit=-1
+        )
+    except Exception:  # noqa: BLE001
+        log.warning("quota record failed", org_id=str(ctx.org_id))
     if skipped:
         log.warning(
             "otel batch had skipped spans",

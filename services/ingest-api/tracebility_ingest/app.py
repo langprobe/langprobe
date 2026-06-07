@@ -1,7 +1,8 @@
 """FastAPI application factory.
 
-Lifespan owns long-lived clients (pg pool, redis, ingest enqueue) and the
-disk-buffer drain task. Routers are registered after state is wired so the
+Lifespan owns long-lived clients (pg pool, redis, ingest enqueue, tenant
+resolver, rate limiter, quota meter, audit writer) and the disk-buffer drain
+task. Routers are registered after state is wired so the
 ``Depends(require_ingest_key)`` chain can rely on ``request.app.state.pg``.
 """
 
@@ -16,6 +17,14 @@ import asyncpg
 import redis.asyncio as redis_async
 import structlog
 from fastapi import FastAPI
+from tracebility_tenant import (
+    AuditWriter,
+    QuotaMeter,
+    RateLimiter,
+    Resolver,
+    ResolverConfig,
+    ShardRouter,
+)
 
 from . import config
 from .enqueue import IngestEnqueue
@@ -65,9 +74,24 @@ def create_app() -> FastAPI:
             command_timeout=10,
         )
         app.state.redis = redis_async.from_url(settings.redis_url, decode_responses=False)
+        shard_router = ShardRouter()
+        app.state.shard_router = shard_router
         app.state.enqueue = IngestEnqueue(
             redis_url=settings.redis_url,
             disk_buffer_path=settings.disk_buffer_path,
+            shard_router=shard_router,
+        )
+        app.state.resolver = Resolver(
+            ResolverConfig(pg_pool=app.state.pg, redis=app.state.redis)
+        )
+        await app.state.resolver.start_invalidator()
+        app.state.rate_limiter = RateLimiter(app.state.redis)
+        app.state.quota_meter = QuotaMeter(app.state.redis)
+        app.state.audit_writer = await AuditWriter.from_url(
+            settings.clickhouse_url,
+            username=settings.clickhouse_user,
+            password=settings.clickhouse_password,
+            database=settings.clickhouse_database,
         )
         app.state.redactor = redactor_from_env(settings.redact_pii)
         drain_task = asyncio.create_task(_drain_loop(app.state.enqueue))
@@ -75,6 +99,7 @@ def create_app() -> FastAPI:
             "ingest-api started",
             bind=f"{settings.bind_host}:{settings.bind_port}",
             redact_pii=settings.redact_pii,
+            shard_count=shard_router.shard_count,
         )
         try:
             yield
@@ -84,6 +109,7 @@ def create_app() -> FastAPI:
                 await drain_task
             except asyncio.CancelledError:
                 pass
+            await app.state.resolver.stop_invalidator()
             await app.state.redis.aclose()
             await app.state.pg.close()
             log.info("ingest-api stopped")
