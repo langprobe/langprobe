@@ -8,6 +8,12 @@ metadata:
     app.kubernetes.io/component: ingest-worker
 spec:
   replicas: {{ .Values.ingestWorker.replicaCount }}
+  # Recreate so a single-replica rollout doesn't need 2x capacity. The
+  # worker is a Redis-stream consumer; redelivery on a brief outage is
+  # already in the failure model (XACK after successful insert), so
+  # killing the old pod before starting the new one is safe.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       {{- include "tracebility.ingestWorker.selectorLabels" . | nindent 6 }}

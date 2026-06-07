@@ -8,6 +8,14 @@ metadata:
     app.kubernetes.io/component: api
 spec:
   replicas: {{ .Values.api.replicaCount }}
+  # Recreate so a single-replica rollout doesn't briefly need 2x the
+  # capacity of one pod. With Autopilot's just-in-time node scaling,
+  # RollingUpdate's default maxSurge=1 forces a node scale-up on every
+  # deploy; that takes ~5min and pushes the helm --wait past timeout.
+  # Brief outage during rollout is acceptable for the api service —
+  # the LB is fronted by web, not api directly.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       {{- include "tracebility.api.selectorLabels" . | nindent 6 }}
