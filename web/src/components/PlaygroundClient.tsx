@@ -78,6 +78,26 @@ function extractVariables(template: string): string[] {
   return [...out];
 }
 
+/**
+ * Run the same variable-detection regex across a list of messages and
+ * return the deduped union (preserving first-seen order). Used by the
+ * composer to keep the Inputs panel in sync as the user edits System
+ * and Human bodies.
+ */
+export function extractVariablesFromMessages(messages: Message[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const m of messages) {
+    for (const v of extractVariables(m.content)) {
+      if (!seen.has(v)) {
+        seen.add(v);
+        out.push(v);
+      }
+    }
+  }
+  return out;
+}
+
 export function PlaygroundComposer({
   projectId,
   prompts,
