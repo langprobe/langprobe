@@ -19,7 +19,7 @@ from __future__ import annotations
 import json as _json
 import re
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 import asyncpg
@@ -62,10 +62,28 @@ class PromptPatch(BaseModel):
     description: str | None = Field(default=None, max_length=2000)
 
 
+class Message(BaseModel):
+    """A single typed message in a prompt template.
+
+    v1 supports `system` and `human` roles. AI / tool / output_schema are
+    deferred — see the spec for the rationale and the deferral triggers.
+    The content is a Jinja `{{ var }}` template; substitution happens at
+    render time on the playground / dispatch path.
+    """
+
+    role: Literal["system", "human"]
+    content: str
+
+
 class PromptVersionOut(BaseModel):
     id: UUID
     prompt_id: UUID
     version: int
+    template_messages: list[Message]
+    # Legacy single-string field. Populated for back-compat with clients
+    # written before plan B lands. Derived from `template_messages` when
+    # the version is exactly one human message; otherwise empty string.
+    # Drop after one release per the migration cleanup plan.
     template: str
     input_schema: dict[str, Any] | None
     model_params: dict[str, Any] | None
@@ -283,15 +301,15 @@ async def list_versions(
     )
     rows = await pool.fetch(
         """
-        select id, prompt_id, version, template, input_schema, model_params,
-               aliases, commit_message, created_at
+        select id, prompt_id, version, template, template_messages,
+               input_schema, model_params, aliases, commit_message, created_at
         from prompt_version
         where prompt_id = $1
         order by version desc
         """,
         prompt_id,
     )
-    return PromptVersionList(versions=[_version_from_row(r) for r in rows])
+    return PromptVersionList(versions=[_hydrate_version(r) for r in rows])
 
 
 @router.post(
@@ -345,8 +363,9 @@ async def create_version(
                     aliases, commit_message, created_by
                 )
                 values ($1, $2, $3, $4::jsonb, $5::jsonb, $6, $7, $8)
-                returning id, prompt_id, version, template, input_schema,
-                          model_params, aliases, commit_message, created_at
+                returning id, prompt_id, version, template, template_messages,
+                          input_schema, model_params, aliases, commit_message,
+                          created_at
                 """,
             prompt_id,
             next_version,
@@ -362,7 +381,7 @@ async def create_version(
             prompt_id,
         )
     assert row is not None
-    version = _version_from_row(row)
+    version = _hydrate_version(row)
     await audit.record(
         pool,
         principal=principal,
@@ -398,8 +417,8 @@ async def get_version(
     )
     row = await pool.fetchrow(
         """
-        select id, prompt_id, version, template, input_schema, model_params,
-               aliases, commit_message, created_at
+        select id, prompt_id, version, template, template_messages,
+               input_schema, model_params, aliases, commit_message, created_at
         from prompt_version
         where prompt_id = $1 and version = $2
         """,
@@ -408,7 +427,7 @@ async def get_version(
     )
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "version not found")
-    return _version_from_row(row)
+    return _hydrate_version(row)
 
 
 @router.post("/{prompt_id}/aliases", response_model=PromptVersionOut)
@@ -453,8 +472,9 @@ async def assign_alias(
                     else aliases || array[$2]
                 end
                 where prompt_id = $1 and version = $3
-                returning id, prompt_id, version, template, input_schema,
-                          model_params, aliases, commit_message, created_at
+                returning id, prompt_id, version, template, template_messages,
+                          input_schema, model_params, aliases, commit_message,
+                          created_at
                 """,
             prompt_id,
             body.alias,
@@ -465,7 +485,7 @@ async def assign_alias(
             prompt_id,
         )
     assert row is not None
-    version = _version_from_row(row)
+    version = _hydrate_version(row)
     await audit.record(
         pool,
         principal=principal,
@@ -501,13 +521,35 @@ def _normalize_aliases(raw: list[str]) -> list[str]:
     return out
 
 
-def _version_from_row(row: asyncpg.Record) -> PromptVersionOut:
+def _hydrate_version(row: asyncpg.Record) -> PromptVersionOut:
+    """Convert a prompt_version row to the response model.
+
+    Reads template_messages (the canonical structured field) and derives
+    the legacy `template` for one release of back-compat — only populated
+    when the version is exactly one bare human message; otherwise empty
+    so old clients see a cleanly-empty value rather than a half-truth.
+    """
     data = dict(row)
+    msgs_raw = data["template_messages"]
+    # asyncpg normally returns jsonb already decoded (here always a list),
+    # but some driver/codec configurations hand back the raw json string —
+    # decode defensively so we never feed a str into model_validate.
+    if isinstance(msgs_raw, str):
+        msgs_raw = _json.loads(msgs_raw)
+    # Unknown roles raise ValidationError by design: v1 only persists
+    # {system, human}, and silently widening the Literal would mask a
+    # data-corruption bug. If/when ai/tool roles land, extend Message,
+    # don't loosen this validation.
+    messages = [Message.model_validate(m) for m in msgs_raw]
+    legacy_template = (
+        messages[0].content if len(messages) == 1 and messages[0].role == "human" else ""
+    )
     return PromptVersionOut(
         id=data["id"],
         prompt_id=data["prompt_id"],
         version=data["version"],
-        template=data["template"],
+        template_messages=messages,
+        template=legacy_template,
         input_schema=_jsonb(data.get("input_schema")),
         model_params=_jsonb(data.get("model_params")),
         aliases=list(data.get("aliases") or []),
