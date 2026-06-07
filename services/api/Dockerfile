@@ -6,6 +6,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# Install the workspace-shared tracebility-tenant package first. uv treats
+# it as a workspace member; pip needs it pre-installed locally so the
+# subsequent ``pip install .`` finds it (not published to PyPI).
+COPY services/_shared/tenant /tmp/tracebility-tenant
+RUN pip install --no-cache-dir /tmp/tracebility-tenant && rm -rf /tmp/tracebility-tenant
+
 COPY services/api/pyproject.toml ./pyproject.toml
 COPY services/api/tracebility_api ./tracebility_api
 
