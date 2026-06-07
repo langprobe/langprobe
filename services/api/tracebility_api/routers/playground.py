@@ -41,7 +41,7 @@ from uuid import UUID
 import asyncpg
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from .. import audit
 from ..auth import Principal, assert_workspace_role, require_user
@@ -66,11 +66,36 @@ _DEFAULT_MAX_TOKENS = 1024
 class PlaygroundCreate(BaseModel):
     project_id: UUID
     prompt_version_id: UUID | None = None
+    # Legacy single-string template. Wraps to a single human message
+    # at render time. Drops in the cleanup PR after Plan C lands.
     raw_template: str | None = None
+    # Structured form added in Plan B. Mutually exclusive with
+    # raw_template and prompt_version_id (xor enforced below).
+    # min_length=1 rejects an empty list at field-validation time with a
+    # structured `type=too_short` error scoped to `loc=('raw_messages',)`,
+    # before the model validator runs.
+    raw_messages: list[Message] | None = Field(default=None, min_length=1)
     variables: dict[str, Any] = Field(default_factory=dict)
     model: str = Field(min_length=1, max_length=128)
     temperature: float | None = Field(default=None, ge=0.0, le=2.0)
     max_tokens: int | None = Field(default=None, ge=1, le=8192)
+
+    @model_validator(mode="after")
+    def _exactly_one_template_source(self) -> PlaygroundCreate:
+        sources = [
+            self.prompt_version_id is not None,
+            self.raw_template is not None,
+            self.raw_messages is not None,
+        ]
+        n = sum(sources)
+        if n == 0:
+            raise ValueError("one of prompt_version_id, raw_template, raw_messages is required")
+        if n > 1:
+            raise ValueError(
+                "prompt_version_id, raw_template, raw_messages are mutually "
+                "exclusive; provide exactly one"
+            )
+        return self
 
 
 class PlaygroundSessionOut(BaseModel):
@@ -148,12 +173,6 @@ async def create_session(
     body: PlaygroundCreate,
     principal: Principal = Depends(require_user),
 ) -> PlaygroundSessionOut:
-    if body.prompt_version_id is None and not body.raw_template:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST,
-            "either prompt_version_id or raw_template is required",
-        )
-
     pool: asyncpg.Pool = request.app.state.pg
     workspace_id = await _assert_project_role(
         pool, principal, body.project_id, ("owner", "admin", "member")
