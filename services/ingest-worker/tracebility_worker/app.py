@@ -47,9 +47,11 @@ async def _serve(settings: Settings) -> None:
 
     log.info(
         "worker starting",
-        stream=settings.stream_key,
+        streams=settings.stream_keys(),
         group=settings.consumer_group,
         consumer=settings.consumer_name,
+        shard_count=settings.shard_count,
+        dual_read_legacy=settings.dual_read_legacy,
     )
     try:
         await consumer.run()
