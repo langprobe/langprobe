@@ -20,9 +20,10 @@ from uuid import UUID
 import orjson
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from tracebility_tenant import QuotaMeter, TenantContext
 
-from ..auth import AuthContext, require_ingest_key
 from ..enqueue import IngestEnqueue, serialize_batch
+from ..limits import INGEST_GATING_METER, enforce_quota
 from ..redactor import Redactor
 from ..schemas import IngestAck, IngestBatch, RunIngest, RunKind
 
@@ -83,11 +84,12 @@ def _to_run_ingest(body: dict[str, Any], *, partial: bool = False) -> RunIngest:
     )
 
 
-async def _enqueue_runs(request: Request, ctx: AuthContext, runs: list[RunIngest]) -> IngestAck:
+async def _enqueue_runs(request: Request, ctx: TenantContext, runs: list[RunIngest]) -> IngestAck:
     batch = IngestBatch(sdk="langsmith", runs=runs)
     envelope: dict[str, Any] = {
-        "project_id": str(ctx.project_id),
         "org_id": str(ctx.org_id),
+        "workspace_id": str(ctx.workspace_id),
+        "project_id": str(ctx.project_id),
         "api_key_id": str(ctx.api_key_id),
         "received_at": datetime.now(UTC).isoformat(),
         "source": "langsmith_shim",
@@ -102,7 +104,20 @@ async def _enqueue_runs(request: Request, ctx: AuthContext, runs: list[RunIngest
             project_id=envelope["project_id"],
             counts=dict(counts),
         )
-    await enqueue.enqueue(serialize_batch(envelope))
+    serialized = serialize_batch(envelope)
+    await enqueue.enqueue(serialized, org_id=ctx.org_id)
+
+    quota_meter: QuotaMeter = request.app.state.quota_meter
+    try:
+        await quota_meter.record(
+            org_id=ctx.org_id, meter=INGEST_GATING_METER, amount=len(runs), limit=-1
+        )
+        await quota_meter.record(
+            org_id=ctx.org_id, meter="span_bytes", amount=len(serialized), limit=-1
+        )
+    except Exception:  # noqa: BLE001
+        log.warning("quota record failed", org_id=str(ctx.org_id))
+
     return IngestAck(accepted_runs=len(runs), accepted_spans=0)
 
 
@@ -110,7 +125,7 @@ async def _enqueue_runs(request: Request, ctx: AuthContext, runs: list[RunIngest
 async def langsmith_create_run(
     request: Request,
     body: dict[str, Any],
-    ctx: AuthContext = Depends(require_ingest_key),
+    ctx: TenantContext = Depends(enforce_quota),
 ) -> IngestAck:
     if "id" not in body:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "id is required")
@@ -121,7 +136,7 @@ async def langsmith_create_run(
 async def langsmith_batch_runs(
     request: Request,
     body: dict[str, Any],
-    ctx: AuthContext = Depends(require_ingest_key),
+    ctx: TenantContext = Depends(enforce_quota),
 ) -> IngestAck:
     posts = body.get("post") or []
     patches = body.get("patch") or []
@@ -134,7 +149,7 @@ async def langsmith_update_run(
     request: Request,
     run_id: UUID,
     body: dict[str, Any],
-    ctx: AuthContext = Depends(require_ingest_key),
+    ctx: TenantContext = Depends(enforce_quota),
 ) -> IngestAck:
     merged = {**body, "id": str(run_id)}
     return await _enqueue_runs(request, ctx, [_to_run_ingest(merged, partial=True)])

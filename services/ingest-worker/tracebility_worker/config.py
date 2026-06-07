@@ -1,8 +1,10 @@
 """Worker configuration.
 
-Stream key + group must match what ingest-api writes (``tracebility:ingest:v1``).
-Consumer name should be unique per worker pod so XPENDING attribution works;
-defaults to the host name.
+The worker reads from N sharded streams ``tracebility:ingest:v1:{0..N-1}``
+and from the legacy single-stream ``tracebility:ingest:v1`` during the
+dual-read window of the cutover (spec §9 step 9). Consumer name should be
+unique per worker pod so XPENDING attribution works; defaults to the host
+name.
 """
 
 from __future__ import annotations
@@ -11,19 +13,34 @@ import os
 import socket
 from dataclasses import dataclass
 
+from tracebility_tenant import ShardRouter
+
 
 @dataclass(frozen=True)
 class Settings:
     redis_url: str
     clickhouse_url: str
-    stream_key: str = "tracebility:ingest:v1"
+    shard_count: int = ShardRouter().shard_count
+    # Read the legacy single-stream alongside the shards. Set to false once
+    # the cutover is complete and the legacy stream is empty.
+    dual_read_legacy: bool = True
     consumer_group: str = "ingest"
     consumer_name: str = "worker-1"
-    dead_letter_stream: str = "tracebility:ingest:v1:dlq"
+    # Per-shard DLQ: ``tracebility:ingest:v1:<shard>:dlq``
+    dlq_prefix: str = "tracebility:ingest:v1"
     batch_size: int = 500
     block_ms: int = 2000
     max_deliveries: int = 5
     log_level: str = "INFO"
+
+    def stream_keys(self) -> list[str]:
+        keys = [f"{self.dlq_prefix}:{i}" for i in range(self.shard_count)]
+        if self.dual_read_legacy:
+            keys.append(self.dlq_prefix)
+        return keys
+
+    def dlq_for(self, stream_key: str) -> str:
+        return f"{stream_key}:dlq"
 
 
 def load() -> Settings:
@@ -36,6 +53,11 @@ def load() -> Settings:
     return Settings(
         redis_url=redis_url,
         clickhouse_url=clickhouse_url,
+        shard_count=int(
+            os.environ.get("TRACEBILITY_INGEST_SHARD_COUNT", str(ShardRouter().shard_count))
+        ),
+        dual_read_legacy=os.environ.get("TRACEBILITY_INGEST_DUAL_READ_LEGACY", "true").lower()
+        not in {"0", "false", "no", "off"},
         consumer_name=os.environ.get(
             "TRACEBILITY_WORKER_CONSUMER_NAME", socket.gethostname() or "worker-1"
         ),

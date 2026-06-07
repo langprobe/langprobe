@@ -3,29 +3,28 @@
 Postgres stores `public_id` (lookup key) and `secret_hash` (argon2id of secret).
 Per ER-09: if Postgres is unreachable we fail closed (401), never bypass.
 Per ER-20: revoked keys 401 immediately.
+
+The resolved tuple is the ``TenantContext`` from ``tracebility_tenant`` —
+the same type ingest-worker / api / eval-orchestrator use. We keep
+``AuthContext`` as a thin alias so existing imports continue to work.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import UTC, datetime
 from typing import Final
-from uuid import UUID
 
 import asyncpg
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
 from fastapi import Header, HTTPException, Request, status
+from tracebility_tenant import Resolver, TenantContext
+from tracebility_tenant.resolver import ResolverInvalidKey, ResolverUnavailable
 
 _PH: Final = PasswordHasher()
 
-
-@dataclass(frozen=True)
-class AuthContext:
-    project_id: UUID
-    org_id: UUID
-    api_key_id: UUID
-    scopes: tuple[str, ...]
+# Backwards-compat alias. Routers that currently import ``AuthContext`` will
+# transparently get a ``TenantContext`` (which carries workspace_id + plan).
+AuthContext = TenantContext
 
 
 def _split_key(raw: str) -> tuple[str, str]:
@@ -44,7 +43,7 @@ async def require_ingest_key(
     request: Request,
     authorization: str | None = Header(default=None),
     x_api_key: str | None = Header(default=None, alias="X-Api-Key"),
-) -> AuthContext:
+) -> TenantContext:
     raw = x_api_key
     if raw is None and authorization and authorization.lower().startswith("bearer "):
         raw = authorization[len("Bearer ") :].strip()
@@ -52,45 +51,40 @@ async def require_ingest_key(
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "missing api key")
 
     public_id, secret = _split_key(raw)
+
+    # Resolver covers project/workspace/org/plan/scopes lookup with Redis cache.
+    # We still need the per-key ``secret_hash`` to verify the secret, which the
+    # resolver intentionally does not cache (it's argon2 — verification cost is
+    # the point). One small pg lookup per cache miss + one per request.
+    resolver: Resolver = request.app.state.resolver
     pool: asyncpg.Pool = request.app.state.pg
+
     try:
-        row = await pool.fetchrow(
-            """
-            select api_key.id as api_key_id,
-                   api_key.project_id,
-                   workspace.org_id,
-                   api_key.secret_hash,
-                   api_key.scopes,
-                   api_key.revoked_at,
-                   api_key.expires_at
-            from api_key
-            join project on project.id = api_key.project_id
-            join workspace on workspace.id = project.workspace_id
-            where api_key.public_id = $1
-            """,
-            public_id,
-        )
-    except (asyncpg.PostgresError, OSError) as exc:
-        # ER-09: fail closed if pg unreachable; never bypass
+        ctx = await resolver.resolve(public_id)
+    except ResolverInvalidKey as exc:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid api key") from exc
+    except ResolverUnavailable as exc:
+        # ER-09: fail closed
         raise HTTPException(
             status.HTTP_401_UNAUTHORIZED, "auth backend unavailable"
         ) from exc
 
-    if row is None:
+    try:
+        secret_row = await pool.fetchrow(
+            "select secret_hash from api_key where id = $1",
+            ctx.api_key_id,
+        )
+    except (asyncpg.PostgresError, OSError) as exc:
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED, "auth backend unavailable"
+        ) from exc
+
+    if secret_row is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid api key")
-    if row["revoked_at"] is not None:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "key revoked")
-    if row["expires_at"] is not None and row["expires_at"] < datetime.now(UTC):
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "key expired")
 
     try:
-        _PH.verify(row["secret_hash"], secret)
+        _PH.verify(secret_row["secret_hash"], secret)
     except VerifyMismatchError as exc:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid api key") from exc
 
-    return AuthContext(
-        project_id=row["project_id"],
-        org_id=row["org_id"],
-        api_key_id=row["api_key_id"],
-        scopes=tuple(row["scopes"]),
-    )
+    return ctx

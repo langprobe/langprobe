@@ -12,6 +12,11 @@ from dataclasses import dataclass
 class Settings:
     redis_url: str
     postgres_dsn: str
+    # ClickHouse used by AuditWriter (egress + quota.block events)
+    clickhouse_url: str
+    clickhouse_user: str
+    clickhouse_password: str
+    clickhouse_database: str = "default"
     # spans larger than this are spilled to object storage (per ER-06)
     inline_blob_max_bytes: int = 1_000_000
     # disk buffer for ingest enqueue when redis is unavailable (ER-01)
@@ -30,13 +35,20 @@ class Settings:
 def load() -> Settings:
     redis_url = os.environ.get("TRACEBILITY_REDIS_URL")
     postgres_dsn = os.environ.get("TRACEBILITY_PG_DSN")
+    clickhouse_url = os.environ.get("TRACEBILITY_CLICKHOUSE_URL")
     if not redis_url:
         raise RuntimeError("TRACEBILITY_REDIS_URL is required")
     if not postgres_dsn:
         raise RuntimeError("TRACEBILITY_PG_DSN is required")
+    if not clickhouse_url:
+        raise RuntimeError("TRACEBILITY_CLICKHOUSE_URL is required")
     return Settings(
         redis_url=redis_url,
         postgres_dsn=postgres_dsn,
+        clickhouse_url=clickhouse_url,
+        clickhouse_user=os.environ.get("TRACEBILITY_CLICKHOUSE_USER", "default"),
+        clickhouse_password=os.environ.get("TRACEBILITY_CLICKHOUSE_PASSWORD", ""),
+        clickhouse_database=os.environ.get("TRACEBILITY_CLICKHOUSE_DATABASE", "default"),
         inline_blob_max_bytes=int(
             os.environ.get("TRACEBILITY_INLINE_BLOB_MAX_BYTES", "1000000")
         ),

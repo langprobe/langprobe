@@ -32,6 +32,8 @@ from clickhouse_connect.driver import Client
 log = structlog.get_logger("tracebility.worker.writer")
 
 _RUN_COLUMNS: tuple[str, ...] = (
+    "org_id",
+    "workspace_id",
     "project_id",
     "run_id",
     "parent_run_id",
@@ -60,6 +62,8 @@ _RUN_COLUMNS: tuple[str, ...] = (
 )
 
 _SPAN_COLUMNS: tuple[str, ...] = (
+    "org_id",
+    "workspace_id",
     "project_id",
     "run_id",
     "span_id",
@@ -87,6 +91,8 @@ _SPAN_COLUMNS: tuple[str, ...] = (
 )
 
 _REPLAY_CAPTURE_COLUMNS: tuple[str, ...] = (
+    "org_id",
+    "workspace_id",
     "project_id",
     "run_id",
     "span_id",
@@ -128,10 +134,46 @@ def _epoch(value: Any) -> datetime:
     return parsed if parsed is not None else datetime.fromtimestamp(0, tz=UTC)
 
 
+_MISSING_TENANT_UUID = "00000000-0000-0000-0000-000000000000"
+
+
+def _tenant_tuple(envelope: dict[str, Any]) -> tuple[str, str, str]:
+    """(org_id, workspace_id, project_id) from the envelope.
+
+    During the rolling cutover (spec §9 step 6), envelopes from the
+    pre-Phase-5 ingest-api lack ``org_id``/``workspace_id``. We can't drop
+    those rows or the worker stalls; instead, write a sentinel UUID and
+    flag the line so the operator sees a structured warning.
+
+    Once Phase 5 is fully deployed, the warn count drops to zero. The
+    sentinel rows can be reconciled out of ClickHouse via the
+    ``project_tenant_dict`` lookup if anyone cares to backfill them.
+    """
+    org_id = envelope.get("org_id")
+    workspace_id = envelope.get("workspace_id")
+    project_id = envelope["project_id"]
+    if not org_id or not workspace_id:
+        log.warning(
+            "envelope missing tenant fields; using sentinel",
+            project_id=project_id,
+            has_org=bool(org_id),
+            has_workspace=bool(workspace_id),
+        )
+        return (
+            org_id or _MISSING_TENANT_UUID,
+            workspace_id or _MISSING_TENANT_UUID,
+            project_id,
+        )
+    return (org_id, workspace_id, project_id)
+
+
 def _row_for_run(envelope: dict[str, Any], run: dict[str, Any]) -> tuple[Any, ...]:
     received_at = _epoch(run.get("received_at") or envelope.get("received_at"))
+    org_id, workspace_id, project_id = _tenant_tuple(envelope)
     return (
-        envelope["project_id"],
+        org_id,
+        workspace_id,
+        project_id,
         run["run_id"],
         run.get("parent_run_id"),
         run.get("name") or "",
@@ -167,8 +209,11 @@ def _row_for_span(
 ) -> tuple[Any, ...]:
     received_at = _epoch(envelope.get("received_at"))
     run_id = span.get("run_id") or parent_run_id
+    org_id, workspace_id, project_id = _tenant_tuple(envelope)
     return (
-        envelope["project_id"],
+        org_id,
+        workspace_id,
+        project_id,
         run_id,
         span["span_id"],
         span.get("parent_span_id"),
@@ -252,8 +297,11 @@ def _row_for_replay_capture(
         "model": span.get("model"),
         "temperature": span.get("temperature"),
     }
+    org_id, workspace_id, project_id = _tenant_tuple(envelope)
     return (
-        envelope["project_id"],
+        org_id,
+        workspace_id,
+        project_id,
         run_id,
         span["span_id"],
         replay_kind,

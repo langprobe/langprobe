@@ -8,14 +8,18 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 import asyncpg
+import redis.asyncio as redis_async
 import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from tracebility_tenant import AuditWriter
 
 from . import config
 from .clickhouse_client import ClickHouseQuery
 from .middleware import install as install_middleware
 from .routers import (
+    admin_audit,
+    admin_quotas,
     alerts,
     annotations,
     api_keys,
@@ -44,6 +48,7 @@ from .routers import (
     sso as sso_router,
     studio,
     threads_query,
+    workspaces_me,
 )
 
 log = structlog.get_logger("tracebility.api.app")
@@ -78,6 +83,28 @@ def create_app() -> FastAPI:
             if settings.clickhouse_url
             else None
         )
+        # Audit writer: every egress event lands here (export, share-link,
+        # webhook fan-out, read API inputs/outputs return). Postgres
+        # ``audit_log`` is read-only after this lands; new writes go to
+        # ClickHouse via this writer (spec §5.8).
+        app.state.audit_writer = (
+            await AuditWriter.from_url(
+                settings.clickhouse_url,
+                username=settings.clickhouse_user,
+                password=settings.clickhouse_password,
+                database=settings.clickhouse_database,
+            )
+            if settings.clickhouse_url
+            else None
+        )
+        # Redis is needed for the api-key invalidation publish path and the
+        # quota / audit reconciler hooks. Optional; if unset, those features
+        # are no-ops.
+        app.state.redis = (
+            redis_async.from_url(settings.redis_url, decode_responses=False)
+            if settings.redis_url
+            else None
+        )
         # Spawn the alert evaluator so threshold rules tick without an
         # external scheduler. Cancelled cleanly on shutdown.
         evaluator_task = asyncio.create_task(
@@ -99,6 +126,8 @@ def create_app() -> FastAPI:
                 pass
             if app.state.clickhouse is not None:
                 app.state.clickhouse.close()
+            if app.state.redis is not None:
+                await app.state.redis.aclose()
             await app.state.pg.close()
             log.info("api stopped")
 
@@ -146,6 +175,9 @@ def create_app() -> FastAPI:
     app.include_router(oauth_signup.router)
     app.include_router(scim.router)
     app.include_router(scim.admin_router)
+    app.include_router(workspaces_me.router)
+    app.include_router(admin_quotas.router)
+    app.include_router(admin_audit.router)
     return app
 
 

@@ -24,8 +24,9 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel
 
-from ..auth import Principal, assert_workspace_role, require_user
+from ..auth import Principal, require_user
 from ..clickhouse_client import ClickHouseQuery
+from ..tenant_scope import ScopedClickHouse, resolve_project_scope
 
 log = structlog.get_logger("tracebility.api.runs_query")
 
@@ -113,25 +114,8 @@ async def list_runs(
     principal: Principal = Depends(require_user),
 ) -> RunListResponse:
     pool: asyncpg.Pool = request.app.state.pg
-    workspace_id = await pool.fetchval(
-        "select workspace_id from project where id = $1 and deleted_at is null",
-        project_id,
-    )
-    if workspace_id is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "project not found")
-    await assert_workspace_role(
-        pool,
-        user_id=principal.user_id,
-        workspace_id=workspace_id,
-        allowed=("owner", "admin", "member", "viewer"),
-    )
-
-    ch: ClickHouseQuery | None = getattr(request.app.state, "clickhouse", None)
-    if ch is None:
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE,
-            "clickhouse not configured (set TRACEBILITY_CLICKHOUSE_URL)",
-        )
+    scope = await resolve_project_scope(pool, project_id, principal)
+    ch = _scoped_ch(request, scope)
 
     sql = """
         select run_id, name, kind, status, start_time, duration_ns,
@@ -139,11 +123,7 @@ async def list_runs(
         from run final
         where project_id = {project_id:UUID}
     """
-    params: dict[str, object] = {
-        "project_id": str(project_id),
-        "limit": limit,
-        "offset": offset,
-    }
+    params: dict[str, object] = {"limit": limit, "offset": offset}
     if status_filter is not None:
         sql += " and status = {status_filter:String}"
         params["status_filter"] = status_filter
@@ -195,8 +175,8 @@ async def get_run(
     principal: Principal = Depends(require_user),
 ) -> RunDetail:
     pool: asyncpg.Pool = request.app.state.pg
-    await _assert_project_access(pool, project_id, principal)
-    ch = _require_clickhouse(request)
+    scope = await resolve_project_scope(pool, project_id, principal)
+    ch = _scoped_ch(request, scope)
 
     sql = """
         select run_id, project_id, parent_run_id, name, kind, status,
@@ -210,7 +190,7 @@ async def get_run(
           and run_id = {run_id:UUID}
         limit 1
     """
-    params = {"project_id": str(project_id), "run_id": str(run_id)}
+    params = {"run_id": str(run_id)}
     try:
         rows = await ch.query(sql, parameters=params)
     except Exception as exc:  # noqa: BLE001
@@ -257,8 +237,8 @@ async def list_spans(
     principal: Principal = Depends(require_user),
 ) -> SpanListResponse:
     pool: asyncpg.Pool = request.app.state.pg
-    await _assert_project_access(pool, project_id, principal)
-    ch = _require_clickhouse(request)
+    scope = await resolve_project_scope(pool, project_id, principal)
+    ch = _scoped_ch(request, scope)
 
     sql = """
         select span_id, parent_span_id, name, kind, status,
@@ -272,7 +252,7 @@ async def list_spans(
         order by start_time asc
         limit 5000
     """
-    params = {"project_id": str(project_id), "run_id": str(run_id)}
+    params = {"run_id": str(run_id)}
     try:
         rows = await ch.query(sql, parameters=params)
     except Exception as exc:  # noqa: BLE001
@@ -312,31 +292,14 @@ async def list_spans(
     return SpanListResponse(items=items)
 
 
-async def _assert_project_access(
-    pool: asyncpg.Pool, project_id: UUID, principal: Principal
-) -> None:
-    workspace_id = await pool.fetchval(
-        "select workspace_id from project where id = $1 and deleted_at is null",
-        project_id,
-    )
-    if workspace_id is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "project not found")
-    await assert_workspace_role(
-        pool,
-        user_id=principal.user_id,
-        workspace_id=workspace_id,
-        allowed=("owner", "admin", "member", "viewer"),
-    )
-
-
-def _require_clickhouse(request: Request) -> ClickHouseQuery:
+def _scoped_ch(request: Request, scope) -> ScopedClickHouse:
     ch: ClickHouseQuery | None = getattr(request.app.state, "clickhouse", None)
     if ch is None:
         raise HTTPException(
             status.HTTP_503_SERVICE_UNAVAILABLE,
             "clickhouse not configured (set TRACEBILITY_CLICKHOUSE_URL)",
         )
-    return ch
+    return ScopedClickHouse(ch, scope)
 
 
 def _latency_ms(duration_ns: object) -> float | None:
