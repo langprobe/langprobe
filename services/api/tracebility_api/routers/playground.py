@@ -5,7 +5,9 @@ call this model, write the result everywhere a trace would land".
 Concretely, the request handler:
 
 1. Persists a `playground_session` row in postgres (status=running).
-2. Renders the template (Jinja-style ``{{ var }}`` substitution).
+2. Renders each message's content (Jinja-style ``{{ var }}`` substitution)
+   and persists both the structured rendered_messages and a newline-
+   joined rendered_prompt for the trace UI's display path.
 3. Calls the chosen LLM provider over HTTP.
 4. Writes a `run` + `span` to ClickHouse with `sdk='playground'` so
    the result is visible at `/runs/{id}` like any other trace.
@@ -180,22 +182,24 @@ async def create_session(
 
     provider = _resolve_provider(body.model)
 
-    # Resolve the template body. If a prompt_version was provided, the
-    # postgres row is authoritative; the raw_template field on the
-    # request is ignored to avoid silent divergence.
-    template_body, version_row = await _resolve_template(pool, body)
+    # Resolve the message list to render. raw_messages > prompt_version_id
+    # > raw_template per the xor validator on PlaygroundCreate.
+    template_messages, version_row = await _resolve_messages(pool, body)
 
-    rendered = _render_template(template_body, body.variables)
+    rendered_messages = _render_messages(template_messages, body.variables)
+    # Newline-joined readable view for the trace UI's existing display
+    # path. The structured rendered_messages is what replay reads.
+    rendered_prompt = "\n\n".join(m.content for m in rendered_messages)
 
     started = time.monotonic()
     session_row = await pool.fetchrow(
         """
         insert into playground_session (
             project_id, prompt_version_id, raw_template, rendered_prompt,
-            variables, provider, model, temperature, max_tokens,
-            status, created_by
+            rendered_messages, variables, provider, model, temperature,
+            max_tokens, status, created_by
         )
-        values ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, 'running', $10)
+        values ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $8, $9, $10, 'running', $11)
         returning id, project_id, prompt_version_id, raw_template,
                   rendered_prompt, variables, provider, model, temperature,
                   max_tokens, status, output_text, prompt_tokens,
@@ -204,8 +208,13 @@ async def create_session(
         """,
         body.project_id,
         body.prompt_version_id,
-        None if version_row is not None else body.raw_template,
-        rendered,
+        # raw_template column on the session is only persisted for the
+        # legacy single-string path. raw_messages and prompt_version_id
+        # paths leave it null so the trace UI doesn't show a misleading
+        # legacy snippet.
+        None if (version_row is not None or body.raw_messages is not None) else body.raw_template,
+        rendered_prompt,
+        _json.dumps([m.model_dump() for m in rendered_messages]),
         _json.dumps(body.variables),
         provider,
         body.model,
@@ -227,6 +236,7 @@ async def create_session(
             "provider": provider,
             "prompt_version_id": str(body.prompt_version_id) if body.prompt_version_id else None,
             "raw_template": body.raw_template is not None,
+            "raw_messages": body.raw_messages is not None,
         },
         request=request,
         workspace_id=workspace_id,
@@ -237,7 +247,7 @@ async def create_session(
     # recorded in dispatch_cost by the gateway; the session row only
     # holds the surface state.
     if provider == "stub":
-        result_dict = await _dispatch_stub(body.model, rendered)
+        result_dict = await _dispatch_stub(body.model, rendered_prompt)
     else:
         from ..llm import DispatchError
         from ..llm import dispatch as gateway_dispatch
@@ -249,7 +259,7 @@ async def create_session(
                 surface="playground",
                 surface_ref_id=session_id,
                 model=f"{provider}/{body.model.removeprefix(provider + '/')}",
-                messages=[DispatchMessage(role="user", content=rendered)],
+                messages=_to_dispatch_messages(rendered_messages),
                 temperature=body.temperature,
                 max_tokens=body.max_tokens or _DEFAULT_MAX_TOKENS,
             )
@@ -292,7 +302,7 @@ async def create_session(
             run_id=run_id,
             model=body.model,
             temperature=body.temperature,
-            prompt=rendered,
+            prompt=rendered_prompt,
             output=result["text"],
             prompt_tokens=result["prompt_tokens"],
             completion_tokens=result["completion_tokens"],
@@ -413,21 +423,39 @@ def _resolve_provider(model: str) -> str:
     )
 
 
-async def _resolve_template(
+async def _resolve_messages(
     pool: asyncpg.Pool,
     body: PlaygroundCreate,
-) -> tuple[str, asyncpg.Record | None]:
+) -> tuple[list[Message], asyncpg.Record | None]:
+    """Return the message list to render + the version row (if any).
+
+    Resolution order matches PlaygroundCreate's xor validator:
+      1. raw_messages   - explicit; use as-is.
+      2. prompt_version_id - read template_messages from prompt_version.
+      3. raw_template   - wrap as [{role: human, content: <s>}].
+
+    Exactly one of these is set per the model validator; the validator
+    runs before this function so the assertions below are guards, not
+    logic.
+    """
+    if body.raw_messages is not None:
+        return body.raw_messages, None
     if body.prompt_version_id is not None:
         version_row = await pool.fetchrow(
-            """select id, prompt_id, template from prompt_version
-                 where id = $1""",
+            """select id, prompt_id, template, template_messages
+                 from prompt_version where id = $1""",
             body.prompt_version_id,
         )
         if version_row is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "prompt version not found")
-        return version_row["template"], version_row
+        msgs_raw = version_row["template_messages"]
+        if isinstance(msgs_raw, str):
+            msgs_raw = _json.loads(msgs_raw)
+        messages = [Message.model_validate(m) for m in msgs_raw]
+        return messages, version_row
+    # raw_template path
     assert body.raw_template is not None  # validated above
-    return body.raw_template, None
+    return [Message(role="human", content=body.raw_template)], None
 
 
 def _coerce_var_value(value: Any) -> str:
@@ -445,16 +473,6 @@ def _coerce_var_value(value: Any) -> str:
         return str(value)
 
 
-def _render_template(template: str, variables: dict[str, Any]) -> str:
-    def _repl(match: re.Match[str]) -> str:
-        key = match.group(1)
-        if key not in variables:
-            return match.group(0)
-        return _coerce_var_value(variables[key])
-
-    return _VAR_RE.sub(_repl, template)
-
-
 def _render_messages(
     messages: list[Message],
     variables: dict[str, Any],
@@ -463,8 +481,8 @@ def _render_messages(
 
     Missing variables render as empty string per spec decision 9 — the
     user can iterate without the renderer fighting them. Non-string
-    values serialize via json.dumps (same as _render_template) so a dict
-    or list passed as a variable round-trips as readable JSON.
+    values serialize via json.dumps (via _coerce_var_value) so a dict or
+    list passed as a variable round-trips as readable JSON.
 
     Returns a fresh list of new Message objects — never mutates the
     input list or its contents.

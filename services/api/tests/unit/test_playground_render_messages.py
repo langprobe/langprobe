@@ -1,9 +1,8 @@
-"""Per-message Jinja-style substitution: each message's content is rendered
+"""Per-message {{ var }} substitution: each message's content is rendered
 against the same variable dict; roles are preserved verbatim.
 
-Spec decision 9: missing variables render as empty string. The legacy
-single-string render path (_render_template) preserves {{ x }} when
-unfilled — _render_messages diverges intentionally."""
+Spec decision 9: missing variables render as empty string.
+"""
 
 from __future__ import annotations
 
@@ -27,8 +26,7 @@ def test_renders_variables_per_message():
 
 def test_missing_variable_renders_empty():
     """Per spec decision 9: a placeholder whose key is absent from the
-    variables dict renders as the empty string (diverges from
-    _render_template, which preserves the literal `{{ x }}`)."""
+    variables dict renders as the empty string."""
     msgs = [Message(role="human", content="Echo: {{ x }}")]
     out = _render_messages(msgs, {})
     assert out == [Message(role="human", content="Echo: ")]
@@ -50,9 +48,8 @@ def test_returns_new_list_does_not_mutate_input():
 
 
 def test_non_string_value_serializes_via_json():
-    """Match _render_template's value-coercion behavior so saved prompts
-    render the same whether the user picks the legacy single-string or
-    the new structured path during the deprecation window."""
+    """Non-string variable values serialize via json.dumps so dicts and
+    lists round-trip as readable JSON."""
     msgs = [Message(role="human", content="ctx={{ ctx }}")]
     out = _render_messages(msgs, {"ctx": {"a": 1}})
     assert out == [Message(role="human", content='ctx={"a": 1}')]
