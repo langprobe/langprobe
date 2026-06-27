@@ -1,4 +1,4 @@
-# Design System — tracability
+# Design System — langprobe
 
 ## Product Context
 - **What this is:** Self-hosted LLM observability + eval-rigor + agent-replay platform. A LangSmith replacement that doubles as the real debugger for agents.
@@ -9,7 +9,7 @@
 - **Direction:** Vercel/Geist-grade product surface. Calm, near-black, paper-warm light mode. Information density without ornament. Not "SaaS pastel," not "AI-tool gradient slop," not "shadcn template." Closest analogs: Vercel dashboard, Linear, GitHub Primer's quieter views.
 - **Decoration level:** None. Type, spacing, and 1px rules carry everything. No gradients. No icon-in-colored-circle. No mesh blobs. No glassmorphism.
 - **Mood:** Quiet, precise, builder-grade. The product looks like calm software, not a pitch deck.
-- **Reference:** `/Users/mia/Downloads/tracability.html` is the canonical mock. When in doubt, open that file and copy what it does.
+- **Reference:** `/Users/mia/Downloads/langprobe.html` is the canonical mock. When in doubt, open that file and copy what it does.
 
 ## Typography
 - **Sans (default UI + body):** Geist, served via `next/font/google`. Weights 400/500/600.
@@ -45,17 +45,19 @@ Tokens — copy these names verbatim into `globals.css`:
 | `--hover` | `#F5F5F3` | Hover row / hover button. |
 | `--border` | `#ECECEA` | Default 1px rule. |
 | `--border-strong` | `#DDDDDB` | Stronger rule, focused-card border. |
-| `--border-focus` | `#0A0A0A` | Focus ring color. |
+| `--border-focus` | `#0485F7` | Focus ring color. Matches `--accent`. |
 | `--text` | `#0A0A0A` | Primary text. Near-black. |
 | `--text-2` | `#4B4B49` | Secondary labels. |
 | `--text-3` | `#8A8A86` | Tertiary, helper, timestamps. |
 | `--text-4` | `#B4B4AE` | Disabled / placeholder. |
-| `--accent` | `#0A0A0A` | Primary button bg, brand mark. |
+| `--accent` | `#0485F7` | Primary button bg, brand mark, focus ring, active states. HeroUI primary blue. |
 | `--accent-fg` | `#FFFFFF` | Foreground on accent. |
-| `--link` | `#2056E2` | Hyperlinks, primary action text. |
-| `--link-soft` | `#EEF2FE` | Link-tinted hover/selected backgrounds. |
-| `--info` | `#2056E2` | Info badge. |
-| `--info-soft` | `#EEF2FE` | Info badge bg. |
+| `--accent-soft` | `#E0F0FE` | Accent-tinted bg (focused field band, selected row, link-soft). |
+| `--accent-hover` | `#3592F9` | Primary button hover state. |
+| `--link` | `#0485F7` | Hyperlinks. Same hue as `--accent` so the brand reads as one voice. |
+| `--link-soft` | `#E0F0FE` | Link-tinted hover/selected backgrounds. |
+| `--info` | `#0485F7` | Info badge. |
+| `--info-soft` | `#E0F0FE` | Info badge bg. |
 | `--success` | `#1A7F4E` | Pass, healthy, OK. |
 | `--success-soft` | `#E7F4ED` | Success badge bg. |
 | `--warn` | `#B05F00` | Warning, sampled-eval ceiling. |
@@ -65,24 +67,27 @@ Tokens — copy these names verbatim into `globals.css`:
 
 ### Kind palette (span-kind badges in trace views)
 
+The kind palette is *categorical*, not emotional — separate from `--accent`. Each kind owns a hue that doesn't collide with the brand blue, so a trace view can read `llm / tool / retr / chain` at a glance without any of them being mistaken for "the active item."
+
 | Token | Value | Usage |
 |---|---|---|
-| `--kind-llm` | `#2056E2` | LLM call. |
-| `--kind-llm-bg` | `#EEF2FE` | LLM badge bg. |
-| `--kind-tool` | `#6D5BBC` | Tool call. |
-| `--kind-tool-bg` | `#EFEBFB` | Tool badge bg. |
-| `--kind-retr` | `#167C73` | Retriever / vector lookup. |
-| `--kind-retr-bg` | `#E3F2EF` | Retr badge bg. |
-| `--kind-chain` | `#4B4B49` | Chain / wrapper / agent step. |
-| `--kind-chain-bg` | `#F0F0EE` | Chain badge bg. |
+| `--kind-llm` | `#B97306` | LLM call. Amber. |
+| `--kind-llm-bg` | `#FBF3DF` | LLM badge bg. |
+| `--kind-tool` | `#0E7FB8` | Tool call. Cyan (distinct from accent sky-blue). |
+| `--kind-tool-bg` | `#E2F1FA` | Tool badge bg. |
+| `--kind-retr` | `#1F8A56` | Retriever / vector lookup. Green. |
+| `--kind-retr-bg` | `#E5F4EC` | Retr badge bg. |
+| `--kind-chain` | `#7A4FD9` | Chain / wrapper / agent step. Indigo. |
+| `--kind-chain-bg` | `#EFEAFB` | Chain badge bg. |
 
 ### Dark mode (parity, reserved)
 
 Dark mode is reserved. When authored it must be a deliberate redesign, not auto-inverted. Until shipped, the app stays light-mode-only.
 
 ### Color rules
-- **Accent is `#0A0A0A`,** not amber, not blue, not purple. Primary buttons, the brand glyph, and hard-emphasis ink are this color.
-- **Links are `#2056E2`.** Anywhere a hyperlink can appear (in-app or marketing). No purple visited state — same color, slightly desaturated underline on hover only.
+- **Accent is `#0485F7`** (HeroUI primary blue). Primary buttons, the brand glyph, focus rings, hyperlinks, and active-nav indicators are this color. Hover deepens to `#3592F9`. Soft-tint backgrounds (focused field band, selected row, info-soft) are `#E0F0FE`.
+- **Brand and link are the same hue.** The product reads as one voice; we don't want a "brand color" the user has to learn separately from "clickable thing."
+- **Accent is the only chromatic UI color.** No purple in the chrome. No amber/orange in the chrome. The kind palette (`--kind-*`) is categorical and lives only inside trace-view badges; it is *not* available for general UI.
 - **No gradients.** Anywhere. Including the brand mark.
 - **Semantic colors are rare.** A row is not painted green for being healthy. Green only appears in the pass-pill and the eval-pass dot. Same for warn/danger.
 
@@ -180,7 +185,8 @@ App grid
 
 ## Anti-patterns (forbidden)
 - Inter, Space Grotesk, system-ui, Berkeley Mono, Fraunces as primary or fallback faces.
-- Blue or purple as accent (`--accent` is `#0A0A0A`; blue only appears as the link color).
+- Purple, green, or amber as accent. `--accent` is `#0485F7`; chromatic color in the chrome belongs to the brand and only the brand.
+- Categorical `--kind-*` colors used outside trace-view kind badges (e.g. don't paint a button or row in `--kind-llm` amber; that's a hard miscommunication).
 - Gradients of any kind, including subtle text gradients on the brand.
 - Border radius >12px outside of full-round status dots / avatars.
 - Icons in colored circles.
@@ -201,4 +207,5 @@ App grid
 | Date | Decision | Rationale |
 |------|----------|-----------|
 | 2026-05-25 | v1 instrumented-brutalist (Berkeley Mono + amber). | Original direction. |
-| 2026-05-27 | v2 — adopt Vercel/Geist mock as new source of truth. | User chose "mock wins, replace DESIGN.md." Geist + Geist Mono, near-black `#0A0A0A` accent, light-mode default, blue `#2056E2` links, full token set extracted from `/Users/mia/Downloads/tracability.html`. Berkeley Mono / amber-orange retired. |
+| 2026-05-27 | v2 — adopt Vercel/Geist mock as new source of truth. | User chose "mock wins, replace DESIGN.md." Geist + Geist Mono, near-black `#0A0A0A` accent, light-mode default, blue `#2056E2` links, full token set extracted from `/Users/mia/Downloads/langprobe.html`. Berkeley Mono / amber-orange retired. |
+| 2026-06-08 | v3 — accent → HeroUI blue `#0485F7`; brand and link unified. | After `/design-shotgun` exploration, user selected the Inline-edit grammar paired with HeroUI's exact primary blue (sourced from `heroui-inc/heroui` `packages/styles/themes/default/variables.css`, `oklch(0.6204 0.195 253.83)` → `#0485F7`). Near-black accent retired; brand and link collapsed to a single hue so the product reads as one voice. Kind palette repointed to a *categorical* set (llm `#B97306` amber / tool `#0E7FB8` cyan / retr `#1F8A56` green / chain `#7A4FD9` indigo) so trace badges don't compete with the new accent. Geist + Geist Mono, light-mode default, no gradients all preserved. |

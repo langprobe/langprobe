@@ -30,19 +30,19 @@ verified with argon2id against `api_key.secret_hash`. Postgres unreachable →
 ## Run
 
 ```sh
-export TRACEBILITY_REDIS_URL=redis://localhost:6379/0
-export TRACEBILITY_PG_DSN=postgres://tracebility:tracebility@localhost:5432/tracebility
-python -m tracebility_ingest
+export LANGPROBE_REDIS_URL=redis://localhost:6379/0
+export LANGPROBE_PG_DSN=postgres://langprobe:langprobe@localhost:5432/langprobe
+python -m langprobe_ingest
 ```
 
 ## Env vars
 
 | name                                | default                              |
 | ----------------------------------- | ------------------------------------ |
-| `TRACEBILITY_REDIS_URL`             | required                             |
-| `TRACEBILITY_PG_DSN`                | required                             |
-| `TRACEBILITY_DISK_BUFFER_PATH`      | `/var/lib/tracebility/ingest-buffer` |
-| `TRACEBILITY_INLINE_BLOB_MAX_BYTES` | `1000000`                            |
-| `TRACEBILITY_BIND_HOST`             | `0.0.0.0`                            |
-| `TRACEBILITY_BIND_PORT`             | `7080`                               |
-| `TRACEBILITY_LOG_LEVEL`             | `INFO`                               |
+| `LANGPROBE_REDIS_URL`             | required                             |
+| `LANGPROBE_PG_DSN`                | required                             |
+| `LANGPROBE_DISK_BUFFER_PATH`      | `/var/lib/langprobe/ingest-buffer` |
+| `LANGPROBE_INLINE_BLOB_MAX_BYTES` | `1000000`                            |
+| `LANGPROBE_BIND_HOST`             | `0.0.0.0`                            |
+| `LANGPROBE_BIND_PORT`             | `7080`                               |
+| `LANGPROBE_LOG_LEVEL`             | `INFO`                               |

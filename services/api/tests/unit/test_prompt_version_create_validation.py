@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 from pydantic import ValidationError
-from tracebility_api.routers.prompts import Message, PromptVersionCreate
+from langprobe_api.routers.prompts import Message, PromptVersionCreate
 
 
 def test_accepts_template_messages():
@@ -111,7 +111,7 @@ def test_legacy_template_round_trips_via_model_dump():
 
 def test_derive_legacy_template_single_human():
     """One bare human message -> its content is the legacy template."""
-    from tracebility_api.routers.prompts import _derive_legacy_template
+    from langprobe_api.routers.prompts import _derive_legacy_template
 
     out = _derive_legacy_template([Message(role="human", content="hi")])
     assert out == "hi"
@@ -120,7 +120,7 @@ def test_derive_legacy_template_single_human():
 def test_derive_legacy_template_multi_message_returns_empty():
     """Multi-message versions can't be honestly represented as a single
     string -> empty rather than misleading."""
-    from tracebility_api.routers.prompts import _derive_legacy_template
+    from langprobe_api.routers.prompts import _derive_legacy_template
 
     out = _derive_legacy_template(
         [
@@ -133,7 +133,7 @@ def test_derive_legacy_template_multi_message_returns_empty():
 
 def test_derive_legacy_template_single_system_returns_empty():
     """Single system-only message: not a 'normal' prompt; return empty."""
-    from tracebility_api.routers.prompts import _derive_legacy_template
+    from langprobe_api.routers.prompts import _derive_legacy_template
 
     out = _derive_legacy_template([Message(role="system", content="be terse")])
     assert out == ""

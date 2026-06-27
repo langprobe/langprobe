@@ -9,13 +9,13 @@ that needs strong consistency. Heavy trace/eval data lives in ClickHouse — see
 Numbered, idempotent, transactional. Each file is one logical step. Apply with:
 
 ```bash
-psql "$TRACEBILITY_PG_DSN" -f schemas/postgres/migrations/0001_init.sql
+psql "$LANGPROBE_PG_DSN" -f schemas/postgres/migrations/0001_init.sql
 ```
 
 Or, when the migrator service exists:
 
 ```bash
-tracebility migrate up
+langprobe migrate up
 ```
 
 ## Conventions

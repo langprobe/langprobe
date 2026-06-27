@@ -185,7 +185,7 @@ export function CreateKeyButton({ projectId }: { projectId: string }) {
                 }}
               >
                 You won&apos;t see it again. Set it as{" "}
-                <span className="mono">TRACEBILITY_API_KEY</span> in your
+                <span className="mono">LANGPROBE_API_KEY</span> in your
                 ingest environment.
               </p>
             </div>

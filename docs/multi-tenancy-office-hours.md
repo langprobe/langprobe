@@ -5,7 +5,7 @@
 
 ## Goal (going in)
 
-Make tracebility a true multi-tenant product so it can ship as **(a) public SaaS**, **(b) BYOC / dedicated cloud**, and **(c) on-prem helm chart + license** — without forking the codebase.
+Make langprobe a true multi-tenant product so it can ship as **(a) public SaaS**, **(b) BYOC / dedicated cloud**, and **(c) on-prem helm chart + license** — without forking the codebase.
 
 ## Decisions
 

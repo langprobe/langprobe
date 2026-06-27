@@ -1,12 +1,12 @@
 # TODOS
 
 Phased build list seeded from the locked CEO plan registries
-(`~/.gstack/projects/tracability/ceo-plans/2026-05-25-registries.md`).
+(`~/.gstack/projects/langprobe/ceo-plans/2026-05-25-registries.md`).
 
 ## Pre-commit (must resolve before scaling code)
 
 - [x] License decision (Apache 2.0)
-- [x] Codename / public name (`tracebility`)
+- [x] Codename / public name (`langprobe`)
 - [x] Primary languages: Python (services) + TypeScript/Next.js (web)
 - [x] Repo structure: monorepo (single repo, polylang)
 - [ ] Counsel review on LangSmith SDK shim trade dress / trademark posture
@@ -88,7 +88,7 @@ Phased build list seeded from the locked CEO plan registries
 - [ ] MinIO bundle
 - [ ] Secrets management documentation
 - [ ] Backup procedure
-- [ ] Upgrade tool (`tracebility upgrade`)
+- [ ] Upgrade tool (`langprobe upgrade`)
 - [ ] Self-hosted dogfood telemetry
 
 ## First-migration (months 22-30)

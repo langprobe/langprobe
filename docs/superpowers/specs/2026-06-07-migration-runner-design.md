@@ -54,7 +54,7 @@ helm-deploy → helm upgrade --install --atomic --wait --timeout 5m
    │
    │  (during the upgrade, BEFORE any Deployment is reconciled:)
    ▼
-PRE-UPGRADE HOOK: Job tracebility-migrator-<release-revision>
+PRE-UPGRADE HOOK: Job langprobe-migrator-<release-revision>
    │
    ├── psql -At -c "SELECT version FROM schema_migrations" → list of applied
    ├── for each *.sql in /schemas/postgres/migrations/ in lexical order:
@@ -104,8 +104,8 @@ PRE-UPGRADE HOOK: Job tracebility-migrator-<release-revision>
 ```
 services/migrator/Dockerfile                                   NEW
 services/migrator/run.sh                                       NEW
-deploy/helm/tracebility/values.yaml                            MODIFIED (+1 block)
-deploy/helm/tracebility/templates/migrator-job.yaml            NEW
+deploy/helm/langprobe/values.yaml                            MODIFIED (+1 block)
+deploy/helm/langprobe/templates/migrator-job.yaml            NEW
 .github/workflows/deploy.yml                                   MODIFIED (+1 matrix entry)
 docs/superpowers/specs/2026-06-07-migration-runner-design.md   THIS DOC
 ```
@@ -113,8 +113,8 @@ docs/superpowers/specs/2026-06-07-migration-runner-design.md   THIS DOC
 No changes to:
 
 - The chart's existing api/ingest-api/ingest-worker/web Deployments.
-- `_helpers.tpl` (the `tracebility.image` helper already handles any
-  component; `tracebility.envFromSecret` already wires Postgres + ClickHouse).
+- `_helpers.tpl` (the `langprobe.image` helper already handles any
+  component; `langprobe.envFromSecret` already wires Postgres + ClickHouse).
 - `values-gke.yaml` (the new `migrator.enabled` defaults to `true`;
   GKE-specific values stay focused on what differs from chart defaults).
 - The migration SQL files themselves.
@@ -148,8 +148,8 @@ matrix builds), so the COPY paths are repo-relative.
 #!/usr/bin/env bash
 set -euo pipefail
 
-PG_DSN="${TRACEBILITY_PG_DSN:?TRACEBILITY_PG_DSN must be set}"
-CH_URL="${TRACEBILITY_CLICKHOUSE_URL:?TRACEBILITY_CLICKHOUSE_URL must be set}"
+PG_DSN="${LANGPROBE_PG_DSN:?LANGPROBE_PG_DSN must be set}"
+CH_URL="${LANGPROBE_CLICKHOUSE_URL:?LANGPROBE_CLICKHOUSE_URL must be set}"
 
 echo "==> Postgres: collecting applied migrations"
 applied="$(psql -At -c "SELECT version FROM schema_migrations" "$PG_DSN" 2>/dev/null || true)"
@@ -182,7 +182,7 @@ echo "==> migrator: done"
 `set -euo pipefail` plus `psql -v ON_ERROR_STOP=1` ensures any error
 fails the script. ClickHouse-client returns non-zero on syntax error.
 
-### `deploy/helm/tracebility/values.yaml` addition
+### `deploy/helm/langprobe/values.yaml` addition
 
 ```yaml
 
@@ -206,16 +206,16 @@ migrator:
       memory: 512Mi
 ```
 
-### `deploy/helm/tracebility/templates/migrator-job.yaml`
+### `deploy/helm/langprobe/templates/migrator-job.yaml`
 
 ```yaml
 {{- if .Values.migrator.enabled }}
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ include "tracebility.fullname" . }}-migrator-{{ .Release.Revision }}
+  name: {{ include "langprobe.fullname" . }}-migrator-{{ .Release.Revision }}
   labels:
-    {{- include "tracebility.labels" . | nindent 4 }}
+    {{- include "langprobe.labels" . | nindent 4 }}
     app.kubernetes.io/component: migrator
   annotations:
     helm.sh/hook: pre-install,pre-upgrade
@@ -226,10 +226,10 @@ spec:
   template:
     metadata:
       labels:
-        {{- include "tracebility.labels" . | nindent 8 }}
+        {{- include "langprobe.labels" . | nindent 8 }}
         app.kubernetes.io/component: migrator
     spec:
-      serviceAccountName: {{ include "tracebility.serviceAccountName" . }}
+      serviceAccountName: {{ include "langprobe.serviceAccountName" . }}
       restartPolicy: Never
       {{- with .Values.global.imagePullSecrets }}
       imagePullSecrets:
@@ -237,11 +237,11 @@ spec:
       {{- end }}
       containers:
         - name: migrator
-          image: {{ include "tracebility.image" (dict "root" . "component" .Values.migrator) }}
+          image: {{ include "langprobe.image" (dict "root" . "component" .Values.migrator) }}
           imagePullPolicy: {{ default .Values.global.imagePullPolicy .Values.image.pullPolicy }}
           env:
-            {{- include "tracebility.envFromSecret" (dict "cfg" .Values.postgres "name" "TRACEBILITY_PG_DSN") | nindent 12 }}
-            {{- include "tracebility.envFromSecret" (dict "cfg" .Values.clickhouse "name" "TRACEBILITY_CLICKHOUSE_URL") | nindent 12 }}
+            {{- include "langprobe.envFromSecret" (dict "cfg" .Values.postgres "name" "LANGPROBE_PG_DSN") | nindent 12 }}
+            {{- include "langprobe.envFromSecret" (dict "cfg" .Values.clickhouse "name" "LANGPROBE_CLICKHOUSE_URL") | nindent 12 }}
           resources:
             {{- toYaml .Values.migrator.resources | nindent 12 }}
 {{- end }}
@@ -275,7 +275,7 @@ service-name-agnostic.
 
 | Failure | Outcome |
 |---|---|
-| Migration SQL has a syntax error. | `psql -v ON_ERROR_STOP=1` exits non-zero, `set -e` kills the script, Job pod exits non-zero, hook fails, Helm `--atomic` rolls back. Cluster stays on previous SHA + previous schema. Operator inspects `kubectl logs job/tracebility-migrator-<rev>`. |
+| Migration SQL has a syntax error. | `psql -v ON_ERROR_STOP=1` exits non-zero, `set -e` kills the script, Job pod exits non-zero, hook fails, Helm `--atomic` rolls back. Cluster stays on previous SHA + previous schema. Operator inspects `kubectl logs job/langprobe-migrator-<rev>`. |
 | Migration acquires a long lock (e.g. ALTER on a 50M-row table). | Job runs to completion or hits `helm --timeout 5m` and gets killed mid-execution. ALL current migrations are wrapped in BEGIN/COMMIT, so a kill rolls back the open transaction cleanly. New migrations MUST keep this property — we'll add a CI lint for it as a follow-up. |
 | Postgres unreachable. | psql connect fails, Job fails, hook fails, rollback. Recovery: fix the dev-deps Postgres or the secret, re-run the deploy. |
 | ClickHouse unreachable. | Same — Job fails, rollback. |
@@ -293,9 +293,9 @@ A reviewer should be able to verify all of these after merge + deploy:
 
 1. `services/migrator/Dockerfile` and `services/migrator/run.sh` exist; the image builds locally with `docker build -f services/migrator/Dockerfile .`.
 2. `.github/workflows/deploy.yml` matrix has 5 entries (api, ingest-api, ingest-worker, web, migrator). The deploy workflow on main produces `asia-southeast2-docker.pkg.dev/.../migrator:<sha>`.
-3. `helm template tracebility deploy/helm/tracebility -f values-gke.yaml --set image.tag=test` renders a `kind: Job` resource with `helm.sh/hook: pre-install,pre-upgrade`. Setting `--set migrator.enabled=false` produces zero `kind: Job` resources.
-4. After the next deploy on the langprobe cluster, `kubectl -n tracebility get jobs` shows a `tracebility-migrator-<rev>` Job with status `Complete`.
-5. `kubectl -n tracebility logs job/tracebility-migrator-<rev>` shows lines like `==> Postgres: applied N, skipped M` and `==> ClickHouse: applied 5 file(s)`.
+3. `helm template langprobe deploy/helm/langprobe -f values-gke.yaml --set image.tag=test` renders a `kind: Job` resource with `helm.sh/hook: pre-install,pre-upgrade`. Setting `--set migrator.enabled=false` produces zero `kind: Job` resources.
+4. After the next deploy on the langprobe cluster, `kubectl -n langprobe get jobs` shows a `langprobe-migrator-<rev>` Job with status `Complete`.
+5. `kubectl -n langprobe logs job/langprobe-migrator-<rev>` shows lines like `==> Postgres: applied N, skipped M` and `==> ClickHouse: applied 5 file(s)`.
 6. After the deploy, `psql -c "SELECT count(*) FROM schema_migrations"` (via `kubectl exec`) returns `22` (or however many migrations are in-tree at deploy time), matching `ls schemas/postgres/migrations/*.sql | wc -l`.
 7. A second deploy of the same SHA results in `==> Postgres: applied 0, skipped 22` — re-run is idempotent.
 8. The `oauth_state` table exists and OAuth `/api/auth/oauth/google/start?intent=login` returns `302` (no longer 500).

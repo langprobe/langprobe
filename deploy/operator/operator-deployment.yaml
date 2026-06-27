@@ -1,27 +1,27 @@
-# Tracebility operator deployment.
+# Langprobe operator deployment.
 #
 # Deploys the operator into a cluster-wide service account so it can
 # manage Deployments / Services / Ingress / PVCs in any namespace
-# that hosts a Tracebility CR. Tighten the ClusterRole to specific
+# that hosts a Langprobe CR. Tighten the ClusterRole to specific
 # namespaces if your security posture demands it.
 ---
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: tracebility-system
+  name: langprobe-system
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: tracebility-operator
-  namespace: tracebility-system
+  name: langprobe-operator
+  namespace: langprobe-system
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: tracebility-operator
+  name: langprobe-operator
 rules:
-  - apiGroups: ["tracebility.io"]
+  - apiGroups: ["langprobe.io"]
     resources: ["tracebilities", "tracebilities/status", "tracebilities/finalizers"]
     verbs: ["*"]
   - apiGroups: ["apps"]
@@ -41,38 +41,38 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: tracebility-operator
+  name: langprobe-operator
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: tracebility-operator
+  name: langprobe-operator
 subjects:
   - kind: ServiceAccount
-    name: tracebility-operator
-    namespace: tracebility-system
+    name: langprobe-operator
+    namespace: langprobe-system
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: tracebility-operator
-  namespace: tracebility-system
+  name: langprobe-operator
+  namespace: langprobe-system
   labels:
-    app.kubernetes.io/name: tracebility-operator
+    app.kubernetes.io/name: langprobe-operator
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app.kubernetes.io/name: tracebility-operator
+      app.kubernetes.io/name: langprobe-operator
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: tracebility-operator
+        app.kubernetes.io/name: langprobe-operator
     spec:
-      serviceAccountName: tracebility-operator
+      serviceAccountName: langprobe-operator
       containers:
         - name: operator
-          image: ghcr.io/tracebility-ai/tracebility-operator:latest
-          command: ["kopf", "run", "-A", "-m", "tracebility_operator.main", "--standalone"]
+          image: ghcr.io/langprobe/langprobe-operator:latest
+          command: ["kopf", "run", "-A", "-m", "langprobe_operator.main", "--standalone"]
           resources:
             requests:
               cpu: 50m

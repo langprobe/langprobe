@@ -158,7 +158,7 @@ function UsageCard() {
       >
         <li>
           <strong>Allowed callback URI</strong>:{" "}
-          <code>{`<your tracebility origin>`}/v1/auth/sso/callback</code>
+          <code>{`<your langprobe origin>`}/v1/auth/sso/callback</code>
         </li>
         <li>
           <strong>Required scope</strong>: <code>openid email profile</code>

@@ -5,7 +5,7 @@ from __future__ import annotations
 from uuid import uuid4
 
 import pytest
-from tracebility_tenant.quota import QuotaMeter, current_period
+from langprobe_tenant.quota import QuotaMeter, current_period
 
 pytestmark = pytest.mark.asyncio
 

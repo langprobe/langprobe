@@ -1,0 +1,15 @@
+apiVersion: v2
+name: langprobe
+description: Self-hosted LLM observability + eval-rigor + agent-replay platform.
+type: application
+version: 0.1.0
+appVersion: "0.0.0"
+keywords:
+  - llm
+  - observability
+  - tracing
+home: https://github.com/langprobe/langprobe
+sources:
+  - https://github.com/langprobe/langprobe
+maintainers:
+  - name: langprobe contributors

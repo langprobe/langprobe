@@ -6,7 +6,7 @@ import uuid
 from unittest.mock import AsyncMock
 
 import pytest
-from tracebility_api.routers.llm_credentials import resolve_secret
+from langprobe_api.routers.llm_credentials import resolve_secret
 
 pytestmark = pytest.mark.asyncio
 

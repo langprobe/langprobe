@@ -8,7 +8,7 @@
 ## Summary
 
 The API already implements public OAuth signup (Google + GitHub) at
-`services/api/tracebility_api/routers/oauth_signup.py`. It is config-gated
+`services/api/langprobe_api/routers/oauth_signup.py`. It is config-gated
 on four env vars: `OAUTH_GOOGLE_CLIENT_ID`, `OAUTH_GOOGLE_CLIENT_SECRET`,
 `OAUTH_GITHUB_CLIENT_ID`, `OAUTH_GITHUB_CLIENT_SECRET`. When a credential
 pair is missing, the start endpoint 503s and the web UI hides the
@@ -17,7 +17,7 @@ corresponding "Continue with X" button.
 On the GKE deploy at `https://langprobe.daz.co.in/`, both buttons are
 hidden because the Helm chart never wires those env vars to the API
 container, regardless of whether a secret exists. Same is true for
-`OAUTH_REDIRECT_BASE` and `TRACEBILITY_WEB_BASE_URL`, which the API uses
+`OAUTH_REDIRECT_BASE` and `LANGPROBE_WEB_BASE_URL`, which the API uses
 to construct the IdP callback URI and to validate post-login redirects.
 
 This spec wires those six values through the chart, defines a single k8s
@@ -45,7 +45,7 @@ same-origin cookie shim are all already correct.
 ### Three pieces, one feature
 
 ```
-                Helm chart (deploy/helm/tracebility/)
+                Helm chart (deploy/helm/langprobe/)
    ┌─────────────────────────────────────────────────────────────┐
    │ values.yaml                                                  │
    │   oauth:                                                      │
@@ -69,15 +69,15 @@ same-origin cookie shim are all already correct.
    │   {{- with .Values.oauth.publicUrl }}                         │
    │   - name: OAUTH_REDIRECT_BASE                                 │
    │     value: {{ . | quote }}                                    │
-   │   - name: TRACEBILITY_WEB_BASE_URL                            │
+   │   - name: LANGPROBE_WEB_BASE_URL                            │
    │     value: {{ . | quote }}                                    │
    │   {{- end }}                                                   │
    └─────────────────────────────────────────────────────────────┘
 
-                Production values (deploy/helm/tracebility/values-gke.yaml)
+                Production values (deploy/helm/langprobe/values-gke.yaml)
    ┌─────────────────────────────────────────────────────────────┐
    │ oauth:                                                       │
-   │   existingSecret: tracebility-oauth                          │
+   │   existingSecret: langprobe-oauth                          │
    │   publicUrl: https://langprobe.daz.co.in                    │
    └─────────────────────────────────────────────────────────────┘
 
@@ -89,15 +89,15 @@ same-origin cookie shim are all already correct.
    │ 2. Register at github.com/settings/developers               │
    │    Callback URL: https://langprobe.daz.co.in/api/auth/      │
    │                  oauth/github/callback                       │
-   │ 3. kubectl -n tracebility create secret generic              │
-   │      tracebility-oauth \                                     │
+   │ 3. kubectl -n langprobe create secret generic              │
+   │      langprobe-oauth \                                     │
    │      --from-literal=google_client_id="..." \                 │
    │      --from-literal=google_client_secret="..." \             │
    │      --from-literal=github_client_id="..." \                 │
    │      --from-literal=github_client_secret="..." \             │
    │      --dry-run=client -o yaml | kubectl apply -f -           │
-   │ 4. kubectl rollout restart deployment/tracebility-api       │
-   │      -n tracebility                                          │
+   │ 4. kubectl rollout restart deployment/langprobe-api       │
+   │      -n langprobe                                          │
    └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -119,7 +119,7 @@ same-origin cookie shim are all already correct.
   restart the API.
 
 - **`publicUrl` as a single value.** The OAuth router needs it twice
-  (`OAUTH_REDIRECT_BASE` for IdP callbacks, `TRACEBILITY_WEB_BASE_URL`
+  (`OAUTH_REDIRECT_BASE` for IdP callbacks, `LANGPROBE_WEB_BASE_URL`
   for relative redirects after login). One source of truth in the
   values file → two env vars on the pod. If those ever need to diverge,
   splitting them is a one-line chart edit.
@@ -127,7 +127,7 @@ same-origin cookie shim are all already correct.
 - **Single secret, four keys.** Mirrors the env var names from
   `infra/docker-compose.yml` (which is the dev-loop reference). One
   `kubectl create secret` call holds all four creds; `kubectl rollout
-  restart deployment/tracebility-api` picks up rotations atomically.
+  restart deployment/langprobe-api` picks up rotations atomically.
 
 - **Bootstrap doc, not Terraform.** Registering OAuth apps requires a
   human in the IdP UI to copy/paste a client secret. There's no
@@ -137,9 +137,9 @@ same-origin cookie shim are all already correct.
 ## Files written by this design
 
 ```
-deploy/helm/tracebility/values.yaml                            MODIFIED (+1 block)
-deploy/helm/tracebility/templates/api-deployment.yaml          MODIFIED (+~15 lines)
-deploy/helm/tracebility/values-gke.yaml                        MODIFIED (+3 lines)
+deploy/helm/langprobe/values.yaml                            MODIFIED (+1 block)
+deploy/helm/langprobe/templates/api-deployment.yaml          MODIFIED (+~15 lines)
+deploy/helm/langprobe/values-gke.yaml                        MODIFIED (+3 lines)
 docs/superpowers/runbooks/gke-bootstrap.md                     MODIFIED (+1 section)
 docs/superpowers/specs/2026-06-06-oauth-signup-gke-design.md   THIS DOC
 ```
@@ -156,15 +156,15 @@ No new files.
 | `oauth.publicUrl` ≠ Gateway hostname. | Browser ends up on a host whose DNS / cert / CORS doesn't match. Runbook ties `oauth.publicUrl` to the same domain as the Gateway in `deploy/k8s/gke-gateway/`. |
 | Secret created with wrong key names. | `secretKeyRef.optional: true` masks this — pod starts but `_provider_creds` 503s when the user clicks the button. The runbook spells out the four canonical key names. |
 | Helm upgrade with `existingSecret` set but the secret missing. | Pod creation fails (referenced secret not found). `helm upgrade --atomic` rolls back the release. Recovery: create the secret, re-run the deploy workflow. |
-| Operator wants to rotate one credential. | Re-run the `kubectl create secret ... --dry-run | kubectl apply` block; `kubectl rollout restart deployment/tracebility-api`. Idempotent. |
+| Operator wants to rotate one credential. | Re-run the `kubectl create secret ... --dry-run | kubectl apply` block; `kubectl rollout restart deployment/langprobe-api`. Idempotent. |
 
 ## Verification (for the implementation plan)
 
 A reviewer should be able to verify all of these after merge:
 
-1. `deploy/helm/tracebility/values.yaml` has a top-level `oauth:` block with the five fields above and sensible empty defaults.
-2. `deploy/helm/tracebility/templates/api-deployment.yaml` emits the four `secretKeyRef` env vars guarded by `if .Values.oauth.existingSecret`, and the two plain env vars guarded by `with .Values.oauth.publicUrl`. `helm template` renders correctly with `oauth.existingSecret=""` (no env vars) and with it set (six env vars).
-3. `deploy/helm/tracebility/values-gke.yaml` references `tracebility-oauth` and `https://langprobe.daz.co.in`.
+1. `deploy/helm/langprobe/values.yaml` has a top-level `oauth:` block with the five fields above and sensible empty defaults.
+2. `deploy/helm/langprobe/templates/api-deployment.yaml` emits the four `secretKeyRef` env vars guarded by `if .Values.oauth.existingSecret`, and the two plain env vars guarded by `with .Values.oauth.publicUrl`. `helm template` renders correctly with `oauth.existingSecret=""` (no env vars) and with it set (six env vars).
+3. `deploy/helm/langprobe/values-gke.yaml` references `langprobe-oauth` and `https://langprobe.daz.co.in`.
 4. `docs/superpowers/runbooks/gke-bootstrap.md` has a numbered "OAuth signup setup" section with literal URLs and the `kubectl` command, idempotent on re-run.
 5. After the runbook is followed and CI/CD ships the chart change, `curl https://langprobe.daz.co.in/api/auth/oauth/providers` returns `{"google":true,"github":true}` and the `/login` page shows both buttons.
 6. Clicking either button initiates an OAuth flow that round-trips through the IdP and lands the user on the dashboard with a session cookie set on `langprobe.daz.co.in`.

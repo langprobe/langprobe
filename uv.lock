@@ -8,12 +8,12 @@ resolution-markers = [
 
 [manifest]
 members = [
-    "tracebility",
-    "tracebility-api",
-    "tracebility-ingest-api",
-    "tracebility-ingest-worker",
-    "tracebility-migrate-langsmith",
-    "tracebility-tenant",
+    "langprobe",
+    "langprobe-api",
+    "langprobe-ingest-api",
+    "langprobe-ingest-worker",
+    "langprobe-migrate-langsmith",
+    "langprobe-tenant",
 ]
 
 [[package]]
@@ -2364,12 +2364,12 @@ wheels = [
 ]
 
 [[package]]
-name = "tracebility"
+name = "langprobe"
 version = "0.0.0"
 source = { virtual = "." }
 
 [[package]]
-name = "tracebility-api"
+name = "langprobe-api"
 version = "0.0.0"
 source = { editable = "services/api" }
 dependencies = [
@@ -2384,7 +2384,7 @@ dependencies = [
     { name = "python-jose", extra = ["cryptography"] },
     { name = "redis" },
     { name = "structlog" },
-    { name = "tracebility-tenant" },
+    { name = "langprobe-tenant" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -2417,13 +2417,13 @@ requires-dist = [
     { name = "redis", specifier = ">=5.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.4" },
     { name = "structlog", specifier = ">=24.1" },
-    { name = "tracebility-tenant", editable = "services/_shared/tenant" },
+    { name = "langprobe-tenant", editable = "services/_shared/tenant" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.27" },
 ]
 provides-extras = ["dev"]
 
 [[package]]
-name = "tracebility-ingest-api"
+name = "langprobe-ingest-api"
 version = "0.0.0"
 source = { editable = "services/ingest-api" }
 dependencies = [
@@ -2435,7 +2435,7 @@ dependencies = [
     { name = "python-multipart" },
     { name = "redis" },
     { name = "structlog" },
-    { name = "tracebility-tenant" },
+    { name = "langprobe-tenant" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -2463,13 +2463,13 @@ requires-dist = [
     { name = "redis", specifier = ">=5.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.4" },
     { name = "structlog", specifier = ">=24.1" },
-    { name = "tracebility-tenant", editable = "services/_shared/tenant" },
+    { name = "langprobe-tenant", editable = "services/_shared/tenant" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.27" },
 ]
 provides-extras = ["dev"]
 
 [[package]]
-name = "tracebility-ingest-worker"
+name = "langprobe-ingest-worker"
 version = "0.0.0"
 source = { editable = "services/ingest-worker" }
 dependencies = [
@@ -2478,7 +2478,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "redis" },
     { name = "structlog" },
-    { name = "tracebility-tenant" },
+    { name = "langprobe-tenant" },
 ]
 
 [package.optional-dependencies]
@@ -2500,12 +2500,12 @@ requires-dist = [
     { name = "redis", specifier = ">=5.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.4" },
     { name = "structlog", specifier = ">=24.1" },
-    { name = "tracebility-tenant", editable = "services/_shared/tenant" },
+    { name = "langprobe-tenant", editable = "services/_shared/tenant" },
 ]
 provides-extras = ["dev"]
 
 [[package]]
-name = "tracebility-migrate-langsmith"
+name = "langprobe-migrate-langsmith"
 version = "0.0.1"
 source = { editable = "services/migrate-langsmith" }
 dependencies = [
@@ -2516,7 +2516,7 @@ dependencies = [
 requires-dist = [{ name = "httpx", specifier = ">=0.25" }]
 
 [[package]]
-name = "tracebility-tenant"
+name = "langprobe-tenant"
 version = "0.0.0"
 source = { editable = "services/_shared/tenant" }
 dependencies = [

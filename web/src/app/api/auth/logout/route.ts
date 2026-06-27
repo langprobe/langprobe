@@ -15,8 +15,8 @@ import { NextResponse } from "next/server";
  * out, regardless of upstream status.
  */
 
-const SESSION_COOKIE = "tracebility_session";
-const ACTIVE_PROJECT_COOKIE = "tracebility_active_project";
+const SESSION_COOKIE = "langprobe_session";
+const ACTIVE_PROJECT_COOKIE = "langprobe_active_project";
 
 function apiBase(): string {
   return (

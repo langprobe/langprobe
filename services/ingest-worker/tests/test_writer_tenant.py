@@ -6,7 +6,7 @@ import socket
 from uuid import uuid4
 
 import pytest
-from tracebility_worker.writer import (
+from langprobe_worker.writer import (
     _MISSING_TENANT_UUID,
     _REPLAY_CAPTURE_COLUMNS,
     _RUN_COLUMNS,
@@ -126,7 +126,7 @@ def test_writer_persists_to_clickhouse() -> None:
     env = _envelope(with_tenant=True, project_id=proj, org_id=org, workspace_id=ws)
     run_id = env["payload"]["runs"][0]["run_id"]
 
-    writer = ClickHouseWriter("http://tracebility:tracebility@localhost:8123/tracebility")
+    writer = ClickHouseWriter("http://langprobe:langprobe@localhost:8123/langprobe")
     runs, spans, captures = writer.insert_envelope(env)
     assert runs == 1
     assert spans == 1

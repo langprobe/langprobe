@@ -141,7 +141,7 @@ function CenterEntity() {
           color: "#FFFFFF",
         }}
       >
-        tracebility
+        langprobe
       </div>
       <div
         style={{

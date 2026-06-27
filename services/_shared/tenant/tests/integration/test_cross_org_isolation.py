@@ -28,12 +28,12 @@ def _reachable(host: str, port: int) -> bool:
 
 
 PG_DSN = os.environ.get(
-    "TRACEBILITY_PG_DSN",
-    "postgres://tracebility:tracebility@localhost:5432/tracebility",
+    "LANGPROBE_PG_DSN",
+    "postgres://langprobe:langprobe@localhost:5432/langprobe",
 )
 CH_URL = os.environ.get(
-    "TRACEBILITY_CLICKHOUSE_URL",
-    "http://tracebility:tracebility@localhost:8123/tracebility",
+    "LANGPROBE_CLICKHOUSE_URL",
+    "http://langprobe:langprobe@localhost:8123/langprobe",
 )
 
 

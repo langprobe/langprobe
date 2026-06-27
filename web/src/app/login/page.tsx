@@ -11,7 +11,7 @@ import { apiGet } from "@/lib/api";
  *   right — auth card with tab toggle, OAuth buttons, password form
  *
  * The left rail is the only place in the app that goes dark. The
- * scene visualises what tracebility actually does: traces, otel
+ * scene visualises what langprobe actually does: traces, otel
  * envelopes, replays, evals, and feedback all flow into a single
  * observability surface (the central brand mark). The animated
  * pulse-beams literally illustrate the product's value pitch.
@@ -179,7 +179,7 @@ function MobileBrandHeader() {
   return (
     <Link
       href="/"
-      aria-label="tracebility home"
+      aria-label="langprobe home"
       style={{
         display: "flex",
         flexDirection: "column",
@@ -223,7 +223,7 @@ function MobileBrandHeader() {
           marginTop: 4,
         }}
       >
-        tracebility
+        langprobe
       </div>
       <div
         style={{

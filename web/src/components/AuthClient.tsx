@@ -30,7 +30,7 @@ export interface OAuthProviders {
 }
 
 type Tab = "login" | "signup";
-const LAST_USED_KEY = "tracebility:auth:last-provider";
+const LAST_USED_KEY = "langprobe:auth:last-provider";
 
 export function AuthClient({
   initialTab,

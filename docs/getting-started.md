@@ -1,4 +1,4 @@
-# Getting started with tracebility
+# Getting started with langprobe
 
 Self-host the whole thing locally, then send your first trace. Five minutes,
 two terminals.
@@ -45,10 +45,10 @@ you mint another.
 ## 4. Send a trace
 
 ```sh
-export TRACEBILITY_API_KEY="lt_<public_id>.<secret>"
+export LANGPROBE_API_KEY="lt_<public_id>.<secret>"
 
 curl -X POST http://localhost:7080/v1/runs \
-  -H "authorization: Bearer $TRACEBILITY_API_KEY" \
+  -H "authorization: Bearer $LANGPROBE_API_KEY" \
   -H 'content-type: application/json' \
   -d '{
     "sdk": "curl",
@@ -93,8 +93,8 @@ land in the same queue.
 
 ## Where things live
 
-- Redis stream: `tracebility:ingest:v1` (consumer group `ingest`)
-- DLQ: `tracebility:ingest:v1:dlq` (only after `max_deliveries` redeliveries)
+- Redis stream: `langprobe:ingest:v1` (consumer group `ingest`)
+- DLQ: `langprobe:ingest:v1:dlq` (only after `max_deliveries` redeliveries)
 - ClickHouse tables: `run`, `span`, `eval_score`, `eval_aggregate`,
   `replay_capture`, `replay_run`
 - Postgres tables: `app_user`, `org`, `workspace`, `project`, `api_key`,
@@ -104,5 +104,5 @@ land in the same queue.
 
 - `docker compose logs ingest-api`
 - `docker compose logs ingest-worker`
-- `redis-cli xpending tracebility:ingest:v1 ingest` — see what's stuck
+- `redis-cli xpending langprobe:ingest:v1 ingest` — see what's stuck
 - `psql ... -c "select action, target_kind, created_at from audit_log order by created_at desc limit 20"` — every state-changing call leaves a row

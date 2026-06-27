@@ -34,9 +34,9 @@ primary key project_id
 source(postgresql(
     host 'postgres'
     port 5432
-    user 'tracebility'
-    password 'tracebility'
-    db 'tracebility'
+    user 'langprobe'
+    password 'langprobe'
+    db 'langprobe'
     table 'project_tenant_view'
     invalidate_query 'select max(workspace_id::text || org_id::text) from project_tenant_view'
 ))

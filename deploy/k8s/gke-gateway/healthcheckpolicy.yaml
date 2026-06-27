@@ -1,6 +1,6 @@
 ---
 # Tells the GCP L7 LB (provisioned by the Gateway resource in this dir) to
-# health-check the tracebility-web Service at /login instead of the default
+# health-check the langprobe-web Service at /login instead of the default
 # /. The web app responds to / with a 307 redirect to /login (signed-in
 # state lives in a session cookie); GCP LBs treat anything other than 2xx
 # as UNHEALTHY, so without this policy the backend NEG goes UNHEALTHY on
@@ -8,13 +8,13 @@
 #
 # kubelet probes (livenessProbe / readinessProbe on the Deployment) are
 # already configured to hit /login — see the chart at
-# deploy/helm/tracebility/templates/web-deployment.yaml. This policy is the
+# deploy/helm/langprobe/templates/web-deployment.yaml. This policy is the
 # LB-side counterpart so the GCP NEG health matches kubelet's view.
 apiVersion: networking.gke.io/v1
 kind: HealthCheckPolicy
 metadata:
-  name: tracebility-web
-  namespace: tracebility
+  name: langprobe-web
+  namespace: langprobe
 spec:
   default:
     config:
@@ -31,4 +31,4 @@ spec:
   targetRef:
     group: ""
     kind: Service
-    name: tracebility-web
+    name: langprobe-web

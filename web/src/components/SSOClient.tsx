@@ -326,7 +326,7 @@ export function SSOConfigForm({
             }}
           >
             Distribute this URL to users; clicking it kicks off the
-            OIDC flow with your IdP and lands them in tracebility on
+            OIDC flow with your IdP and lands them in langprobe on
             success.
           </p>
           <pre

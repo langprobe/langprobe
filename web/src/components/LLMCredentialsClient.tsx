@@ -57,12 +57,8 @@ export function DefaultEnabledToggle({
   const [pending, startTransition] = useTransition();
   return (
     <label
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 8,
-        cursor: pending ? "wait" : "pointer",
-      }}
+      className="switch"
+      style={{ cursor: pending ? "wait" : "pointer" }}
     >
       <input
         type="checkbox"
@@ -80,8 +76,8 @@ export function DefaultEnabledToggle({
             if (!res.ok) setEnabled(!next);
           });
         }}
-        style={{ width: "auto", margin: 0 }}
       />
+      <span className="track" aria-hidden />
       <span style={{ fontSize: 11, color: "var(--text-3)" }}>
         {enabled ? "default for new projects" : "manual link only"}
       </span>
@@ -203,7 +199,7 @@ export function NewLLMCredentialButton({
         >
           <div
             className="card card-pad-lg"
-            style={{ width: "min(560px, 100%)", display: "grid", gap: 12 }}
+            style={{ width: "min(560px, 100%)", display: "grid", gap: 16 }}
           >
             <header
               style={{
@@ -217,54 +213,68 @@ export function NewLLMCredentialButton({
                 cancel
               </button>
             </header>
-            <Field label="Provider">
-              <select
-                value={provider}
-                onChange={(e) =>
-                  setProvider(e.target.value as LLMCredentialRow["provider"])
-                }
-              >
-                {PROVIDERS.map((p) => (
-                  <option key={p.value} value={p.value}>
-                    {p.label} — {p.hint}
-                  </option>
-                ))}
-              </select>
+
+            <Field label="Provider" required>
+              <span className="input-shell input-shell-select">
+                <select
+                  value={provider}
+                  onChange={(e) =>
+                    setProvider(e.target.value as LLMCredentialRow["provider"])
+                  }
+                >
+                  {PROVIDERS.map((p) => (
+                    <option key={p.value} value={p.value}>
+                      {p.label} — {p.hint}
+                    </option>
+                  ))}
+                </select>
+              </span>
             </Field>
-            <Field label="Name" hint="e.g. 'prod', 'staging'; lets you have multiple keys per provider">
-              <input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="default"
-              />
+
+            <Field
+              label="Name"
+              required
+              hint="e.g. 'prod', 'staging'; lets you have multiple keys per provider"
+            >
+              <span className="input-shell">
+                <input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="default"
+                />
+              </span>
             </Field>
+
             <Field
               label="Secret"
+              required
               hint="paste the full key — we hash + store, then reveal once on save"
             >
-              <input
-                value={secret}
-                onChange={(e) => setSecret(e.target.value)}
-                placeholder={
-                  provider === "anthropic" ? "sk-ant-…" : "sk-proj-…"
-                }
-                type="password"
-              />
+              <span className={`input-shell${error ? " input-shell-error" : ""}`}>
+                <input
+                  value={secret}
+                  onChange={(e) => setSecret(e.target.value)}
+                  placeholder={
+                    provider === "anthropic" ? "sk-ant-…" : "sk-proj-…"
+                  }
+                  type="password"
+                />
+              </span>
+              {error ? (
+                <span className="field-error" role="alert">
+                  {error}
+                </span>
+              ) : null}
             </Field>
-            {error ? (
-              <p
-                className="mono"
-                style={{ color: "var(--danger)", margin: 0, fontSize: 12 }}
-              >
-                {error}
-              </p>
-            ) : null}
+
             <footer
               style={{
                 display: "flex",
                 justifyContent: "flex-end",
                 gap: 8,
+                paddingTop: 14,
                 marginTop: 4,
+                borderTop: "1px solid var(--border)",
               }}
             >
               <button
@@ -432,30 +442,24 @@ export function RevokeLLMCredentialButton({
 function Field({
   label,
   hint,
+  required,
   children,
 }: {
   label: string;
   hint?: string;
+  required?: boolean;
   children: React.ReactNode;
 }) {
   return (
-    <label style={{ display: "grid", gap: 4 }}>
-      <span
-        style={{
-          fontSize: 11,
-          color: "var(--text-3)",
-          textTransform: "uppercase",
-          letterSpacing: 0.4,
-        }}
-      >
+    <div className="field-modal">
+      <label>
         {label}
-      </span>
-      {children}
-      {hint ? (
-        <span className="mono" style={{ fontSize: 11, color: "var(--text-3)" }}>
-          {hint}
-        </span>
-      ) : null}
-    </label>
+        {required ? <span className="req">*</span> : null}
+      </label>
+      <div className="field-modal-control">
+        {children}
+        {hint ? <span className="field-hint">{hint}</span> : null}
+      </div>
+    </div>
   );
 }

@@ -8,7 +8,7 @@ export interface Project {
   name: string;
 }
 
-export const ACTIVE_PROJECT_COOKIE = "tracebility_active_project";
+export const ACTIVE_PROJECT_COOKIE = "langprobe_active_project";
 
 export interface ResolvedProject {
   active: Project | null;

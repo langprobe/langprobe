@@ -12,7 +12,7 @@ import { NextResponse, type NextRequest } from "next/server";
  * gated behind a valid session cookie.
  */
 
-const SESSION_COOKIE = "tracebility_session";
+const SESSION_COOKIE = "langprobe_session";
 
 const PUBLIC_PATHS = new Set<string>([
   "/login",

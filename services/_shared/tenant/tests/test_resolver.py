@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from tracebility_tenant.context import TenantContext
-from tracebility_tenant.resolver import _decode, _encode
+from langprobe_tenant.context import TenantContext
+from langprobe_tenant.resolver import _decode, _encode
 
 
 def _ctx() -> TenantContext:

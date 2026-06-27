@@ -384,7 +384,7 @@ function UsageCard() {
       </p>
       <pre style={{ margin: 0 }}>
         {`# python sdk (planned):
-from tracebility import studio
+from langprobe import studio
 
 branch = studio.branch_from(
     run_id="01J9Z...QXR",

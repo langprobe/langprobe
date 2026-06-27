@@ -9,8 +9,8 @@ from uuid import UUID
 import pytest
 import pytest_asyncio
 import redis.asyncio as redis_async
-from tracebility_ingest.enqueue import IngestEnqueue
-from tracebility_tenant import ShardRouter
+from langprobe_ingest.enqueue import IngestEnqueue
+from langprobe_tenant import ShardRouter
 
 
 def _redis_reachable() -> bool:
@@ -44,7 +44,7 @@ async def test_enqueue_routes_to_org_shard(enqueue) -> None:  # type: ignore[no-
 
     await eq.enqueue(b"payload-1", org_id=org)
 
-    target = f"tracebility:ingest:v1:{expected_shard}"
+    target = f"langprobe:ingest:v1:{expected_shard}"
     n = await client.xlen(target)
     assert n == 1
 
@@ -61,7 +61,7 @@ async def test_two_orgs_route_independently(enqueue) -> None:  # type: ignore[no
     await eq.enqueue(b"a", org_id=a)
     await eq.enqueue(b"b", org_id=b)
     if sa == sb:
-        assert await client.xlen(f"tracebility:ingest:v1:{sa}") == 2
+        assert await client.xlen(f"langprobe:ingest:v1:{sa}") == 2
     else:
-        assert await client.xlen(f"tracebility:ingest:v1:{sa}") == 1
-        assert await client.xlen(f"tracebility:ingest:v1:{sb}") == 1
+        assert await client.xlen(f"langprobe:ingest:v1:{sa}") == 1
+        assert await client.xlen(f"langprobe:ingest:v1:{sb}") == 1

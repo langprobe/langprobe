@@ -4,7 +4,7 @@ import { GeistMono } from "geist/font/mono";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "tracability — the real debugger for agents",
+  title: "langprobe — the real debugger for agents",
   description:
     "Self-hosted LLM observability + eval-rigor + agent-replay. The debugger for AI agents.",
 };

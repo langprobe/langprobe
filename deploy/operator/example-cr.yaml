@@ -1,22 +1,22 @@
-# Example Tracebility CR. Apply after the CRD + operator + the
+# Example Langprobe CR. Apply after the CRD + operator + the
 # four secret references already exist in the namespace:
 #
-#   kubectl create secret generic tracebility-postgres \
-#     --from-literal=dsn='postgres://user:pass@host:5432/tracebility'
-#   kubectl create secret generic tracebility-clickhouse \
-#     --from-literal=url='http://user:pass@host:8123/tracebility'
-#   kubectl create secret generic tracebility-redis \
+#   kubectl create secret generic langprobe-postgres \
+#     --from-literal=dsn='postgres://user:pass@host:5432/langprobe'
+#   kubectl create secret generic langprobe-clickhouse \
+#     --from-literal=url='http://user:pass@host:8123/langprobe'
+#   kubectl create secret generic langprobe-redis \
 #     --from-literal=url='redis://host:6379/0'
-#   kubectl create secret generic tracebility-session \
+#   kubectl create secret generic langprobe-session \
 #     --from-literal=secret="$(openssl rand -hex 32)"
 ---
-apiVersion: tracebility.io/v1alpha1
-kind: Tracebility
+apiVersion: langprobe.io/v1alpha1
+kind: Langprobe
 metadata:
   name: prod
 spec:
   image:
-    registry: ghcr.io/tracebility-ai
+    registry: ghcr.io/langprobe
     tag: latest
   api:
     replicas: 2
@@ -28,10 +28,10 @@ spec:
   web:
     replicas: 2
   secrets:
-    postgres:   { name: tracebility-postgres,   key: dsn }
-    clickhouse: { name: tracebility-clickhouse, key: url }
-    redis:      { name: tracebility-redis,      key: url }
-    session:    { name: tracebility-session,    key: secret }
+    postgres:   { name: langprobe-postgres,   key: dsn }
+    clickhouse: { name: langprobe-clickhouse, key: url }
+    redis:      { name: langprobe-redis,      key: url }
+    session:    { name: langprobe-session,    key: secret }
   ingress:
     enabled: true
     className: nginx

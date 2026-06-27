@@ -3,13 +3,13 @@ import Link from "next/link";
 /**
  * Privacy.
  *
- * V1: an honest, short doc that explains what data tracebility holds
+ * V1: an honest, short doc that explains what data langprobe holds
  * and how OAuth signup uses third-party identity. When the SaaS gate
  * ships, this gets a counsel-reviewed customer-facing privacy policy
  * with data-residency, retention, and processor-list sections.
  */
 
-export const metadata = { title: "Privacy · tracebility" };
+export const metadata = { title: "Privacy · langprobe" };
 
 export default function PrivacyPage() {
   return (
@@ -40,7 +40,7 @@ export default function PrivacyPage() {
             margin: 0,
           }}
         >
-          Tracebility
+          Langprobe
         </p>
         <h1
           className="display-sm"
@@ -50,16 +50,16 @@ export default function PrivacyPage() {
         </h1>
 
         <Section title="Self-hosted (default)">
-          When you run tracebility yourself, your data stays on your
+          When you run langprobe yourself, your data stays on your
           infrastructure. The product does not phone home, does not
-          ship telemetry, and does not relay traces to any tracebility
+          ship telemetry, and does not relay traces to any langprobe
           server. Your ClickHouse, your Postgres, your retention.
         </Section>
 
         <Section title="OAuth sign-in">
           If your operator has configured Google or GitHub OAuth, signing
           in sends a redirect to that provider so they can authenticate
-          you. Tracebility receives only your verified email, your name
+          you. Langprobe receives only your verified email, your name
           (if you share it), and a stable identifier. Nothing else is
           shared with the OAuth provider beyond what they already know
           about you. We do not store your provider password or token
@@ -70,7 +70,7 @@ export default function PrivacyPage() {
           The hosted (SaaS) instance is on the roadmap. When it ships,
           this page will document data residency, retention, processor
           list, and DPA terms for hosted customers. Until then, all
-          tracebility deployments are operator-run and operator-owned.
+          langprobe deployments are operator-run and operator-owned.
         </Section>
 
         <Section title="LLM credentials">
@@ -82,10 +82,10 @@ export default function PrivacyPage() {
         <Section title="Contact">
           Questions or requests: file an issue at{" "}
           <a
-            href="https://github.com/tracebility-ai/tracebility/issues"
+            href="https://github.com/langprobe/langprobe/issues"
             style={{ color: "var(--link)" }}
           >
-            github.com/tracebility-ai/tracebility
+            github.com/langprobe/langprobe
           </a>
           .
         </Section>

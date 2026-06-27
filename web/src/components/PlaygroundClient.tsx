@@ -121,7 +121,7 @@ export function PlaygroundComposer({
   ]);
   const [loadedVersionId, setLoadedVersionId] = useState<string | null>(null);
   const [variables, setVariables] = useState<Record<string, string>>({
-    text: "tracebility is a self-hosted LLM observability platform.",
+    text: "langprobe is a self-hosted LLM observability platform.",
   });
   const [model, setModel] = useState<string>("anthropic/claude-sonnet-4-6");
   const [modelB, setModelB] = useState<string>("openai/gpt-4o-mini");

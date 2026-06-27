@@ -1,27 +1,28 @@
-# tracability
+# langprobe
 
 Self-hosted LLM observability + eval-rigor + agent-replay platform. The real debugger for agents.
 
-Locked plan: `/Users/mia/.gstack/projects/tracability/ceo-plans/2026-05-25-langsmith-replacement-mvp.md`
-Sections: `/Users/mia/.gstack/projects/tracability/ceo-plans/2026-05-25-langsmith-replacement-mvp-sections.md`
-Registries: `/Users/mia/.gstack/projects/tracability/ceo-plans/2026-05-25-registries.md`
+Locked plan: `/Users/mia/.gstack/projects/langprobe/ceo-plans/2026-05-25-langsmith-replacement-mvp.md`
+Sections: `/Users/mia/.gstack/projects/langprobe/ceo-plans/2026-05-25-langsmith-replacement-mvp-sections.md`
+Registries: `/Users/mia/.gstack/projects/langprobe/ceo-plans/2026-05-25-registries.md`
 
 ## Design System
 
 Always read `DESIGN.md` before making any visual or UI decisions. All font choices, colors, spacing, border radii, motion rules, and aesthetic direction are defined there. Do not deviate without explicit user approval.
 
-The memorable thing is "this is the real debugger for agents." Every UI choice serves that. The canonical visual reference is `/Users/mia/Downloads/tracability.html`. When in doubt: open that file and copy what it does. For aesthetic peers, look at the Vercel dashboard, Linear, or GitHub Primer's quieter views, not LangSmith or Braintrust.
+The memorable thing is "this is the real debugger for agents." Every UI choice serves that. The canonical visual reference is `/Users/mia/Downloads/langprobe.html`. When in doubt: open that file and copy what it does. For aesthetic peers, look at the Vercel dashboard, Linear, or GitHub Primer's quieter views, not LangSmith or Braintrust.
 
 In QA, code review, or design review modes: flag any code that doesn't match `DESIGN.md`. Specifically watch for:
 - Any font other than Geist + Geist Mono (no Inter, Space Grotesk, system-ui, Berkeley Mono, or Fraunces).
-- Any accent color other than near-black `#0A0A0A`. Blue only appears as the link color `#2056E2`. No purple. No amber. No gradients on the brand.
+- Any accent color other than HeroUI primary blue `#0485F7`. Brand and link share the hue. No purple, green, or amber in the chrome. No gradients on the brand.
+- The `--kind-*` categorical palette (llm amber, tool cyan, retr green, chain indigo) used outside trace-view kind badges.
 - Gradients of any kind.
 - Border radius >12px outside of round status dots / avatars (token scale stops at `--r-4 12px`).
 - Icons in colored circles, decorative blur blobs, glassmorphism.
 - 3-column SaaS-template feature grids with hero+subhero+CTA stacks on marketing.
 - Skeleton shimmer animations (skeletons must be flat `--surface-3` rectangles).
 - `data-theme="dark"` defaults — the app is light-mode-only until dark mode is deliberately authored.
-- CSS variables that don't match the canonical token set (`--bg #FCFCFC`, `--accent #0A0A0A`, `--link #2056E2`, etc.). The full set is in `DESIGN.md`.
+- CSS variables that don't match the canonical token set (`--bg #FCFCFC`, `--accent #0485F7`, `--link #0485F7`, etc.). The full set is in `DESIGN.md`.
 
 ## Skill routing
 

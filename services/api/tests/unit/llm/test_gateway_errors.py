@@ -7,15 +7,15 @@ from unittest.mock import AsyncMock
 
 import pytest
 from litellm import exceptions as litellm_errors
-from tracebility_api.llm import DispatchError, dispatch
-from tracebility_api.llm.types import Message
+from langprobe_api.llm import DispatchError, dispatch
+from langprobe_api.llm.types import Message
 
 pytestmark = pytest.mark.asyncio
 
 
 def _patch_workspace(mocker) -> None:
     mocker.patch(
-        "tracebility_api.llm.gateway._workspace_id_for_project",
+        "langprobe_api.llm.gateway._workspace_id_for_project",
         new=AsyncMock(return_value=uuid.uuid4()),
     )
 
@@ -61,7 +61,7 @@ async def test_timeout_records_and_raises(fake_pool, mocker) -> None:
     fake_pool.fetchval = AsyncMock(return_value=None)
     _patch_workspace(mocker)
     mocker.patch(
-        "tracebility_api.llm.gateway.litellm.acompletion",
+        "langprobe_api.llm.gateway.litellm.acompletion",
         new=AsyncMock(
             side_effect=litellm_errors.Timeout(
                 "upstream timed out", model="x", llm_provider="openai"
@@ -89,7 +89,7 @@ async def test_provider_error_records_and_raises(fake_pool, mocker) -> None:
     fake_pool.fetchval = AsyncMock(return_value=None)
     _patch_workspace(mocker)
     mocker.patch(
-        "tracebility_api.llm.gateway.litellm.acompletion",
+        "langprobe_api.llm.gateway.litellm.acompletion",
         new=AsyncMock(
             side_effect=litellm_errors.RateLimitError(
                 "429",
@@ -147,10 +147,10 @@ async def test_ceiling_skipped_on_interactive_surfaces(fake_pool, mocker) -> Non
     fake_resp.model = "openai/gpt-4o"
     fake_resp.model_dump = mocker.MagicMock(return_value={})
     mocker.patch(
-        "tracebility_api.llm.gateway.litellm.acompletion",
+        "langprobe_api.llm.gateway.litellm.acompletion",
         new=AsyncMock(return_value=fake_resp),
     )
-    mocker.patch("tracebility_api.llm.gateway.litellm.completion_cost", return_value=0)
+    mocker.patch("langprobe_api.llm.gateway.litellm.completion_cost", return_value=0)
 
     result = await dispatch(
         fake_pool,

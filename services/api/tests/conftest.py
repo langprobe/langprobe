@@ -13,8 +13,8 @@ import pytest
 
 # Required-by-config env vars. Set defaults so unit tests don't have to
 # pass them and config.load() doesn't raise at import time.
-os.environ.setdefault("TRACEBILITY_PG_DSN", "postgres://test/test")
-os.environ.setdefault("TRACEBILITY_SESSION_SECRET", "x" * 40)
+os.environ.setdefault("LANGPROBE_PG_DSN", "postgres://test/test")
+os.environ.setdefault("LANGPROBE_SESSION_SECRET", "x" * 40)
 
 
 @pytest.fixture
@@ -30,7 +30,7 @@ def fake_pool(mocker):
 
 @pytest.fixture
 def integration_dsn() -> str:
-    dsn = os.environ.get("TRACEBILITY_TEST_DSN")
+    dsn = os.environ.get("LANGPROBE_TEST_DSN")
     if not dsn:
-        pytest.skip("set TRACEBILITY_TEST_DSN to run integration tests")
+        pytest.skip("set LANGPROBE_TEST_DSN to run integration tests")
     return dsn

@@ -1,4 +1,4 @@
-# tracebility
+# langprobe
 
 **The real debugger for agents.**
 
@@ -19,8 +19,8 @@ schemas/
   postgres/           # control-plane schema (orgs, users, audit log, ...)
   clickhouse/         # data-plane schema (runs, spans, evals, replays)
 packages/
-  sdk-python/         # tracebility Python SDK
-  sdk-typescript/     # tracebility TypeScript SDK
+  sdk-python/         # langprobe Python SDK
+  sdk-typescript/     # langprobe TypeScript SDK
 infra/                # docker-compose, k8s manifests
 designs/              # UI mockups
 DESIGN.md             # design system source of truth

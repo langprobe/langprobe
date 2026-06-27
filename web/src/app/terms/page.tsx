@@ -9,7 +9,7 @@ import Link from "next/link";
  * customer-facing TOS reviewed by counsel.
  */
 
-export const metadata = { title: "Terms of service · tracebility" };
+export const metadata = { title: "Terms of service · langprobe" };
 
 export default function TermsPage() {
   return (
@@ -40,7 +40,7 @@ export default function TermsPage() {
             margin: 0,
           }}
         >
-          Tracebility
+          Langprobe
         </p>
         <h1
           className="display-sm"
@@ -50,9 +50,9 @@ export default function TermsPage() {
         </h1>
 
         <Section title="What you can do with the software">
-          Tracebility is open source under the{" "}
+          Langprobe is open source under the{" "}
           <a
-            href="https://github.com/tracebility-ai/tracebility/blob/main/LICENSE"
+            href="https://github.com/langprobe/langprobe/blob/main/LICENSE"
             style={{ color: "var(--link)" }}
           >
             Apache License, Version 2.0
@@ -63,7 +63,7 @@ export default function TermsPage() {
         </Section>
 
         <Section title="Hosted service">
-          The hosted (SaaS) tracebility instance is on the roadmap and
+          The hosted (SaaS) langprobe instance is on the roadmap and
           not yet generally available. When it ships, this page will be
           replaced with a service agreement covering account creation,
           billing, data retention, support, and uptime commitments.
@@ -79,10 +79,10 @@ export default function TermsPage() {
         <Section title="Contact">
           Questions: file an issue at{" "}
           <a
-            href="https://github.com/tracebility-ai/tracebility/issues"
+            href="https://github.com/langprobe/langprobe/issues"
             style={{ color: "var(--link)" }}
           >
-            github.com/tracebility-ai/tracebility
+            github.com/langprobe/langprobe
           </a>
           .
         </Section>

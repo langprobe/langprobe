@@ -9,8 +9,8 @@ from __future__ import annotations
 from uuid import UUID
 
 import pytest
-from tracebility_api.auth import Principal
-from tracebility_api.tenant_scope import (
+from langprobe_api.auth import Principal
+from langprobe_api.tenant_scope import (
     ScopedClickHouse,
     TenantScope,
     _append_predicate,

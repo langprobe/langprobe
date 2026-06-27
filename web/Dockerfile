@@ -16,7 +16,7 @@ COPY --from=deps /repo/node_modules ./node_modules
 COPY --from=deps /repo/web/node_modules ./web/node_modules
 COPY package.json pnpm-workspace.yaml ./
 COPY web ./web
-RUN pnpm --filter @tracebility/web build
+RUN pnpm --filter @langprobe/web build
 
 FROM node:20-bookworm-slim AS runner
 WORKDIR /repo

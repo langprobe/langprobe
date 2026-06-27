@@ -57,7 +57,7 @@ _HAS_ORG_FILTER = re.compile(r"\borg_id\s*=", re.IGNORECASE)
 
 
 def _routers_dir() -> Path:
-    return Path(__file__).resolve().parents[1] / "tracebility_api" / "routers"
+    return Path(__file__).resolve().parents[1] / "langprobe_api" / "routers"
 
 
 def _sql_strings_in_file(path: Path) -> list[tuple[int, str]]:

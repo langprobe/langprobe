@@ -6,7 +6,7 @@ from collections import Counter
 from uuid import UUID, uuid4
 
 import pytest
-from tracebility_tenant.shard import DEFAULT_SHARD_COUNT, ShardRouter
+from langprobe_tenant.shard import DEFAULT_SHARD_COUNT, ShardRouter
 
 
 def test_shard_for_is_stable() -> None:
@@ -40,7 +40,7 @@ def test_stream_key_for_matches_spec() -> None:
     r = ShardRouter()
     org = UUID("00000000-0000-0000-0000-000000000001")
     key = r.stream_key_for(org)
-    assert key.startswith("tracebility:ingest:v1:")
+    assert key.startswith("langprobe:ingest:v1:")
     shard = int(key.rsplit(":", 1)[1])
     assert 0 <= shard < DEFAULT_SHARD_COUNT
 
@@ -48,15 +48,15 @@ def test_stream_key_for_matches_spec() -> None:
 def test_all_stream_keys() -> None:
     keys = ShardRouter(shard_count=4).all_stream_keys()
     assert keys == [
-        "tracebility:ingest:v1:0",
-        "tracebility:ingest:v1:1",
-        "tracebility:ingest:v1:2",
-        "tracebility:ingest:v1:3",
+        "langprobe:ingest:v1:0",
+        "langprobe:ingest:v1:1",
+        "langprobe:ingest:v1:2",
+        "langprobe:ingest:v1:3",
     ]
 
 
 def test_legacy_stream_key() -> None:
-    assert ShardRouter.legacy_stream_key() == "tracebility:ingest:v1"
+    assert ShardRouter.legacy_stream_key() == "langprobe:ingest:v1"
 
 
 def test_shard_count_validation() -> None:
