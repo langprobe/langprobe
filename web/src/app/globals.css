@@ -1,7 +1,6 @@
-/* Design tokens — see DESIGN.md (v2 2026-05-27, mock-as-source-of-truth).
- * Source: /Users/mia/Downloads/tracability.html
- * Geist + Geist Mono only. Near-black accent. Light-mode default.
- * Blue ONLY appears as link color. No purple, no amber, no gradients. */
+/* Design tokens — see DESIGN.md (v3 2026-06-08).
+ * Geist + Geist Mono only. Light-mode default.
+ * Accent is HeroUI primary blue #0485F7; brand and link share the hue. */
 
 :root {
   /* Surfaces */
@@ -14,7 +13,7 @@
   /* Borders */
   --border:        #ECECEA;
   --border-strong: #DDDDDB;
-  --border-focus:  #0A0A0A;
+  --border-focus:  #0485F7;
 
   /* Text */
   --text:          #0A0A0A;
@@ -22,17 +21,19 @@
   --text-3:        #8A8A86;
   --text-4:        #B4B4AE;
 
-  /* Brand / accent */
-  --accent:        #0A0A0A;
+  /* Brand / accent (HeroUI primary blue) */
+  --accent:        #0485F7;
   --accent-fg:     #FFFFFF;
+  --accent-soft:   #E0F0FE;
+  --accent-hover:  #3592F9;
 
-  /* Link */
-  --link:          #2056E2;
-  --link-soft:     #EEF2FE;
+  /* Link — same hue as accent so brand reads as one voice */
+  --link:          #0485F7;
+  --link-soft:     #E0F0FE;
 
   /* Semantic */
-  --info:          #2056E2;
-  --info-soft:     #EEF2FE;
+  --info:          #0485F7;
+  --info-soft:     #E0F0FE;
   --success:       #1A7F4E;
   --success-soft:  #E7F4ED;
   --warn:          #B05F00;
@@ -40,15 +41,16 @@
   --danger:        #C0382B;
   --danger-soft:   #FBEAE7;
 
-  /* Span-kind palette */
-  --kind-llm:      #2056E2;
-  --kind-llm-bg:   #EEF2FE;
-  --kind-tool:     #6D5BBC;
-  --kind-tool-bg:  #EFEBFB;
-  --kind-retr:     #167C73;
-  --kind-retr-bg:  #E3F2EF;
-  --kind-chain:    #4B4B49;
-  --kind-chain-bg: #F0F0EE;
+  /* Span-kind palette — categorical, lives only in trace-view kind badges.
+   * NOT available for general UI; do not use for buttons, rows, etc. */
+  --kind-llm:      #B97306;
+  --kind-llm-bg:   #FBF3DF;
+  --kind-tool:     #0E7FB8;
+  --kind-tool-bg:  #E2F1FA;
+  --kind-retr:     #1F8A56;
+  --kind-retr-bg:  #E5F4EC;
+  --kind-chain:    #7A4FD9;
+  --kind-chain-bg: #EFEAFB;
 
   /* Geometry */
   --r-1: 4px;
@@ -221,11 +223,13 @@ a:focus-visible {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--shadow-1);
 }
 .btn-primary:hover {
-  background: #1c1c1c;
+  background: var(--accent-hover);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), var(--shadow-2);
 }
 .btn-primary:active {
-  background: #2b2b2b;
+  /* Pressed: nudge slightly darker than --accent. Same hue family,
+   * just compressed lightness so the button feels physically pushed. */
+  background: #0470D6;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
@@ -807,6 +811,345 @@ select[aria-invalid="true"]:focus {
   font-family: var(--f-mono);
   font-size: 11px;
   color: var(--text-3);
+}
+
+/* ---------- Inline-edit row ----------
+ * Settings-list grammar: at rest each row reads as plain text
+ * (label-left, value-right). On hover the row tints to --surface-2
+ * with a subtle [edit] CTA on the right. On .editing the value
+ * cell becomes a true input shell (.ie-edit) with the accent ring.
+ *
+ * Native habitat: workspace settings, project settings, alert thresholds.
+ * NOT the right grammar for new-record modals — use .field-modal there.
+ *
+ * Markup contract:
+ *   <ul class="ie-list">
+ *     <li class="ie-row" data-editing="false" data-error="false">
+ *       <span class="ie-label">Workspace name</span>
+ *       <span class="ie-value">tracability-prod</span>
+ *       <span class="ie-cta">edit</span>
+ *     </li>
+ *   </ul>
+ *
+ * In edit mode swap .ie-value's children for an .ie-edit shell.
+ */
+.ie-list {
+  display: grid;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-3);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), var(--shadow-1);
+  overflow: hidden;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.ie-row {
+  display: grid;
+  grid-template-columns: 200px 1fr auto;
+  align-items: center;
+  column-gap: 24px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  transition: background var(--motion-fast) var(--ease-out);
+  cursor: pointer;
+}
+.ie-row:last-child { border-bottom: 0; }
+.ie-row:hover { background: var(--surface-2); }
+.ie-row[data-editing="true"] { background: var(--surface); cursor: default; }
+.ie-row[data-error="true"] { background: var(--danger-soft); }
+.ie-row[data-error="true"]:hover { background: #F8D9D4; }
+
+.ie-label {
+  font-size: var(--fs-13);
+  color: var(--text-2);
+  font-weight: 500;
+}
+.ie-label .req { color: var(--danger); margin-left: 2px; }
+
+.ie-value {
+  font-family: var(--f-mono);
+  font-size: var(--fs-13);
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.ie-value .placeholder { color: var(--text-4); }
+.ie-value .truncate {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.ie-cta {
+  font-family: var(--f-mono);
+  font-size: 11px;
+  color: var(--text-4);
+  padding: 2px 6px;
+  border-radius: var(--r-1);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0;
+  transition:
+    opacity var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out);
+}
+.ie-row:hover .ie-cta { opacity: 1; color: var(--text-3); }
+.ie-row[data-editing="true"] .ie-cta {
+  opacity: 1; color: var(--accent); font-weight: 600;
+}
+
+/* Edit-mode input shell — sits inside .ie-value when row is editing */
+.ie-edit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--accent);
+  border-radius: var(--r-2);
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--accent);
+  transition: border-color var(--motion-fast) var(--ease-out);
+}
+.ie-row[data-error="true"] .ie-edit {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 1px var(--danger);
+}
+.ie-edit > input,
+.ie-edit > select,
+.ie-edit > textarea {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font-family: var(--f-mono);
+  font-size: var(--fs-13);
+  color: var(--text);
+  padding: 0;
+  height: 22px;
+  /* Inputs section above defines a default 1px border; reset for edit shell. */
+  width: auto;
+}
+.ie-edit > textarea {
+  height: auto;
+  min-height: 48px;
+  resize: vertical;
+  padding: 2px 0;
+  line-height: 1.5;
+}
+.ie-edit > select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 18px;
+  cursor: pointer;
+}
+
+.ie-pfx {
+  font-family: var(--f-mono);
+  font-size: 12px;
+  color: var(--text-3);
+  padding-right: 6px;
+  border-right: 1px solid var(--border);
+}
+
+/* Small inline action button (reveal, copy, rotate) — sits inside an
+ * .ie-edit or .input-shell next to the input. Not a primary .btn — quieter. */
+.ie-sfx-btn {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-1);
+  background: var(--surface);
+  color: var(--text-2);
+  font-family: var(--f-mono);
+  font-size: 11px;
+  cursor: pointer;
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out);
+}
+.ie-sfx-btn:hover { background: var(--hover); color: var(--text); }
+
+/* ---------- Input shell ----------
+ * Modal/dialog form grammar: a hairline-bordered shell that wraps an
+ * <input>, <select>, or <textarea> and provides slot composition for
+ * prefix (e.g. "https://") and suffix (action buttons) without changing
+ * the input element itself.
+ *
+ *   <span class="input-shell">
+ *     <span class="ie-pfx">https://</span>
+ *     <input value="hooks.example.com" />
+ *     <button class="ie-sfx-btn">reveal</button>
+ *   </span>
+ *
+ * Hover bumps the border, focus paints the accent ring (no layout shift).
+ * The shell intentionally overrides the global input border so the *shell*
+ * carries the affordance, not the inner element.
+ */
+.input-shell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  min-height: 32px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-2);
+  background: var(--surface);
+  transition:
+    border-color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out);
+}
+.input-shell:hover { border-color: var(--border-strong); }
+.input-shell:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.input-shell.input-shell-error,
+.input-shell[data-error="true"] {
+  border-color: var(--danger);
+}
+.input-shell.input-shell-error:focus-within,
+.input-shell[data-error="true"]:focus-within {
+  box-shadow: 0 0 0 1px var(--danger);
+}
+.input-shell > input,
+.input-shell > select,
+.input-shell > textarea {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font-family: var(--f-mono);
+  font-size: var(--fs-13);
+  color: var(--text);
+  padding: 0;
+  height: 20px;
+  /* Reset width:100% from the global input rule so the shell controls
+   * width and the inner element flexes. */
+  width: auto;
+}
+.input-shell > input::placeholder,
+.input-shell > textarea::placeholder { color: var(--text-4); }
+.input-shell > textarea {
+  height: auto;
+  min-height: 60px;
+  resize: vertical;
+  padding: 2px 0;
+  line-height: 1.5;
+}
+.input-shell > select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 18px;
+  cursor: pointer;
+}
+/* Use this modifier on a select-bearing shell to render the ▾ caret. */
+.input-shell-select { position: relative; }
+.input-shell-select::after {
+  content: "▾";
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-family: var(--f-mono);
+  font-size: 11px;
+  color: var(--text-3);
+  pointer-events: none;
+}
+
+/* ---------- Field (modal grid layout) ----------
+ * Two-column label-left / control-right layout for modals and panels.
+ * Composes with .input-shell. Use this instead of .field when you want
+ * the heavier "settings page" rhythm — 140px label column, fields
+ * vertically stacked with 14px gaps.
+ *
+ *   <div class="field-modal">
+ *     <label>Provider <span class="req">*</span></label>
+ *     <div class="field-modal-control">
+ *       <span class="input-shell input-shell-select">…</span>
+ *     </div>
+ *   </div>
+ */
+.field-modal {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 18px;
+  align-items: start;
+}
+.field-modal > label {
+  font-size: var(--fs-13);
+  color: var(--text-2);
+  font-weight: 500;
+  padding-top: 6px;
+}
+.field-modal > label .req { color: var(--danger); margin-left: 2px; }
+.field-modal-control { display: grid; gap: 6px; }
+
+/* ---------- Switch ----------
+ * Replaces the raw <input type="checkbox"> for boolean toggles.
+ *
+ *   <label class="switch">
+ *     <input type="checkbox" checked />
+ *     <span class="track"></span>
+ *     <span class="switch-label">Default for new projects</span>
+ *   </label>
+ *
+ * The hidden input drives state; the visible track + knob render the
+ * affordance. Knob spring-eases on toggle.
+ */
+.switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+}
+.switch input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.switch .track {
+  width: 30px;
+  height: 16px;
+  border-radius: 9999px;
+  background: var(--surface-3);
+  border: 1px solid var(--border-strong);
+  position: relative;
+  transition:
+    background var(--motion-base) var(--ease-out),
+    border-color var(--motion-base) var(--ease-out);
+}
+.switch .track::after {
+  content: "";
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 12px;
+  height: 12px;
+  background: #fff;
+  border-radius: 9999px;
+  box-shadow: var(--shadow-1);
+  transition: transform var(--motion-base) cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.switch input:checked + .track {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.switch input:checked + .track::after { transform: translateX(14px); }
+.switch input:focus-visible + .track {
+  box-shadow: 0 0 0 2px var(--surface), 0 0 0 3px var(--accent);
+}
+.switch input:disabled + .track { opacity: 0.5; cursor: not-allowed; }
+.switch-label {
+  font-size: var(--fs-13);
+  color: var(--text);
 }
 
 /* Code block */

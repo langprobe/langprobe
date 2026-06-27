@@ -14,14 +14,15 @@ The memorable thing is "this is the real debugger for agents." Every UI choice s
 
 In QA, code review, or design review modes: flag any code that doesn't match `DESIGN.md`. Specifically watch for:
 - Any font other than Geist + Geist Mono (no Inter, Space Grotesk, system-ui, Berkeley Mono, or Fraunces).
-- Any accent color other than near-black `#0A0A0A`. Blue only appears as the link color `#2056E2`. No purple. No amber. No gradients on the brand.
+- Any accent color other than HeroUI primary blue `#0485F7`. Brand and link share the hue. No purple, green, or amber in the chrome. No gradients on the brand.
+- The `--kind-*` categorical palette (llm amber, tool cyan, retr green, chain indigo) used outside trace-view kind badges.
 - Gradients of any kind.
 - Border radius >12px outside of round status dots / avatars (token scale stops at `--r-4 12px`).
 - Icons in colored circles, decorative blur blobs, glassmorphism.
 - 3-column SaaS-template feature grids with hero+subhero+CTA stacks on marketing.
 - Skeleton shimmer animations (skeletons must be flat `--surface-3` rectangles).
 - `data-theme="dark"` defaults — the app is light-mode-only until dark mode is deliberately authored.
-- CSS variables that don't match the canonical token set (`--bg #FCFCFC`, `--accent #0A0A0A`, `--link #2056E2`, etc.). The full set is in `DESIGN.md`.
+- CSS variables that don't match the canonical token set (`--bg #FCFCFC`, `--accent #0485F7`, `--link #0485F7`, etc.). The full set is in `DESIGN.md`.
 
 ## Skill routing
 
