@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PG_DSN="${TRACEBILITY_PG_DSN:?TRACEBILITY_PG_DSN must be set}"
-CH_URL="${TRACEBILITY_CLICKHOUSE_URL:?TRACEBILITY_CLICKHOUSE_URL must be set}"
+PG_DSN="${LANGPROBE_PG_DSN:?LANGPROBE_PG_DSN must be set}"
+CH_URL="${LANGPROBE_CLICKHOUSE_URL:?LANGPROBE_CLICKHOUSE_URL must be set}"
 
 echo "==> Postgres: collecting applied migrations"
 applied="$(psql -At -c "SELECT version FROM schema_migrations" "$PG_DSN" 2>/dev/null || true)"
@@ -31,7 +31,7 @@ echo "==> Postgres: applied $count_applied, skipped $count_skipped"
 echo "==> ClickHouse: applying migrations with version tracking"
 
 # We talk to ClickHouse over HTTP rather than the native binary protocol,
-# because the DSN we get (TRACEBILITY_CLICKHOUSE_URL) already targets the
+# because the DSN we get (LANGPROBE_CLICKHOUSE_URL) already targets the
 # HTTP endpoint. clickhouse-client's URL form isn't supported in 24.x and
 # adding the binary would balloon the image by ~480 MB.
 #

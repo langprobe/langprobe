@@ -28,20 +28,20 @@ Operational:
 ## Run
 
 ```sh
-export TRACEBILITY_PG_DSN=postgres://tracebility:tracebility@localhost:5432/tracebility
-export TRACEBILITY_SESSION_SECRET=$(openssl rand -hex 32)
-python -m tracebility_api
+export LANGPROBE_PG_DSN=postgres://langprobe:langprobe@localhost:5432/langprobe
+export LANGPROBE_SESSION_SECRET=$(openssl rand -hex 32)
+python -m langprobe_api
 ```
 
 ## Env vars
 
 | name                                  | default                 |
 | ------------------------------------- | ----------------------- |
-| `TRACEBILITY_PG_DSN`                  | required                |
-| `TRACEBILITY_SESSION_SECRET`          | required, ≥32 chars     |
-| `TRACEBILITY_SESSION_COOKIE`          | `tracebility_session`   |
-| `TRACEBILITY_SESSION_MAX_AGE_SECONDS` | `604800` (7 days)       |
-| `TRACEBILITY_BIND_HOST`               | `0.0.0.0`               |
-| `TRACEBILITY_API_BIND_PORT`           | `7081`                  |
-| `TRACEBILITY_LOG_LEVEL`               | `INFO`                  |
-| `TRACEBILITY_CORS_ALLOW_ORIGIN`       | `http://localhost:7090` |
+| `LANGPROBE_PG_DSN`                  | required                |
+| `LANGPROBE_SESSION_SECRET`          | required, ≥32 chars     |
+| `LANGPROBE_SESSION_COOKIE`          | `langprobe_session`   |
+| `LANGPROBE_SESSION_MAX_AGE_SECONDS` | `604800` (7 days)       |
+| `LANGPROBE_BIND_HOST`               | `0.0.0.0`               |
+| `LANGPROBE_API_BIND_PORT`           | `7081`                  |
+| `LANGPROBE_LOG_LEVEL`               | `INFO`                  |
+| `LANGPROBE_CORS_ALLOW_ORIGIN`       | `http://localhost:7090` |

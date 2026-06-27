@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from tracebility_tenant.rate_limit import RateLimiter, ingest_bucket_key
+from langprobe_tenant.rate_limit import RateLimiter, ingest_bucket_key
 
 pytestmark = pytest.mark.asyncio
 

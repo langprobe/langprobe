@@ -5,8 +5,8 @@
 ## What this changes
 
 Pre-cutover, ingest-api wrote to a single Redis stream
-`tracebility:ingest:v1`. Post-cutover, ingest-api writes to N=16 sharded
-streams `tracebility:ingest:v1:{0..15}` keyed by `hash(org_id) % 16`. One
+`langprobe:ingest:v1`. Post-cutover, ingest-api writes to N=16 sharded
+streams `langprobe:ingest:v1:{0..15}` keyed by `hash(org_id) % 16`. One
 runaway tenant fills its shard, not the whole stream.
 
 ## Sequencing (no-data-loss)
@@ -28,24 +28,24 @@ in either order, because:
    to the legacy stream.
 2. Deploy ingest-api (Phase 5). New envelopes start landing on the
    sharded streams. Legacy stream now has only in-flight tail.
-3. Wait for `XLEN tracebility:ingest:v1` to reach 0 (typical: minutes).
-4. Set `TRACEBILITY_INGEST_DUAL_READ_LEGACY=false` and roll the worker.
-   Optionally `XADD tracebility:ingest:v1 MAXLEN 0` to clear residue.
+3. Wait for `XLEN langprobe:ingest:v1` to reach 0 (typical: minutes).
+4. Set `LANGPROBE_INGEST_DUAL_READ_LEGACY=false` and roll the worker.
+   Optionally `XADD langprobe:ingest:v1 MAXLEN 0` to clear residue.
 
 ## Verifying the cutover
 
 ```bash
 # Ingest-api should be writing to shards.
-redis-cli XLEN tracebility:ingest:v1:0
-redis-cli XLEN tracebility:ingest:v1:7
+redis-cli XLEN langprobe:ingest:v1:0
+redis-cli XLEN langprobe:ingest:v1:7
 
 # Legacy stream should monotonically decrease then plateau at 0.
-watch redis-cli XLEN tracebility:ingest:v1
+watch redis-cli XLEN langprobe:ingest:v1
 
 # Per-shard backlog skew (the `weighted_map` reactivation trigger)
 for i in $(seq 0 15); do
     printf "shard %2d: " "$i"
-    redis-cli XLEN "tracebility:ingest:v1:$i"
+    redis-cli XLEN "langprobe:ingest:v1:$i"
 done
 ```
 
@@ -66,8 +66,8 @@ project.
 
 ## DLQ
 
-Each shard has its own DLQ: `tracebility:ingest:v1:<shard>:dlq`. The
-legacy stream's DLQ is `tracebility:ingest:v1:dlq`. After the cutover,
+Each shard has its own DLQ: `langprobe:ingest:v1:<shard>:dlq`. The
+legacy stream's DLQ is `langprobe:ingest:v1:dlq`. After the cutover,
 sweep both DLQs into the per-shard DLQ for whichever shard the org's
 `org_id` would hash to (or just inspect manually — DLQs are low-volume
 by design).

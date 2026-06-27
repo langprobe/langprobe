@@ -1,5 +1,5 @@
 {
-  "name": "tracebility",
+  "name": "langprobe",
   "private": true,
   "version": "0.0.0",
   "description": "Self-hosted LLM observability + eval-rigor + agent-replay platform.",

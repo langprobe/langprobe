@@ -1,0 +1,90 @@
+{{- if .Values.web.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "langprobe.web.fullname" . }}
+  labels:
+    {{- include "langprobe.labels" . | nindent 4 }}
+    app.kubernetes.io/component: web
+spec:
+  replicas: {{ .Values.web.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "langprobe.web.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "langprobe.web.selectorLabels" . | nindent 8 }}
+      {{- with .Values.web.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "langprobe.serviceAccountName" . }}
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: web
+          image: {{ include "langprobe.image" (dict "root" . "component" .Values.web) }}
+          imagePullPolicy: {{ default .Values.global.imagePullPolicy .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.web.service.port }}
+          env:
+            - name: NODE_ENV
+              value: production
+            # Internal DNS the Next.js server uses for SSR /v1/* fetches.
+            - name: API_BASE_INTERNAL
+              value: {{ printf "http://%s:%v" (include "langprobe.api.fullname" .) .Values.api.service.port | quote }}
+            {{- with .Values.web.publicApiBase }}
+            - name: NEXT_PUBLIC_API_BASE
+              value: {{ . | quote }}
+            {{- end }}
+          readinessProbe:
+            httpGet:
+              # /login returns 200 unauthenticated; / now redirects to
+              # /login (307), which kubelet accepts but GCE LB
+              # health-checks reject.
+              path: /login
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /login
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 60
+          resources:
+            {{- toYaml .Values.web.resources | nindent 12 }}
+      {{- with .Values.web.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.web.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.web.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "langprobe.web.fullname" . }}
+  labels:
+    {{- include "langprobe.labels" . | nindent 4 }}
+    app.kubernetes.io/component: web
+spec:
+  type: {{ .Values.web.service.type }}
+  ports:
+    - name: http
+      port: {{ .Values.web.service.port }}
+      targetPort: http
+  selector:
+    {{- include "langprobe.web.selectorLabels" . | nindent 4 }}
+{{- end }}

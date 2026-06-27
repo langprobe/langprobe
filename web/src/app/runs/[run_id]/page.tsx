@@ -161,7 +161,7 @@ export default async function RunDetailPage({
 
   const crumbs = (
     <>
-      <Link href="/">tracability</Link>
+      <Link href="/">langprobe</Link>
       <span className="sep">/</span>
       <Link href="/runs">runs</Link>
       <span className="sep">/</span>

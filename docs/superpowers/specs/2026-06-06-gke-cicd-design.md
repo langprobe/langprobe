@@ -14,19 +14,19 @@ long-lived JSON keys. Existing `ci.yml` (ruff + lint + typecheck)
 gates the deploy via `workflow_run`.
 
 This is a CI/CD design, not a refactor of the chart. The chart at
-`deploy/helm/tracebility/` already supports image tag + registry
+`deploy/helm/langprobe/` already supports image tag + registry
 overrides; the workflow just supplies them.
 
 ## Target environment
 
 - **GCP project:** `project-c4ff4ea3-775a-4e0c-9a3`
-- **GKE cluster:** `tracebility-cluster-1`, region `asia-southeast2`
+- **GKE cluster:** `langprobe-cluster-1`, region `asia-southeast2`
   (Autopilot, public endpoint, Workload Identity enabled at pool
   `project-c4ff4ea3-775a-4e0c-9a3.svc.id.goog`)
-- **Artifact Registry:** repo `tracebility`, region `asia-southeast2`
-  → `asia-southeast2-docker.pkg.dev/project-c4ff4ea3-775a-4e0c-9a3/tracebility/<service>:<tag>`
-- **Kubernetes namespace:** `tracebility` (Helm `--create-namespace`)
-- **GitHub repo:** `tracebility-ai/tracebility`
+- **Artifact Registry:** repo `langprobe`, region `asia-southeast2`
+  → `asia-southeast2-docker.pkg.dev/project-c4ff4ea3-775a-4e0c-9a3/langprobe/<service>:<tag>`
+- **Kubernetes namespace:** `langprobe` (Helm `--create-namespace`)
+- **GitHub repo:** `langprobe/langprobe`
 - **Branch that deploys:** `main`
 
 ## Out of scope
@@ -57,7 +57,7 @@ docs/superpowers/runbooks/gke-bootstrap.md
    │                           container.clusterViewer
    ├── binds WIF principal → deploy SA via roles/iam.workloadIdentityUser
    ├── verifies Artifact Registry repo exists
-   ├── creates `tracebility` namespace
+   ├── creates `langprobe` namespace
    └── creates k8s secrets (postgres, clickhouse, redis, session)
 
 
@@ -74,10 +74,10 @@ docs/superpowers/runbooks/gke-bootstrap.md
    └── job: helm-deploy (needs all 4 build jobs)
          ├── auth via WIF
          ├── gcloud container clusters get-credentials
-         └── helm upgrade --install tracebility \
-                 deploy/helm/tracebility \
-                 -n tracebility --create-namespace \
-                 -f deploy/helm/tracebility/values-gke.yaml \
+         └── helm upgrade --install langprobe \
+                 deploy/helm/langprobe \
+                 -n langprobe --create-namespace \
+                 -f deploy/helm/langprobe/values-gke.yaml \
                  --set image.tag=${{ github.sha }} \
                  --atomic --wait --timeout 5m
 ```
@@ -113,17 +113,17 @@ GitHub Actions runner
    │
    │  permissions: id-token: write
    ▼
-GitHub OIDC token  (subject: repo:tracebility-ai/tracebility:ref:refs/heads/main)
+GitHub OIDC token  (subject: repo:langprobe/langprobe:ref:refs/heads/main)
    │
    │  google-github-actions/auth@v2
    ▼
 WIF provider exchanges token, validates:
-   assertion.repository == "tracebility-ai/tracebility"
+   assertion.repository == "langprobe/langprobe"
    assertion.ref        == "refs/heads/main"
    │
    ▼
 Short-lived federated identity, impersonates:
-   tracebility-deploy@project-c4ff4ea3-775a-4e0c-9a3.iam.gserviceaccount.com
+   langprobe-deploy@project-c4ff4ea3-775a-4e0c-9a3.iam.gserviceaccount.com
    roles: roles/artifactregistry.writer
           roles/container.developer
           roles/container.clusterViewer
@@ -143,7 +143,7 @@ perms. The only GitHub-side secret is the built-in `GITHUB_TOKEN`.
 ```
 .github/workflows/deploy.yml                          NEW
 docs/superpowers/runbooks/gke-bootstrap.md            NEW
-deploy/helm/tracebility/values-gke.yaml               NEW
+deploy/helm/langprobe/values-gke.yaml               NEW
 docs/superpowers/specs/2026-06-06-gke-cicd-design.md  THIS DOC
 ```
 
@@ -151,16 +151,16 @@ docs/superpowers/specs/2026-06-06-gke-cicd-design.md  THIS DOC
 
 Overrides only what differs from `values.yaml`:
 
-- `image.registry: asia-southeast2-docker.pkg.dev/project-c4ff4ea3-775a-4e0c-9a3/tracebility`
+- `image.registry: asia-southeast2-docker.pkg.dev/project-c4ff4ea3-775a-4e0c-9a3/langprobe`
 - per-service `image.repository` set to the bare service name
   (`web`, `api`, `ingest-api`, `ingest-worker`) since the registry
-  path already includes `/tracebility`
+  path already includes `/langprobe`
 - `ingress.enabled: false`
 - replica counts unchanged from `values.yaml` defaults (2 each)
-- `postgres.existingSecret: tracebility-postgres`
-- `clickhouse.existingSecret: tracebility-clickhouse`
-- `redis.existingSecret: tracebility-redis`
-- `session.existingSecret: tracebility-session`
+- `postgres.existingSecret: langprobe-postgres`
+- `clickhouse.existingSecret: langprobe-clickhouse`
+- `redis.existingSecret: langprobe-redis`
+- `session.existingSecret: langprobe-session`
 
 `image.tag` is supplied by `--set` from the workflow, never written
 to a file (so a re-deploy of the same SHA is reproducible from the
@@ -201,8 +201,8 @@ jobs:
           context: .
           file: services/${{ matrix.service }}/Dockerfile  (web/Dockerfile for web)
           tags: |
-            asia-southeast2-docker.pkg.dev/.../tracebility/${{ matrix.service }}:${{ github.sha }}
-            asia-southeast2-docker.pkg.dev/.../tracebility/${{ matrix.service }}:latest
+            asia-southeast2-docker.pkg.dev/.../langprobe/${{ matrix.service }}:${{ github.sha }}
+            asia-southeast2-docker.pkg.dev/.../langprobe/${{ matrix.service }}:latest
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to:   type=gha,mode=max,scope=${{ matrix.service }}
 
@@ -214,11 +214,11 @@ jobs:
       - google-github-actions/auth@v2 (WIF)
       - google-github-actions/setup-gcloud@v2
       - gcloud components install gke-gcloud-auth-plugin --quiet
-      - gcloud container clusters get-credentials tracebility-cluster-1 --region asia-southeast2
+      - gcloud container clusters get-credentials langprobe-cluster-1 --region asia-southeast2
       - azure/setup-helm@v4
-      - helm upgrade --install tracebility deploy/helm/tracebility \
-          --namespace tracebility --create-namespace \
-          --values deploy/helm/tracebility/values-gke.yaml \
+      - helm upgrade --install langprobe deploy/helm/langprobe \
+          --namespace langprobe --create-namespace \
+          --values deploy/helm/langprobe/values-gke.yaml \
           --set image.tag=${{ github.event.workflow_run.head_sha }} \
           --atomic --wait --timeout 5m
       - kubectl rollout status (per deployment, sanity check)
@@ -249,9 +249,9 @@ The runbook contains exact `gcloud` / `kubectl` commands for:
 
 1. **Enable APIs:** `iamcredentials`, `sts`, `container`,
    `artifactregistry` (Autopilot already needs `container`).
-2. **Verify Artifact Registry repo** `tracebility` exists in
+2. **Verify Artifact Registry repo** `langprobe` exists in
    `asia-southeast2`. Create if missing.
-3. **Create deploy SA** `tracebility-deploy@<project>.iam.gserviceaccount.com`.
+3. **Create deploy SA** `langprobe-deploy@<project>.iam.gserviceaccount.com`.
 4. **Grant minimum IAM** to the deploy SA:
    - `roles/artifactregistry.writer` on the AR repo
    - `roles/container.developer` on the cluster
@@ -260,15 +260,15 @@ The runbook contains exact `gcloud` / `kubectl` commands for:
    `github-actions-provider` with attribute mapping
    `attribute.repository=assertion.repository`,
    `attribute.ref=assertion.ref`, and attribute condition
-   `assertion.repository == "tracebility-ai/tracebility"`.
+   `assertion.repository == "langprobe/langprobe"`.
 6. **Bind WIF principal → deploy SA:**
-   `gcloud iam service-accounts add-iam-policy-binding ... --role roles/iam.workloadIdentityUser --member principalSet://iam.googleapis.com/projects/.../locations/global/workloadIdentityPools/github-actions-pool/attribute.repository/tracebility-ai/tracebility`.
-7. **Create k8s namespace** `tracebility`.
+   `gcloud iam service-accounts add-iam-policy-binding ... --role roles/iam.workloadIdentityUser --member principalSet://iam.googleapis.com/projects/.../locations/global/workloadIdentityPools/github-actions-pool/attribute.repository/langprobe/langprobe`.
+7. **Create k8s namespace** `langprobe`.
 8. **Create k8s secrets** with documented shape:
-   - `tracebility-postgres` key `dsn` →  `postgres://...`
-   - `tracebility-clickhouse` key `url` → `http://...`
-   - `tracebility-redis` key `url` → `redis://...`
-   - `tracebility-session` key `secret` → 32+ char random
+   - `langprobe-postgres` key `dsn` →  `postgres://...`
+   - `langprobe-clickhouse` key `url` → `http://...`
+   - `langprobe-redis` key `url` → `redis://...`
+   - `langprobe-session` key `secret` → 32+ char random
      (`openssl rand -hex 32`)
 9. **Set GitHub repo variables:**
    `GCP_PROJECT_ID`, `GCP_REGION`, `GKE_CLUSTER`, `AR_REPO`,
@@ -297,11 +297,11 @@ A reviewer should be able to verify all of these after merge:
 2. `docs/superpowers/runbooks/gke-bootstrap.md` exists, lists every
    `gcloud` / `kubectl` command, is idempotent, names every IAM role
    and every k8s secret.
-3. `deploy/helm/tracebility/values-gke.yaml` exists, points at
+3. `deploy/helm/langprobe/values-gke.yaml` exists, points at
    Artifact Registry, references existing secrets by name, leaves
    ingress disabled.
 4. The first deploy after running the bootstrap runbook produces
-   four healthy deployments in namespace `tracebility` and a green
+   four healthy deployments in namespace `langprobe` and a green
    workflow run.
 5. A subsequent commit to `main` rolls all four deployments to the
    new SHA and stays green; `kubectl rollout status` reports

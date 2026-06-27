@@ -23,9 +23,9 @@ def _service_reachable(host: str, port: int) -> bool:
         return False
 
 
-REDIS_URL = os.environ.get("TRACEBILITY_REDIS_URL", "redis://localhost:6379/15")
-CLICKHOUSE_HOST = os.environ.get("TRACEBILITY_CH_HOST", "localhost")
-CLICKHOUSE_PORT = int(os.environ.get("TRACEBILITY_CH_PORT", "8123"))
+REDIS_URL = os.environ.get("LANGPROBE_REDIS_URL", "redis://localhost:6379/15")
+CLICKHOUSE_HOST = os.environ.get("LANGPROBE_CH_HOST", "localhost")
+CLICKHOUSE_PORT = int(os.environ.get("LANGPROBE_CH_PORT", "8123"))
 
 
 @pytest.fixture(scope="session")

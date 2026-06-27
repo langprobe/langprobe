@@ -525,7 +525,7 @@ function FirstTraceQuickstart({ project }: { project: Project }) {
           .
         </span>
         <Link
-          href="https://github.com/tracebility-ai/tracebility/blob/main/docs/getting-started.md"
+          href="https://github.com/langprobe/langprobe/blob/main/docs/getting-started.md"
           className="btn btn-sm btn-ghost"
         >
           Full docs →
@@ -891,7 +891,7 @@ function UnconfiguredState({
             Run the setup wizard to create the root account and workspace.
             See the{" "}
             <a
-              href="https://github.com/tracebility-ai/tracebility/blob/main/docs/getting-started.md"
+              href="https://github.com/langprobe/langprobe/blob/main/docs/getting-started.md"
               style={{ color: "var(--link)" }}
             >
               getting-started doc

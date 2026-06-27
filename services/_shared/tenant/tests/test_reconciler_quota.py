@@ -15,8 +15,8 @@ import clickhouse_connect
 import pytest
 import pytest_asyncio
 import redis.asyncio as redis_async
-from tracebility_tenant.quota import current_period
-from tracebility_tenant.reconciler_quota import reconcile_once
+from langprobe_tenant.quota import current_period
+from langprobe_tenant.reconciler_quota import reconcile_once
 
 
 def _reachable(host: str, port: int) -> bool:
@@ -28,12 +28,12 @@ def _reachable(host: str, port: int) -> bool:
 
 
 PG_DSN = os.environ.get(
-    "TRACEBILITY_PG_DSN",
-    "postgres://tracebility:tracebility@localhost:5432/tracebility",
+    "LANGPROBE_PG_DSN",
+    "postgres://langprobe:langprobe@localhost:5432/langprobe",
 )
 CH_URL = os.environ.get(
-    "TRACEBILITY_CLICKHOUSE_URL",
-    "http://tracebility:tracebility@localhost:8123/tracebility",
+    "LANGPROBE_CLICKHOUSE_URL",
+    "http://langprobe:langprobe@localhost:8123/langprobe",
 )
 
 

@@ -2,7 +2,7 @@
 
 **Status:** design  
 **Date:** 2026-06-06  
-**Owner:** tracebility-ai/tracebility
+**Owner:** langprobe/langprobe
 
 ## Problem
 
@@ -40,7 +40,7 @@ This works but does not scale to the user's actual workflow: they want to swap m
                                  │  await dispatch(project_id, model, messages, ...)
                                  ▼
                 ┌──────────────────────────────────────┐
-                │ tracebility.llm.gateway              │
+                │ langprobe.llm.gateway              │
                 │  • resolve credentials (project→env) │
                 │  • check project ceiling (auto only) │
                 │  • LiteLLM acompletion call          │
@@ -169,7 +169,7 @@ select :new_project_id, c.id, :user_id
 
 ## Gateway module
 
-**File:** `services/api/tracebility_api/llm/gateway.py`
+**File:** `services/api/langprobe_api/llm/gateway.py`
 
 ```python
 @dataclass(frozen=True)

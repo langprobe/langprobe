@@ -1,7 +1,7 @@
-# tracebility-migrate-langsmith
+# langprobe-migrate-langsmith
 
 CLI that reads a LangSmith export (JSONL of run rows) and replays the
-rows into a tracebility ingest host's LangSmith parity endpoints.
+rows into a langprobe ingest host's LangSmith parity endpoints.
 
 The receiving end already understands the LangSmith `RunCreate`
 payload shape (`services/ingest-api/.../langsmith_shim.py`), so the
@@ -11,15 +11,15 @@ and POSTs to `/runs/batch`.
 ## Install
 
 ```bash
-pip install tracebility-migrate-langsmith
+pip install langprobe-migrate-langsmith
 ```
 
 ## Use
 
 ```bash
 # Configure
-export TRACEBILITY_INGEST_URL=https://traces.example.com
-export TRACEBILITY_INGEST_KEY=tk_...
+export LANGPROBE_INGEST_URL=https://traces.example.com
+export LANGPROBE_INGEST_KEY=tk_...
 
 # Validate first (parses, no network)
 tb-migrate-langsmith --input ./langsmith-export.jsonl --dry-run
@@ -55,7 +55,7 @@ Inputs:
 ## Authentication
 
 - `--api-key` overrides env. Falls back to
-  `TRACEBILITY_INGEST_KEY`, then `LANGSMITH_API_KEY` (lets you
+  `LANGPROBE_INGEST_KEY`, then `LANGSMITH_API_KEY` (lets you
   reuse a LangSmith-style env if your ops scripts already export
   it). The token is sent on `Authorization: Bearer …` and
   `x-api-key`.
@@ -63,5 +63,5 @@ Inputs:
 ## Endpoint
 
 - `--endpoint` overrides env. Falls back to
-  `TRACEBILITY_INGEST_URL`, then `LANGSMITH_ENDPOINT`, then
+  `LANGPROBE_INGEST_URL`, then `LANGSMITH_ENDPOINT`, then
   `http://localhost:7080`.

@@ -1,4 +1,4 @@
-# Design System — tracability
+# Design System — langprobe
 
 ## Product Context
 - **What this is:** Self-hosted LLM observability + eval-rigor + agent-replay platform. A LangSmith replacement that doubles as the real debugger for agents.
@@ -9,7 +9,7 @@
 - **Direction:** Vercel/Geist-grade product surface. Calm, near-black, paper-warm light mode. Information density without ornament. Not "SaaS pastel," not "AI-tool gradient slop," not "shadcn template." Closest analogs: Vercel dashboard, Linear, GitHub Primer's quieter views.
 - **Decoration level:** None. Type, spacing, and 1px rules carry everything. No gradients. No icon-in-colored-circle. No mesh blobs. No glassmorphism.
 - **Mood:** Quiet, precise, builder-grade. The product looks like calm software, not a pitch deck.
-- **Reference:** `/Users/mia/Downloads/tracability.html` is the canonical mock. When in doubt, open that file and copy what it does.
+- **Reference:** `/Users/mia/Downloads/langprobe.html` is the canonical mock. When in doubt, open that file and copy what it does.
 
 ## Typography
 - **Sans (default UI + body):** Geist, served via `next/font/google`. Weights 400/500/600.
@@ -207,5 +207,5 @@ App grid
 | Date | Decision | Rationale |
 |------|----------|-----------|
 | 2026-05-25 | v1 instrumented-brutalist (Berkeley Mono + amber). | Original direction. |
-| 2026-05-27 | v2 — adopt Vercel/Geist mock as new source of truth. | User chose "mock wins, replace DESIGN.md." Geist + Geist Mono, near-black `#0A0A0A` accent, light-mode default, blue `#2056E2` links, full token set extracted from `/Users/mia/Downloads/tracability.html`. Berkeley Mono / amber-orange retired. |
+| 2026-05-27 | v2 — adopt Vercel/Geist mock as new source of truth. | User chose "mock wins, replace DESIGN.md." Geist + Geist Mono, near-black `#0A0A0A` accent, light-mode default, blue `#2056E2` links, full token set extracted from `/Users/mia/Downloads/langprobe.html`. Berkeley Mono / amber-orange retired. |
 | 2026-06-08 | v3 — accent → HeroUI blue `#0485F7`; brand and link unified. | After `/design-shotgun` exploration, user selected the Inline-edit grammar paired with HeroUI's exact primary blue (sourced from `heroui-inc/heroui` `packages/styles/themes/default/variables.css`, `oklch(0.6204 0.195 253.83)` → `#0485F7`). Near-black accent retired; brand and link collapsed to a single hue so the product reads as one voice. Kind palette repointed to a *categorical* set (llm `#B97306` amber / tool `#0E7FB8` cyan / retr `#1F8A56` green / chain `#7A4FD9` indigo) so trace badges don't compete with the new accent. Geist + Geist Mono, light-mode default, no gradients all preserved. |

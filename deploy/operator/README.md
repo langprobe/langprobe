@@ -1,14 +1,14 @@
-# Tracebility Kubernetes operator
+# Langprobe Kubernetes operator
 
-Reconciles a `Tracebility` Custom Resource into the four-deployment
-shape the [Helm chart](../helm/tracebility) ships:
+Reconciles a `Langprobe` Custom Resource into the four-deployment
+shape the [Helm chart](../helm/langprobe) ships:
 api / ingest-api / ingest-worker / web.
 
 ## When to use the operator vs. the Helm chart
 
-- **Helm**: a single tracebility install, one cluster, manual
+- **Helm**: a single langprobe install, one cluster, manual
   upgrades. Simpler.
-- **Operator**: many tracebility installs across many namespaces,
+- **Operator**: many langprobe installs across many namespaces,
   GitOps-driven, declarative upgrades. Ergonomic for fleet
   management.
 
@@ -23,8 +23,8 @@ kubectl apply -f deploy/operator/crd.yaml
 kubectl apply -f deploy/operator/operator-deployment.yaml
 
 # 3) Pre-create the four secrets in your target namespace.
-kubectl create secret generic tracebility-postgres \
-  --from-literal=dsn='postgres://user:pass@host:5432/tracebility'
+kubectl create secret generic langprobe-postgres \
+  --from-literal=dsn='postgres://user:pass@host:5432/langprobe'
 # ...etc.
 
 # 4) Apply your CR.
@@ -55,7 +55,7 @@ to all of them.
 The reconciler is unit-testable without a cluster:
 
 ```python
-from tracebility_operator import build_manifests
+from langprobe_operator import build_manifests
 
 spec = {"api": {"replicas": 1}, "secrets": {...}}
 mans = build_manifests(name="dev", namespace="default", spec=spec)

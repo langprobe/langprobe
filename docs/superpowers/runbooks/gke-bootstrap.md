@@ -11,7 +11,7 @@ hard-coded so re-runs are deterministic.
 - `gcloud` authenticated as a user with project-owner-equivalent perms on
   `project-c4ff4ea3-775a-4e0c-9a3`.
 - `kubectl` installed.
-- GKE cluster `tracebility-cluster-1` already exists in `asia-southeast2`.
+- GKE cluster `langprobe-cluster-1` already exists in `asia-southeast2`.
 
 ## 1. Enable APIs
 
@@ -27,10 +27,10 @@ gcloud services enable \
 ## 2. Create the Artifact Registry repo
 
 ```bash
-gcloud artifacts repositories create tracebility \
+gcloud artifacts repositories create langprobe \
   --repository-format=docker \
   --location=asia-southeast2 \
-  --description="tracebility container images" \
+  --description="langprobe container images" \
   --project=project-c4ff4ea3-775a-4e0c-9a3
 ```
 
@@ -40,21 +40,21 @@ If it already exists, `gcloud` returns `ALREADY_EXISTS`; ignore.
 
 ```bash
 gcloud iam service-accounts describe \
-  tracebility-deploy@project-c4ff4ea3-775a-4e0c-9a3.iam.gserviceaccount.com \
+  langprobe-deploy@project-c4ff4ea3-775a-4e0c-9a3.iam.gserviceaccount.com \
   --project=project-c4ff4ea3-775a-4e0c-9a3 >/dev/null 2>&1 \
-  || gcloud iam service-accounts create tracebility-deploy \
+  || gcloud iam service-accounts create langprobe-deploy \
        --display-name="GitHub Actions deploy SA" \
        --project=project-c4ff4ea3-775a-4e0c-9a3
 ```
 
-Email: `tracebility-deploy@project-c4ff4ea3-775a-4e0c-9a3.iam.gserviceaccount.com`.
+Email: `langprobe-deploy@project-c4ff4ea3-775a-4e0c-9a3.iam.gserviceaccount.com`.
 
 ## 4. Grant minimum IAM
 
 ```bash
-SA=tracebility-deploy@project-c4ff4ea3-775a-4e0c-9a3.iam.gserviceaccount.com
+SA=langprobe-deploy@project-c4ff4ea3-775a-4e0c-9a3.iam.gserviceaccount.com
 
-gcloud artifacts repositories add-iam-policy-binding tracebility \
+gcloud artifacts repositories add-iam-policy-binding langprobe \
   --location=asia-southeast2 \
   --member="serviceAccount:${SA}" \
   --role=roles/artifactregistry.writer \
@@ -75,7 +75,7 @@ the project's default compute service account:
 
 ```bash
 PROJECT_NUMBER=$(gcloud projects describe project-c4ff4ea3-775a-4e0c-9a3 --format='value(projectNumber)')
-gcloud artifacts repositories add-iam-policy-binding tracebility \
+gcloud artifacts repositories add-iam-policy-binding langprobe \
   --location=asia-southeast2 \
   --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
   --role=roles/artifactregistry.reader \
@@ -107,7 +107,7 @@ gcloud iam workload-identity-pools providers describe github-actions-provider \
        --location=global \
        --issuer-uri=https://token.actions.githubusercontent.com \
        --attribute-mapping=google.subject=assertion.sub,attribute.repository=assertion.repository \
-       --attribute-condition='assertion.repository == "tracebility-ai/tracebility"' \
+       --attribute-condition='assertion.repository == "langprobe/langprobe"' \
        --project=project-c4ff4ea3-775a-4e0c-9a3
 ```
 
@@ -117,9 +117,9 @@ gcloud iam workload-identity-pools providers describe github-actions-provider \
 PROJECT_NUMBER=$(gcloud projects describe project-c4ff4ea3-775a-4e0c-9a3 --format='value(projectNumber)')
 
 gcloud iam service-accounts add-iam-policy-binding \
-  tracebility-deploy@project-c4ff4ea3-775a-4e0c-9a3.iam.gserviceaccount.com \
+  langprobe-deploy@project-c4ff4ea3-775a-4e0c-9a3.iam.gserviceaccount.com \
   --role=roles/iam.workloadIdentityUser \
-  --member="principalSet://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/github-actions-pool/attribute.repository/tracebility-ai/tracebility" \
+  --member="principalSet://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/github-actions-pool/attribute.repository/langprobe/langprobe" \
   --project=project-c4ff4ea3-775a-4e0c-9a3
 ```
 
@@ -131,7 +131,7 @@ echo "projects/$(gcloud projects describe project-c4ff4ea3-775a-4e0c-9a3 --forma
 ## 7. Get cluster credentials
 
 ```bash
-gcloud container clusters get-credentials tracebility-cluster-1 \
+gcloud container clusters get-credentials langprobe-cluster-1 \
   --region=asia-southeast2 \
   --project=project-c4ff4ea3-775a-4e0c-9a3
 ```
@@ -139,28 +139,28 @@ gcloud container clusters get-credentials tracebility-cluster-1 \
 ## 8. Create namespace + dev-deps
 
 ```bash
-kubectl create namespace tracebility --dry-run=client -o yaml | kubectl apply -f -
-kubectl apply -n tracebility -f deploy/k8s/dev-deps/
-kubectl rollout status -n tracebility deployment/postgres deployment/clickhouse deployment/redis --timeout=180s
+kubectl create namespace langprobe --dry-run=client -o yaml | kubectl apply -f -
+kubectl apply -n langprobe -f deploy/k8s/dev-deps/
+kubectl rollout status -n langprobe deployment/postgres deployment/clickhouse deployment/redis --timeout=180s
 ```
 
 ## 9. Create k8s secrets
 
 ```bash
-kubectl -n tracebility create secret generic tracebility-postgres \
-  --from-literal=dsn="postgres://tracebility:tracebility@postgres:5432/tracebility" \
+kubectl -n langprobe create secret generic langprobe-postgres \
+  --from-literal=dsn="postgres://langprobe:langprobe@postgres:5432/langprobe" \
   --dry-run=client -o yaml | kubectl apply -f -
 
-kubectl -n tracebility create secret generic tracebility-clickhouse \
-  --from-literal=url="http://tracebility:tracebility@clickhouse:8123/tracebility" \
+kubectl -n langprobe create secret generic langprobe-clickhouse \
+  --from-literal=url="http://langprobe:langprobe@clickhouse:8123/langprobe" \
   --dry-run=client -o yaml | kubectl apply -f -
 
-kubectl -n tracebility create secret generic tracebility-redis \
+kubectl -n langprobe create secret generic langprobe-redis \
   --from-literal=url="redis://redis:6379/0" \
   --dry-run=client -o yaml | kubectl apply -f -
 
-kubectl -n tracebility get secret tracebility-session >/dev/null 2>&1 \
-  || kubectl -n tracebility create secret generic tracebility-session \
+kubectl -n langprobe get secret langprobe-session >/dev/null 2>&1 \
+  || kubectl -n langprobe create secret generic langprobe-session \
        --from-literal=secret="$(openssl rand -hex 32)"
 ```
 
@@ -177,7 +177,7 @@ app provides.
 1. Open <https://console.cloud.google.com/apis/credentials>.
 2. **+ CREATE CREDENTIALS → OAuth client ID**.
 3. Application type: **Web application**.
-4. Name: `tracebility (langprobe)`.
+4. Name: `langprobe (langprobe)`.
 5. Authorized redirect URIs — add exactly:
    ```
    https://langprobe.daz.co.in/api/auth/oauth/google/callback
@@ -192,7 +192,7 @@ and you can skip the optional scopes / test users for now.
 ### 10b. Register the GitHub OAuth app
 
 1. Open <https://github.com/settings/developers> → **OAuth Apps** → **New OAuth App**.
-2. Application name: `tracebility (langprobe)`.
+2. Application name: `langprobe (langprobe)`.
 3. Homepage URL: `https://langprobe.daz.co.in`.
 4. Authorization callback URL — exactly:
    ```
@@ -206,7 +206,7 @@ The secret holds all four creds in one object. Re-running this block is
 how you rotate any of them.
 
 ```bash
-kubectl -n tracebility create secret generic tracebility-oauth \
+kubectl -n langprobe create secret generic langprobe-oauth \
   --from-literal=google_client_id="<paste google client id>" \
   --from-literal=google_client_secret="<paste google client secret>" \
   --from-literal=github_client_id="<paste github client id>" \
@@ -226,8 +226,8 @@ pods cached the (then-empty) values at boot. Rollout-restart so new
 pods read the populated secret:
 
 ```bash
-kubectl rollout restart deployment/tracebility-api -n tracebility
-kubectl rollout status deployment/tracebility-api -n tracebility --timeout=120s
+kubectl rollout restart deployment/langprobe-api -n langprobe
+kubectl rollout status deployment/langprobe-api -n langprobe --timeout=120s
 ```
 
 Expected: `successfully rolled out`. Skip this if you're applying the
@@ -251,7 +251,7 @@ In GitHub: **Settings → Secrets and variables → Actions → Variables**.
 | Name | Value |
 |---|---|
 | `WIF_PROVIDER` | Output of the `echo` command in Step 6. |
-| `DEPLOY_SA_EMAIL` | `tracebility-deploy@project-c4ff4ea3-775a-4e0c-9a3.iam.gserviceaccount.com` |
+| `DEPLOY_SA_EMAIL` | `langprobe-deploy@project-c4ff4ea3-775a-4e0c-9a3.iam.gserviceaccount.com` |
 
 These are repository **variables**, not secrets — neither value is sensitive
 on its own (they're discoverable from any successful deploy log).
@@ -259,12 +259,12 @@ on its own (they're discoverable from any successful deploy log).
 ## 12. Verify
 
 ```bash
-gcloud artifacts repositories describe tracebility --location=asia-southeast2
-gcloud iam service-accounts describe tracebility-deploy@project-c4ff4ea3-775a-4e0c-9a3.iam.gserviceaccount.com
+gcloud artifacts repositories describe langprobe --location=asia-southeast2
+gcloud iam service-accounts describe langprobe-deploy@project-c4ff4ea3-775a-4e0c-9a3.iam.gserviceaccount.com
 gcloud iam workload-identity-pools providers describe github-actions-provider \
   --workload-identity-pool=github-actions-pool --location=global
-kubectl -n tracebility get pods,svc,secret
+kubectl -n langprobe get pods,svc,secret
 ```
 
-All commands should exit zero. The four secrets `tracebility-postgres`,
+All commands should exit zero. The four secrets `langprobe-postgres`,
 `-clickhouse`, `-redis`, `-session` should be present.

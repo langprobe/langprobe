@@ -8,8 +8,8 @@ bridges them. AI / tool roles are deferred (spec decision 2).
 
 from __future__ import annotations
 
-from tracebility_api.llm import Message as DispatchMessage
-from tracebility_api.routers.playground import (
+from langprobe_api.llm import Message as DispatchMessage
+from langprobe_api.routers.playground import (
     Message,
     _to_dispatch_messages,
 )

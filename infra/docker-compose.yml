@@ -1,10 +1,10 @@
-name: tracebility
+name: langprobe
 
 # Phase 7 end-to-end stack. One `docker compose up` from a clean clone gets
 # you Postgres + ClickHouse + Redis + the three Python services + the web UI.
 #
 # Service-discovery: every service uses container name DNS within the
-# `tracebility` network. Host ports are exposed only for the web UI (7090),
+# `langprobe` network. Host ports are exposed only for the web UI (7090),
 # the api (7081), the ingest-api (7080), and the data plane (5432, 8123, 6379)
 # so you can poke at them from your laptop. Workers are internal-only.
 
@@ -12,9 +12,9 @@ services:
   postgres:
     image: postgres:16
     environment:
-      POSTGRES_DB: tracebility
-      POSTGRES_USER: tracebility
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tracebility}
+      POSTGRES_DB: langprobe
+      POSTGRES_USER: langprobe
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-langprobe}
     volumes:
       - pg-data:/var/lib/postgresql/data
       # /docker-entrypoint-initdb.d runs *.sql alphabetically on first boot only.
@@ -22,7 +22,7 @@ services:
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U tracebility -d tracebility"]
+      test: ["CMD-SHELL", "pg_isready -U langprobe -d langprobe"]
       interval: 3s
       timeout: 3s
       retries: 30
@@ -30,9 +30,9 @@ services:
   clickhouse:
     image: clickhouse/clickhouse-server:24.8-alpine
     environment:
-      CLICKHOUSE_DB: tracebility
-      CLICKHOUSE_USER: tracebility
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-tracebility}
+      CLICKHOUSE_DB: langprobe
+      CLICKHOUSE_USER: langprobe
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-langprobe}
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
     volumes:
       - ch-data:/var/lib/clickhouse
@@ -66,16 +66,16 @@ services:
       context: ..
       dockerfile: services/ingest-api/Dockerfile
     environment:
-      TRACEBILITY_PG_DSN: postgres://tracebility:${POSTGRES_PASSWORD:-tracebility}@postgres:5432/tracebility
-      TRACEBILITY_REDIS_URL: redis://redis:6379/0
-      TRACEBILITY_DISK_BUFFER_PATH: /var/lib/tracebility/ingest-buffer
-      TRACEBILITY_LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      TRACEBILITY_BIND_HOST: 0.0.0.0
-      TRACEBILITY_BIND_PORT: "7080"
+      LANGPROBE_PG_DSN: postgres://langprobe:${POSTGRES_PASSWORD:-langprobe}@postgres:5432/langprobe
+      LANGPROBE_REDIS_URL: redis://redis:6379/0
+      LANGPROBE_DISK_BUFFER_PATH: /var/lib/langprobe/ingest-buffer
+      LANGPROBE_LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LANGPROBE_BIND_HOST: 0.0.0.0
+      LANGPROBE_BIND_PORT: "7080"
     ports:
       - "7080:7080"
     volumes:
-      - ingest-buffer:/var/lib/tracebility/ingest-buffer
+      - ingest-buffer:/var/lib/langprobe/ingest-buffer
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -86,14 +86,14 @@ services:
       context: ..
       dockerfile: services/api/Dockerfile
     environment:
-      TRACEBILITY_PG_DSN: postgres://tracebility:${POSTGRES_PASSWORD:-tracebility}@postgres:5432/tracebility
-      TRACEBILITY_SESSION_SECRET: "${SESSION_SECRET:?must be set, generate with openssl rand -hex 32}"
-      TRACEBILITY_CLICKHOUSE_URL: http://tracebility:${CLICKHOUSE_PASSWORD:-tracebility}@clickhouse:8123/tracebility
-      TRACEBILITY_BIND_HOST: 0.0.0.0
-      TRACEBILITY_API_BIND_PORT: "7081"
-      TRACEBILITY_CORS_ALLOW_ORIGIN: ${WEB_ORIGIN:-http://localhost:7090}
-      TRACEBILITY_LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      TRACEBILITY_WEB_BASE_URL: ${WEB_ORIGIN:-http://localhost:7090}
+      LANGPROBE_PG_DSN: postgres://langprobe:${POSTGRES_PASSWORD:-langprobe}@postgres:5432/langprobe
+      LANGPROBE_SESSION_SECRET: "${SESSION_SECRET:?must be set, generate with openssl rand -hex 32}"
+      LANGPROBE_CLICKHOUSE_URL: http://langprobe:${CLICKHOUSE_PASSWORD:-langprobe}@clickhouse:8123/langprobe
+      LANGPROBE_BIND_HOST: 0.0.0.0
+      LANGPROBE_API_BIND_PORT: "7081"
+      LANGPROBE_CORS_ALLOW_ORIGIN: ${WEB_ORIGIN:-http://localhost:7090}
+      LANGPROBE_LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LANGPROBE_WEB_BASE_URL: ${WEB_ORIGIN:-http://localhost:7090}
       # Public OAuth signup (Google + GitHub). All four are optional; if
       # the {provider}_CLIENT_ID + _CLIENT_SECRET pair is unset, that
       # provider's "Continue with X" button is hidden in the UI and
@@ -125,9 +125,9 @@ services:
       context: ..
       dockerfile: services/ingest-worker/Dockerfile
     environment:
-      TRACEBILITY_REDIS_URL: redis://redis:6379/0
-      TRACEBILITY_CLICKHOUSE_URL: http://tracebility:${CLICKHOUSE_PASSWORD:-tracebility}@clickhouse:8123/tracebility
-      TRACEBILITY_LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LANGPROBE_REDIS_URL: redis://redis:6379/0
+      LANGPROBE_CLICKHOUSE_URL: http://langprobe:${CLICKHOUSE_PASSWORD:-langprobe}@clickhouse:8123/langprobe
+      LANGPROBE_LOG_LEVEL: ${LOG_LEVEL:-INFO}
     depends_on:
       clickhouse: { condition: service_healthy }
       redis: { condition: service_healthy }

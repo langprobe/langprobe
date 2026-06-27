@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from tracebility_api.llm.types import (
+from langprobe_api.llm.types import (
     SUPPORTED_PROVIDERS,
     DispatchError,
     DispatchResult,

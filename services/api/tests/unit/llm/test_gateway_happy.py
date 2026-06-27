@@ -6,8 +6,8 @@ import uuid
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from tracebility_api.llm import dispatch
-from tracebility_api.llm.types import Message
+from langprobe_api.llm import dispatch
+from langprobe_api.llm.types import Message
 
 pytestmark = pytest.mark.asyncio
 
@@ -27,15 +27,15 @@ async def test_happy_path_returns_normalized_result(fake_pool, mocker) -> None:
 
     fake_resp = _fake_litellm_response()
     mocker.patch(
-        "tracebility_api.llm.gateway.litellm.acompletion",
+        "langprobe_api.llm.gateway.litellm.acompletion",
         new=AsyncMock(return_value=fake_resp),
     )
     mocker.patch(
-        "tracebility_api.llm.gateway.litellm.completion_cost",
+        "langprobe_api.llm.gateway.litellm.completion_cost",
         return_value=0.00042,
     )
     mocker.patch(
-        "tracebility_api.llm.gateway._workspace_id_for_project",
+        "langprobe_api.llm.gateway._workspace_id_for_project",
         new=AsyncMock(return_value=uuid.uuid4()),
     )
 
@@ -72,14 +72,14 @@ async def test_messages_pass_through_to_litellm(fake_pool, mocker) -> None:
         ]
     )
     fake_pool.fetchval = AsyncMock(return_value=None)
-    mocker.patch("tracebility_api.llm.gateway.litellm.completion_cost", return_value=0)
+    mocker.patch("langprobe_api.llm.gateway.litellm.completion_cost", return_value=0)
     mocker.patch(
-        "tracebility_api.llm.gateway._workspace_id_for_project",
+        "langprobe_api.llm.gateway._workspace_id_for_project",
         new=AsyncMock(return_value=uuid.uuid4()),
     )
 
     spy = mocker.patch(
-        "tracebility_api.llm.gateway.litellm.acompletion",
+        "langprobe_api.llm.gateway.litellm.acompletion",
         new=AsyncMock(return_value=_fake_litellm_response()),
     )
     await dispatch(

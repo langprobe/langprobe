@@ -189,7 +189,7 @@ internally. Old clients keep working until we drop the column.
 
 ### Worker / dispatcher
 
-`services/api/tracebility_api/routers/playground.py` swaps:
+`services/api/langprobe_api/routers/playground.py` swaps:
 
 - `_render_template(template, vars)` → `_render_messages(messages, vars)`
   returning a list of dicts.

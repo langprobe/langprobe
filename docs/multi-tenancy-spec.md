@@ -21,7 +21,7 @@
 
 ## 1. Scope
 
-Make tracebility a multi-tenant product that ships in two deployment modes from one codebase:
+Make langprobe a multi-tenant product that ships in two deployment modes from one codebase:
 
 - **`saas`** — public cloud, shared infra, hard quotas, billing meters on.
 - **`self_hosted`** — helm chart, single-tenant by default, quotas log-only.
@@ -41,7 +41,7 @@ Out of scope for this spec:
 
 - **Postgres**: `org`, `workspace`, `project`, `app_user`, `membership`, `api_key`, `audit_log` exist. `api_key.project_id` already scopes ingest credentials to a project (and via FK chain to a workspace and org).
 - **ClickHouse**: `run`, `span`, `eval_score`, `replay_capture`, `dataset_item` carry `project_id` only. `billing_meter` already carries both `org_id` and `project_id`.
-- **Ingest path**: `ingest-api` → Redis stream `tracebility:ingest:v1` → `ingest-worker` → ClickHouse. No rate limit, no quota.
+- **Ingest path**: `ingest-api` → Redis stream `langprobe:ingest:v1` → `ingest-worker` → ClickHouse. No rate limit, no quota.
 - **Read path**: `api` service reads ClickHouse directly with `project_id` filter.
 - **Deployment mode**: implicit (single-tenant assumption everywhere).
 - **Audit log**: postgres `audit_log` table from migration 0005. Will be deprecated in favor of ClickHouse `audit_log` (see §5.8).
@@ -49,7 +49,7 @@ Out of scope for this spec:
 ## 3. Goals
 
 1. Every ClickHouse trace row carries `(org_id, workspace_id, project_id)`. Reads are rejected unless `org_id` is filtered.
-2. One env var (`TRACEBILITY_DEPLOYMENT_MODE`) drives the runtime branch points (auto-org creation, quota enforcement, auth backend selection).
+2. One env var (`LANGPROBE_DEPLOYMENT_MODE`) drives the runtime branch points (auto-org creation, quota enforcement, auth backend selection).
 3. Rate limiting at the ingest edge protects the shared stream from a runaway tenant.
 4. Quota meters run on every deployment; only `saas` mode hard-blocks at exhaustion (optimistic, ~60s overshoot acceptable).
 5. The eval orchestrator cannot be starved by one tenant.
@@ -111,10 +111,10 @@ class TenantContext:
 ### 5.3 Deployment-mode flag
 
 ```
-TRACEBILITY_DEPLOYMENT_MODE = saas | self_hosted
+LANGPROBE_DEPLOYMENT_MODE = saas | self_hosted
 ```
 
-Single source of truth in `tracebility.config.deployment_mode`. Behavior matrix:
+Single source of truth in `langprobe.config.deployment_mode`. Behavior matrix:
 
 | Behavior | `saas` | `self_hosted` |
 |---|---|---|
@@ -182,7 +182,7 @@ create table quota_period (
 
 ### 5.6 Noisy-neighbor mitigations
 
-- **Redis stream sharding (uniform hash).** Replace single `tracebility:ingest:v1` with N shards: `tracebility:ingest:v1:{0..15}`. Routing: `shard = mxmh3(org_id) % N`. One runaway org fills its shard, not the whole stream. Each worker reads round-robin across shards with a per-shard fairness budget.
+- **Redis stream sharding (uniform hash).** Replace single `langprobe:ingest:v1` with N shards: `langprobe:ingest:v1:{0..15}`. Routing: `shard = mxmh3(org_id) % N`. One runaway org fills its shard, not the whole stream. Each worker reads round-robin across shards with a per-shard fairness budget.
   > **TODO** (post-v1): when a single tenant saturates one shard for sustained periods, replace uniform hash with a weighted shard map (postgres `org.shard_assignment text[]`) so big tenants get dedicated shards. Failure mode: persistent backlog skew on shard X with worker X CPU pinned.
 - **Eval orchestrator concurrency cap.** Per-org semaphore in Redis: `eval:concurrency:<org_id>`. Enforced at job dispatch. Plan-driven cap (free: 2, pro: 16, enterprise: 64). Jobs above the cap stay in the queue.
 - **Read API query budget.** Each `TenantContext` gets an in-process budget (queries/min, max scanned rows). Exceeded → `429`. Implemented as a middleware decorator on the router classes.
@@ -327,7 +327,7 @@ create dictionary if not exists project_tenant_dict
 )
 primary key project_id
 source(postgresql(
-    host 'postgres' port 5432 db 'tracebility' user 'tracebility' password '...'
+    host 'postgres' port 5432 db 'langprobe' user 'langprobe' password '...'
     table 'project_tenant_view'
 ))
 lifetime(min 300 max 600)
@@ -376,7 +376,7 @@ rename table run to run_v1, run_v2 to run;
 
 ### 7.1 `ingest-api`
 
-- Add `tracebility_ingest/tenant.py` with the Redis-cached resolver and `TenantContext`.
+- Add `langprobe_ingest/tenant.py` with the Redis-cached resolver and `TenantContext`.
 - `auth.py` returns a `TenantContext` instead of a bare `(project_id, scopes)` tuple.
 - `enqueue.py` stamps `org_id`, `workspace_id` onto every envelope before push.
 - New middleware `rate_limit.py` in front of all ingest routes; reads `plan` off context, runs the GCRA Redis script.
@@ -408,7 +408,7 @@ rename table run to run_v1, run_v2 to run;
 
 - Inherits the `internal:*` scope path so its bulk imports bypass the rate limiter (still metered for quota).
 
-### 7.6 New shared module: `tracebility/tenant`
+### 7.6 New shared module: `langprobe/tenant`
 
 Lives in `services/_shared/tenant/` (uv workspace member). Provides:
 
@@ -444,7 +444,7 @@ Phased on shared infra; one tenant exists today (`_legacy` org).
 2. **Migration 0006** (clickhouse): tenant-column table swap. Done in a maintenance window. `*_v1` retained for one release.
 3. **Migration 0007** (clickhouse): new `audit_log` table; backfill from postgres.
 4. **Shared `tenant` module** released to all four services together.
-5. **Ingest-api**: resolver + envelope stamping + meter increment. Rate limiter and quota hard-block gated behind `TRACEBILITY_DEPLOYMENT_MODE=saas` so on-prem is unaffected.
+5. **Ingest-api**: resolver + envelope stamping + meter increment. Rate limiter and quota hard-block gated behind `LANGPROBE_DEPLOYMENT_MODE=saas` so on-prem is unaffected.
 6. **Ingest-worker**: writes new columns. Tolerates either schema by detecting column presence until step 2 lands everywhere.
 7. **API**: query-builder rewrite + property test. Old direct-SQL paths removed. Workspace switcher + workspace-scoped queries land here.
 8. **Eval orchestrator**: per-org semaphore.
@@ -462,7 +462,7 @@ Each step is independently revertible. Steps 1–3 must land before any service 
 | Resolver cache stale after key revocation | Pub/sub invalidation channel; 60s TTL ceiling. |
 | Optimistic quota lets a tenant overshoot | Reconciler runs every 60s; soft-warn at 80% gives early signal; hard-block kicks in within ~60s of breach. Documented in SaaS terms. |
 | Stream shard imbalance from one big tenant | Uniform hash is the v1 bet. TODO + alerting on shard-level backlog skew. Replace with weighted map when triggered. |
-| On-prem operators don't want quota UI noise | `TRACEBILITY_DEPLOYMENT_MODE=self_hosted` defaults to log-only and unlimited plan. Quota meters run silently for usage-page display. |
+| On-prem operators don't want quota UI noise | `LANGPROBE_DEPLOYMENT_MODE=self_hosted` defaults to log-only and unlimited plan. Quota meters run silently for usage-page display. |
 | Per-org TTL via `MODIFY TTL` is slow | Daily job, not per-write. |
 | ClickHouse audit_log gap on crash between postgres commit and ClickHouse insert | Daily reconciliation job compares state to audit history, flags gaps for the auditor evidence pack. Documented as the operational tradeoff for the simplicity win. |
 | Workspace adds UI complexity for single-team customers | Default workspace is `main`; switcher hides when only one workspace exists. |

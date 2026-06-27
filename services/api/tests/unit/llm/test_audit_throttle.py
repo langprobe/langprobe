@@ -6,7 +6,7 @@ import uuid
 from unittest.mock import AsyncMock
 
 import pytest
-from tracebility_api.llm.audit_throttle import should_emit_audit
+from langprobe_api.llm.audit_throttle import should_emit_audit
 
 pytestmark = pytest.mark.asyncio
 

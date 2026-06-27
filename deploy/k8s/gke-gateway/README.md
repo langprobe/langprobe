@@ -1,6 +1,6 @@
 # gke-gateway
 
-Gateway API resources that route public internet traffic to `tracebility-web`
+Gateway API resources that route public internet traffic to `langprobe-web`
 on the Autopilot cluster. Applied with plain `kubectl` — **not** managed by
 the Helm chart (the chart's Ingress doesn't fit modern Autopilot, which only
 supports Gateway API).
@@ -9,7 +9,7 @@ supports Gateway API).
 
 1. Reserve a global static IP:
    ```bash
-   gcloud compute addresses create tracebility-web-ip --global \
+   gcloud compute addresses create langprobe-web-ip --global \
      --project=project-c4ff4ea3-775a-4e0c-9a3
    ```
 2. Enable Certificate Manager API:
@@ -19,16 +19,16 @@ supports Gateway API).
    ```
 3. Create the managed cert + map (substitute the real domain):
    ```bash
-   gcloud certificate-manager certificates create tracebility-web-cert \
+   gcloud certificate-manager certificates create langprobe-web-cert \
      --domains=langprobe.daz.co.in \
      --project=project-c4ff4ea3-775a-4e0c-9a3
 
-   gcloud certificate-manager maps create tracebility-web-certmap \
+   gcloud certificate-manager maps create langprobe-web-certmap \
      --project=project-c4ff4ea3-775a-4e0c-9a3
 
-   gcloud certificate-manager maps entries create tracebility-web-certmap-entry \
-     --map=tracebility-web-certmap \
-     --certificates=tracebility-web-cert \
+   gcloud certificate-manager maps entries create langprobe-web-certmap-entry \
+     --map=langprobe-web-certmap \
+     --certificates=langprobe-web-cert \
      --hostname=langprobe.daz.co.in \
      --project=project-c4ff4ea3-775a-4e0c-9a3
    ```
@@ -38,13 +38,13 @@ supports Gateway API).
 ## Apply
 
 ```bash
-kubectl apply -n tracebility -f deploy/k8s/gke-gateway/
+kubectl apply -n langprobe -f deploy/k8s/gke-gateway/
 ```
 
 The directory contains:
 
 - `gateway.yaml` — the GKE-managed L7 LB (HTTP+HTTPS listeners on the static IP).
-- `httproute.yaml` — routes `langprobe.daz.co.in/*` to the `tracebility-web` Service.
+- `httproute.yaml` — routes `langprobe.daz.co.in/*` to the `langprobe-web` Service.
 - `healthcheckpolicy.yaml` — points the GCP backend health check at `/login`
   instead of the default `/`. Without it, `/` returns 307 → LB marks the
   backend UNHEALTHY → public domain serves "no healthy upstream" 503s.
@@ -52,14 +52,14 @@ The directory contains:
 ## Wait for provisioning
 
 ```bash
-kubectl -n tracebility get gateway tracebility-web -w
+kubectl -n langprobe get gateway langprobe-web -w
 ```
 
 `PROGRAMMED=True` and an `ADDRESS` matching the static IP means the LB is
 live. Cert provisioning is separate — check with:
 
 ```bash
-gcloud certificate-manager certificates describe tracebility-web-cert \
+gcloud certificate-manager certificates describe langprobe-web-cert \
   --project=project-c4ff4ea3-775a-4e0c-9a3 \
   --format="value(managed.state)"
 ```

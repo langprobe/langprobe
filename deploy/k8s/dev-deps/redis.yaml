@@ -3,7 +3,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: redis
-  namespace: tracebility
+  namespace: langprobe
   labels:
     app.kubernetes.io/name: redis
     app.kubernetes.io/component: dev-deps
@@ -50,7 +50,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: redis
-  namespace: tracebility
+  namespace: langprobe
 spec:
   selector:
     app.kubernetes.io/name: redis

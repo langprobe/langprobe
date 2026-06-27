@@ -8,7 +8,7 @@ from uuid import uuid4
 
 import pytest
 from pydantic import ValidationError
-from tracebility_api.routers.playground import Message, PlaygroundCreate
+from langprobe_api.routers.playground import Message, PlaygroundCreate
 
 _MODEL = "anthropic/claude-sonnet-4-6"
 

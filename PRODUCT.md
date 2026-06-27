@@ -1,12 +1,12 @@
 # PRODUCT.md
 
-> Source of truth for what tracebility is, who it's for, and the
+> Source of truth for what langprobe is, who it's for, and the
 > design register the product follows. Read by `impeccable` and any
 > contributor onboarding the project.
 
 ## What it is
 
-**Tracebility is the real debugger for agents.** Trace, replay, and
+**Langprobe is the real debugger for agents.** Trace, replay, and
 eval every signal — runs, OTel envelopes, replays, evals, end-user
 feedback — in one observability surface.
 
@@ -46,13 +46,13 @@ modal-heavy flows.
 
 ## Deployment posture
 
-Tracebility ships **two postures from the same codebase**:
+Langprobe ships **two postures from the same codebase**:
 
 1. **Self-hosted (today).** Operator runs `docker compose up`. Data
    stays in their VPC. Apache-2.0. Per-instance is the deployment
    model. The current `/v1/setup` wizard, helm chart, and operator
    target this.
-2. **SaaS, multi-tenant (planned, on roadmap).** A central tracebility
+2. **SaaS, multi-tenant (planned, on roadmap).** A central langprobe
    instance hosted by us, where each customer signs up via OAuth
    (Google / GitHub) and lands in their own workspace. Same UI, same
    API surface, but workspaces are isolated tenants on shared infra.
@@ -71,7 +71,7 @@ Captured here so it's not lost:
 - [ ] Per-tenant rate limits + cost ceilings on /v1/runs
 - [ ] Billing meters: tokens stored, runs ingested, eval-runs
 - [ ] Stripe-style billing UI under /workspace/billing
-- [ ] Public registration page deployed at app.tracebility.ai (or
+- [ ] Public registration page deployed at app.langprobe.ai (or
       similar) that points at the SaaS instance
 - [ ] Remove "self-hosted" microcopy from the auth surface and the
       footer when SaaS is the target deployment
@@ -104,7 +104,7 @@ Captured here so it's not lost:
 
 ## Design references
 
-- Visual reference: `/Users/mia/Downloads/tracability.html` (the
+- Visual reference: `/Users/mia/Downloads/langprobe.html` (the
   approved aesthetic).
 - Design system: `DESIGN.md` is the source of truth for tokens,
   fonts, spacing, motion. Never deviate without explicit approval.

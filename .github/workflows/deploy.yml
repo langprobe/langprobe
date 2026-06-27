@@ -23,9 +23,9 @@ env:
   GCP_REGION: asia-southeast2
   GKE_CLUSTER: tracebility-cluster-1
   AR_HOST: asia-southeast2-docker.pkg.dev
-  AR_REPO: tracebility
-  K8S_NAMESPACE: tracebility
-  HELM_RELEASE: tracebility
+  AR_REPO: langprobe
+  K8S_NAMESPACE: langprobe
+  HELM_RELEASE: langprobe
 
 jobs:
   build-images:
@@ -133,10 +133,10 @@ jobs:
 
       - name: Helm upgrade
         run: |
-          helm upgrade --install "${{ env.HELM_RELEASE }}" deploy/helm/tracebility \
+          helm upgrade --install "${{ env.HELM_RELEASE }}" deploy/helm/langprobe \
             --namespace "${{ env.K8S_NAMESPACE }}" \
             --create-namespace \
-            --values deploy/helm/tracebility/values-gke.yaml \
+            --values deploy/helm/langprobe/values-gke.yaml \
             --set image.tag="${{ steps.sha.outputs.sha }}" \
             --atomic \
             --wait \

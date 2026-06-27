@@ -115,7 +115,7 @@ function BrandMark() {
   return (
     <Link
       href="/"
-      aria-label="tracebility home"
+      aria-label="langprobe home"
       style={{
         display: "inline-flex",
         alignItems: "center",
@@ -151,7 +151,7 @@ function BrandMark() {
           color: "var(--text)",
         }}
       >
-        tracebility
+        langprobe
       </span>
     </Link>
   );

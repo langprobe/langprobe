@@ -1,11 +1,11 @@
 [project]
-name = "tracebility"
+name = "langprobe"
 version = "0.0.0"
 description = "Self-hosted LLM observability + eval-rigor + agent-replay platform."
 readme = "README.md"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.11"
-authors = [{ name = "tracebility contributors" }]
+authors = [{ name = "langprobe contributors" }]
 
 [tool.uv.workspace]
 members = [
@@ -17,7 +17,7 @@ members = [
 ]
 # services/eval-orchestrator is referenced in the multi-tenancy spec but
 # does not exist as a service yet. The per-org concurrency semaphore that
-# the spec calls for lives in tracebility_tenant.eval_concurrency so the
+# the spec calls for lives in langprobe_tenant.eval_concurrency so the
 # orchestrator can pick it up wholesale when it lands.
 
 [tool.ruff]
@@ -47,9 +47,9 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 # SCIM v2 protocol mandates camelCase parameter names (startIndex, etc.)
-"services/api/tracebility_api/routers/scim.py" = ["N803"]
+"services/api/langprobe_api/routers/scim.py" = ["N803"]
 # SSO config also surfaces a couple SCIM-shaped names.
-"services/api/tracebility_api/routers/sso.py" = ["N803"]
+"services/api/langprobe_api/routers/sso.py" = ["N803"]
 
 [tool.ruff.format]
 quote-style = "double"

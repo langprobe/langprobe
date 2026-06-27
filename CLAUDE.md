@@ -1,16 +1,16 @@
-# tracability
+# langprobe
 
 Self-hosted LLM observability + eval-rigor + agent-replay platform. The real debugger for agents.
 
-Locked plan: `/Users/mia/.gstack/projects/tracability/ceo-plans/2026-05-25-langsmith-replacement-mvp.md`
-Sections: `/Users/mia/.gstack/projects/tracability/ceo-plans/2026-05-25-langsmith-replacement-mvp-sections.md`
-Registries: `/Users/mia/.gstack/projects/tracability/ceo-plans/2026-05-25-registries.md`
+Locked plan: `/Users/mia/.gstack/projects/langprobe/ceo-plans/2026-05-25-langsmith-replacement-mvp.md`
+Sections: `/Users/mia/.gstack/projects/langprobe/ceo-plans/2026-05-25-langsmith-replacement-mvp-sections.md`
+Registries: `/Users/mia/.gstack/projects/langprobe/ceo-plans/2026-05-25-registries.md`
 
 ## Design System
 
 Always read `DESIGN.md` before making any visual or UI decisions. All font choices, colors, spacing, border radii, motion rules, and aesthetic direction are defined there. Do not deviate without explicit user approval.
 
-The memorable thing is "this is the real debugger for agents." Every UI choice serves that. The canonical visual reference is `/Users/mia/Downloads/tracability.html`. When in doubt: open that file and copy what it does. For aesthetic peers, look at the Vercel dashboard, Linear, or GitHub Primer's quieter views, not LangSmith or Braintrust.
+The memorable thing is "this is the real debugger for agents." Every UI choice serves that. The canonical visual reference is `/Users/mia/Downloads/langprobe.html`. When in doubt: open that file and copy what it does. For aesthetic peers, look at the Vercel dashboard, Linear, or GitHub Primer's quieter views, not LangSmith or Braintrust.
 
 In QA, code review, or design review modes: flag any code that doesn't match `DESIGN.md`. Specifically watch for:
 - Any font other than Geist + Geist Mono (no Inter, Space Grotesk, system-ui, Berkeley Mono, or Fraunces).

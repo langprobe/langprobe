@@ -10,7 +10,7 @@ from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException
-from tracebility_api.routers.playground import (
+from langprobe_api.routers.playground import (
     Message,
     PlaygroundCreate,
     _resolve_messages,

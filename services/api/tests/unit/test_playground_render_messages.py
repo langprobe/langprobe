@@ -6,7 +6,7 @@ Spec decision 9: missing variables render as empty string.
 
 from __future__ import annotations
 
-from tracebility_api.routers.playground import (
+from langprobe_api.routers.playground import (
     Message,
     _render_messages,
 )

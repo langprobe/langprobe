@@ -29,16 +29,16 @@ def _reachable(host: str, port: int) -> bool:
         return False
 
 
-_DEFAULT_LOCAL_DSN = "postgres://tracebility:tracebility@localhost:5432/tracebility"
-# `services/api/tests/conftest.py` setdefaults TRACEBILITY_PG_DSN to a unit-test
+_DEFAULT_LOCAL_DSN = "postgres://langprobe:langprobe@localhost:5432/langprobe"
+# `services/api/tests/conftest.py` setdefaults LANGPROBE_PG_DSN to a unit-test
 # sentinel ("postgres://test/test") so config.load() doesn't raise at import.
 # Treat that sentinel as "unset" for integration purposes and fall back to the
-# local docker default; an explicit TRACEBILITY_TEST_DSN still wins.
+# local docker default; an explicit LANGPROBE_TEST_DSN still wins.
 PG_DSN = (
-    os.environ.get("TRACEBILITY_TEST_DSN")
+    os.environ.get("LANGPROBE_TEST_DSN")
     or (
-        os.environ.get("TRACEBILITY_PG_DSN")
-        if os.environ.get("TRACEBILITY_PG_DSN") not in (None, "postgres://test/test")
+        os.environ.get("LANGPROBE_PG_DSN")
+        if os.environ.get("LANGPROBE_PG_DSN") not in (None, "postgres://test/test")
         else None
     )
     or _DEFAULT_LOCAL_DSN

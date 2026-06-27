@@ -209,18 +209,18 @@ function SetupCard({ project }: { project: Project }) {
           lineHeight: 1.55,
         }}
       >
-        Set <span className="mono">TRACEBILITY_API_KEY</span> in the
+        Set <span className="mono">LANGPROBE_API_KEY</span> in the
         environment of any process that ingests traces. The Python and JS SDKs
         pick it up automatically; the LangSmith shim does too.
       </p>
       <pre style={{ margin: 0 }}>
-        {`export TRACEBILITY_API_KEY=lt_...
-export TRACEBILITY_PROJECT=${project.slug}
-export TRACEBILITY_BASE_URL=https://tracability.local
+        {`export LANGPROBE_API_KEY=lt_...
+export LANGPROBE_PROJECT=${project.slug}
+export LANGPROBE_BASE_URL=https://langprobe.local
 
 # LangSmith-compatible drop-in:
-# pip install tracebility-langsmith-shim
-# from tracebility_langsmith_shim import Client
+# pip install langprobe-langsmith-shim
+# from langprobe_langsmith_shim import Client
 `}
       </pre>
     </section>

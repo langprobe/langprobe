@@ -1,6 +1,6 @@
-# Contributing to tracebility
+# Contributing to langprobe
 
-Thanks for taking the time. tracebility is solo-founded and pre-alpha; expect rough edges and rapid change.
+Thanks for taking the time. langprobe is solo-founded and pre-alpha; expect rough edges and rapid change.
 
 ## Before you start
 
@@ -52,7 +52,7 @@ If a design change feels right but contradicts `DESIGN.md`, open an issue tagged
 ## Reporting bugs
 
 Use GitHub issues. Include:
-- tracebility version (`tracebility version`)
+- langprobe version (`langprobe version`)
 - environment (self-hosted? cloud? OS?)
 - minimal repro
 - expected vs. actual
@@ -60,7 +60,7 @@ Use GitHub issues. Include:
 
 ## Security
 
-Found a security issue? Don't open a public issue. Email security@tracebility.dev (TODO: stand up the alias).
+Found a security issue? Don't open a public issue. Email security@langprobe.dev (TODO: stand up the alias).
 
 ## License
 

@@ -1,14 +1,14 @@
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
-  name: tracebilities.tracebility.io
+  name: tracebilities.langprobe.io
 spec:
-  group: tracebility.io
+  group: langprobe.io
   scope: Namespaced
   names:
-    kind: Tracebility
+    kind: Langprobe
     plural: tracebilities
-    singular: tracebility
+    singular: langprobe
     shortNames:
       - tb
   versions:
@@ -29,7 +29,7 @@ spec:
                   properties:
                     registry:
                       type: string
-                      default: ghcr.io/tracebility-ai
+                      default: ghcr.io/langprobe
                     tag:
                       type: string
                       default: latest
@@ -38,26 +38,26 @@ spec:
                   description: Control-plane API deployment.
                   properties:
                     replicas: {type: integer, minimum: 0, default: 2}
-                    repository: {type: string, default: tracebility-api}
+                    repository: {type: string, default: langprobe-api}
                     publicApiBase: {type: string}
                 ingestApi:
                   type: object
                   description: Ingest API deployment.
                   properties:
                     replicas: {type: integer, minimum: 0, default: 2}
-                    repository: {type: string, default: tracebility-ingest-api}
+                    repository: {type: string, default: langprobe-ingest-api}
                 ingestWorker:
                   type: object
                   description: Ingest worker deployment.
                   properties:
                     replicas: {type: integer, minimum: 0, default: 2}
-                    repository: {type: string, default: tracebility-ingest-worker}
+                    repository: {type: string, default: langprobe-ingest-worker}
                 web:
                   type: object
                   description: Web UI deployment.
                   properties:
                     replicas: {type: integer, minimum: 0, default: 2}
-                    repository: {type: string, default: tracebility-web}
+                    repository: {type: string, default: langprobe-web}
                 secrets:
                   type: object
                   required: [postgres, clickhouse, redis, session]

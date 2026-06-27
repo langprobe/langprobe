@@ -1,7 +1,7 @@
 [project]
-name = "tracebility-ingest-worker"
+name = "langprobe-ingest-worker"
 version = "0.0.0"
-description = "tracebility ingest worker: drains Redis stream, writes to ClickHouse."
+description = "langprobe ingest worker: drains Redis stream, writes to ClickHouse."
 license = { text = "Apache-2.0" }
 requires-python = ">=3.11"
 dependencies = [
@@ -10,11 +10,11 @@ dependencies = [
     "orjson>=3.9",
     "pydantic>=2.6",
     "structlog>=24.1",
-    "tracebility-tenant",
+    "langprobe-tenant",
 ]
 
 [tool.uv.sources]
-tracebility-tenant = { workspace = true }
+langprobe-tenant = { workspace = true }
 
 [project.optional-dependencies]
 dev = [
@@ -29,4 +29,4 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["tracebility_worker"]
+packages = ["langprobe_worker"]

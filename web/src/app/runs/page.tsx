@@ -335,7 +335,7 @@ function UnconfiguredState({ reason }: { reason: string | null }) {
       <h2 style={{ marginBottom: 8 }}>No project resolved</h2>
       <p style={{ color: "var(--text-2)", lineHeight: 1.55, margin: 0 }}>
         Run the setup wizard, then point your SDK at this API. See{" "}
-        <a href="https://github.com/gaurav0107/tracebility/blob/main/docs/getting-started.md">
+        <a href="https://github.com/gaurav0107/langprobe/blob/main/docs/getting-started.md">
           docs/getting-started.md
         </a>
         .
@@ -366,7 +366,7 @@ function EmptyRunsState({
       </h3>
       <p style={{ color: "var(--text-2)", margin: 0, lineHeight: 1.55 }}>
         Send your first trace — see{" "}
-        <a href="https://github.com/gaurav0107/tracebility/blob/main/docs/getting-started.md">
+        <a href="https://github.com/gaurav0107/langprobe/blob/main/docs/getting-started.md">
           docs/getting-started.md
         </a>
         .

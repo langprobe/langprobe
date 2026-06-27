@@ -195,7 +195,7 @@ The category bifurcates:
 
 ---
 
-## 9. Suggested wedge for `tracability`
+## 9. Suggested wedge for `langprobe`
 
 If forced to pick one wedge from the above, the strongest single bet for a 2026 launch:
 

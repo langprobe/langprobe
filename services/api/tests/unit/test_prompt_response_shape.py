@@ -15,7 +15,7 @@ from pydantic import ValidationError
 
 # These imports refer to symbols added in this task. Until the
 # implementation lands, the test fails at import time.
-from tracebility_api.routers.prompts import (
+from langprobe_api.routers.prompts import (
     Message,
     PromptVersionOut,
     _hydrate_version,

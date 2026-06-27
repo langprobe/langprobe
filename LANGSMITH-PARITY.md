@@ -11,7 +11,7 @@ Stop only when no dimension is materially behind LangSmith.
 
 ## Legend
 
-- ✅ **shipped** — real, working feature in tracebility today.
+- ✅ **shipped** — real, working feature in langprobe today.
 - 🟡 **partial** — backend or UI exists, the other half doesn't, or it's a roadmap page only.
 - ❌ **missing** — nothing exists for this dimension.
 
@@ -27,10 +27,10 @@ Generated 2026-06-03 after the first sidebar pass (8 LangSmith-equivalent surfac
 | Run list view | ✅ | `/runs` page renders real data |
 | Run detail (3-pane debugger) | ✅ | spans tree + timeline + inspector |
 | OTel/OpenInference ingestion | ✅ | `POST /v1/traces` accepts OTLP HTTP/JSON; translates OpenInference + OTel GenAI attributes to native run/span envelopes (loop #4 item 10) |
-| LangChain callback bridge | ✅ | `tracebility-langchain.TracebilityCallbackHandler`; tree-aware (root flushes whole tree as one ingest envelope), thread-safe, swallows telemetry failures (loop #6 item 3) |
+| LangChain callback bridge | ✅ | `langprobe-langchain.LangprobeCallbackHandler`; tree-aware (root flushes whole tree as one ingest envelope), thread-safe, swallows telemetry failures (loop #6 item 3) |
 | LangGraph callback bridge | ✅ | same handler — LangGraph emits the same callback shapes; pass `sdk="langgraph"` to distinguish in /runs (loop #6 item 3) |
 | OpenAI Agents SDK ingest | 🟡 | works via OTel intake (loop #4 item 10); first-class adapter pending SDK launch |
-| `wrap_openai` / `wrap_anthropic` | ✅ | duck-typed proxies on `tracebility-langsmith`; one tracebility run per vendor SDK call with prompt+completion+token usage; vendor SDKs not transitive deps (loop #5 item 5) |
+| `wrap_openai` / `wrap_anthropic` | ✅ | duck-typed proxies on `langprobe-langsmith`; one langprobe run per vendor SDK call with prompt+completion+token usage; vendor SDKs not transitive deps (loop #5 item 5) |
 | Multipart `/runs/multipart` | ✅ | `POST /v1/runs/multipart` accepts `multipart/form-data` (envelope + N attachments); attachments hashed (sha256), persisted content-addressed under `<disk_buffer>/attachments/<hh>/<hash>`; envelope refs `attachment://<hash>` (loop #6 item 4) |
 | Migration importer (LS export → tb) | ✅ | `tb-migrate-langsmith` CLI streams JSONL/dir/stdin → `/runs/batch` in batches of 100; dry-run validates without posting; per-row parse failures logged with `<file>:<line>` and counted; non-zero exit on any failure (loop #5 item 7) |
 
@@ -75,18 +75,18 @@ Generated 2026-06-03 after the first sidebar pass (8 LangSmith-equivalent surfac
 
 ### SDK + integrations
 
-> **SDKs live in two public sibling repos** — `github.com/tracebility-ai/sdk-python`
-> and `github.com/tracebility-ai/sdk-js`. Each repo holds the native + compat-shim
+> **SDKs live in two public sibling repos** — `github.com/langprobe/sdk-python`
+> and `github.com/langprobe/sdk-js`. Each repo holds the native + compat-shim
 > + adapter packages for that language. Versioned + published independently so
 > SDK iteration doesn't pin to core release cadence.
 
 | Feature | Status | Notes |
 |---|---|---|
-| Python SDK (native) | ✅ | `tracebility` package (separate from langsmith-shim); `IngestClient` + `ControlClient` namespaces (runs / threads / datasets / prompts / evals / poll / comparisons / playground); `@trace` + `with span()` decorator/context-manager surface (loop #5 item 10) |
-| JS/TS SDK (native) | ✅ | `github.com/tracebility-ai/sdk-js (tracebility/) ` ships `tracebility` package; `TracebilityClient` with ingest + control namespaces, `trace` + `span` (AsyncLocalStorage-threaded), zero-runtime-deps; smoke 7/7 (loop #6 item 2) |
-| LangSmith-compatible Python shim | ✅ | `tracebility-langsmith` ships `Client` + `@traceable` (sync+async) posting to ingest-api parity endpoints; one-line import migration (loop #4 item 11) |
-| LangSmith-compatible JS shim | ✅ | `github.com/tracebility-ai/sdk-js (tracebility-langsmith/) ` ships `Client` + `traceable` (Proxy-free; `AsyncLocalStorage`-threaded parent ids) + `wrapOpenAI` / `wrapAnthropic`; one-line import migration; smoke-tested 8/8 (loop #5 item 6) |
-| Public-key (browser) feedback SDK | ✅ | `tracebility-feedback-browser` zero-dep TS package; `init({key, endpoint})` + `submit/thumbsUp/thumbsDown`; `credentials: omit`, `keepalive: true`, never throws on net errors; smoke 8/8 (loop #6 item 1) |
+| Python SDK (native) | ✅ | `langprobe` package (separate from langsmith-shim); `IngestClient` + `ControlClient` namespaces (runs / threads / datasets / prompts / evals / poll / comparisons / playground); `@trace` + `with span()` decorator/context-manager surface (loop #5 item 10) |
+| JS/TS SDK (native) | ✅ | `github.com/langprobe/sdk-js (langprobe/) ` ships `langprobe` package; `LangprobeClient` with ingest + control namespaces, `trace` + `span` (AsyncLocalStorage-threaded), zero-runtime-deps; smoke 7/7 (loop #6 item 2) |
+| LangSmith-compatible Python shim | ✅ | `langprobe-langsmith` ships `Client` + `@traceable` (sync+async) posting to ingest-api parity endpoints; one-line import migration (loop #4 item 11) |
+| LangSmith-compatible JS shim | ✅ | `github.com/langprobe/sdk-js (langprobe-langsmith/) ` ships `Client` + `traceable` (Proxy-free; `AsyncLocalStorage`-threaded parent ids) + `wrapOpenAI` / `wrapAnthropic`; one-line import migration; smoke-tested 8/8 (loop #5 item 6) |
+| Public-key (browser) feedback SDK | ✅ | `langprobe-feedback-browser` zero-dep TS package; `init({key, endpoint})` + `submit/thumbsUp/thumbsDown`; `credentials: omit`, `keepalive: true`, never throws on net errors; smoke 8/8 (loop #6 item 1) |
 
 ### Self-hosting + ops
 
@@ -99,8 +99,8 @@ Generated 2026-06-03 after the first sidebar pass (8 LangSmith-equivalent surfac
 | Ingest worker | ✅ | up |
 | Setup wizard (first-run) | ✅ | `/v1/setup` |
 | Health endpoint | ✅ | `/healthz` |
-| Helm chart | ✅ | `deploy/helm/tracebility/` chart deploys api / ingest-api / ingest-worker / web; secret-resolution helper for postgres / clickhouse / redis / session; Ingress + ServiceAccount + PVC for ingest disk buffer (loop #5 item 9) |
-| Kubernetes operator | ✅ | `Tracebility` CRD (`tracebility.io/v1alpha1`) reconciled by a kopf-based operator into the same four-deployment shape Helm ships; owner-refs, secret references for storage deps, optional Ingress (loop #6 item 8) |
+| Helm chart | ✅ | `deploy/helm/langprobe/` chart deploys api / ingest-api / ingest-worker / web; secret-resolution helper for postgres / clickhouse / redis / session; Ingress + ServiceAccount + PVC for ingest disk buffer (loop #5 item 9) |
+| Kubernetes operator | ✅ | `Langprobe` CRD (`langprobe.io/v1alpha1`) reconciled by a kopf-based operator into the same four-deployment shape Helm ships; owner-refs, secret references for storage deps, optional Ingress (loop #6 item 8) |
 
 ## Loop iteration #1 — done
 
@@ -114,7 +114,7 @@ shown ONCE.
 
 ## Loop iteration #2 — done
 
-✅ **Threads view** — `services/api/tracebility_api/routers/threads_query.py`
+✅ **Threads view** — `services/api/langprobe_api/routers/threads_query.py`
 adds `GET /v1/threads?project_id=...` (group-by `session_id` with turn count,
 total cost, error count, p95 latency, last status) and
 `GET /v1/threads/{session_id}` (chronological run list for one session).
@@ -125,7 +125,7 @@ runs (empty `session_id`) are intentionally excluded; they remain on `/runs`.
 
 ## Loop iteration #3 — done
 
-✅ **Monitoring dashboards** — `services/api/tracebility_api/routers/metrics.py`
+✅ **Monitoring dashboards** — `services/api/langprobe_api/routers/metrics.py`
 adds `GET /v1/metrics/timeseries` (per-bucket runs, errors, latency p50/p95/p99,
 tokens, cost — bucket size adapts to window) and `GET /v1/metrics/by-model`
 (LLM-span breakdown by `model` with calls, errors, p95, tokens, cost).
@@ -136,7 +136,7 @@ No client-side JS, no chart library — keeps the page light and on-brand.
 
 ## Loop iteration #4 — done (item #1)
 
-✅ **Datasets CRUD** — `services/api/tracebility_api/routers/datasets.py` adds
+✅ **Datasets CRUD** — `services/api/langprobe_api/routers/datasets.py` adds
 `GET/POST /v1/datasets`, `GET/PATCH/DELETE /v1/datasets/{id}`, `GET/POST
 /v1/datasets/{id}/items`, `DELETE /v1/datasets/{id}/items/{item_id}`. Catalog
 rows live in postgres `dataset` (item_count maintained on every item write);
@@ -153,7 +153,7 @@ with per-row delete and source-run links back to `/runs/{id}`. Slug regex
 ## Loop iteration #4 — done (item #2)
 
 ✅ **Prompts CRUD with versions + aliases** —
-`services/api/tracebility_api/routers/prompts.py` adds `GET/POST /v1/prompts`,
+`services/api/langprobe_api/routers/prompts.py` adds `GET/POST /v1/prompts`,
 `GET/PATCH/DELETE /v1/prompts/{id}`, `GET/POST /v1/prompts/{id}/versions`,
 `GET /v1/prompts/{id}/versions/{version}`, `POST /v1/prompts/{id}/aliases`.
 Catalog rows live in postgres `prompt`; immutable revisions live in
@@ -178,7 +178,7 @@ saving new revisions.
 ✅ **Evals runner v1** — `schemas/postgres/migrations/0008_eval_runs.sql`
 adds `eval_run` (lifecycle: queued → running → done/failed; tracks
 `item_total`, `item_done`, `score_sum`, `score_avg`, `error`, timestamps).
-`services/api/tracebility_api/routers/evals.py` implements `GET/POST
+`services/api/langprobe_api/routers/evals.py` implements `GET/POST
 /v1/eval-runs`, `GET /v1/eval-runs/{id}`, `GET /v1/eval-runs/{id}/scores`.
 POST inserts the queued postgres row, returns 202, and kicks off
 `asyncio` `BackgroundTasks` runner. The runner pulls dataset items from
@@ -203,12 +203,12 @@ swaps in next iteration without changing the storage shape.
 `feedback_public_key` (id, project_id, public_id text unique, name,
 allowed_origins text[], created_by, last_used_at, revoked_at,
 created_at).
-`services/api/tracebility_api/routers/feedback_keys.py` implements
+`services/api/langprobe_api/routers/feedback_keys.py` implements
 admin CRUD at `/v1/feedback-keys` — `GET ?project_id=...`,
 `POST` (returns `plaintext_key: tbf_pub_<32 hex>` shown ONCE),
 `DELETE /{id}` — RBAC: list = all roles, create/revoke = owner/admin.
 Audit-fail-closed on every write (ER-10); ER-20 revocation immediate.
-`services/api/tracebility_api/routers/feedback.py` exposes the public
+`services/api/langprobe_api/routers/feedback.py` exposes the public
 ingest endpoint `POST /v1/feedback` — no `require_user` dep, the
 `tbf_pub_*` key is the credential. Validates key format, checks
 revoked_at IS NULL, enforces optional `allowed_origins` against the
@@ -232,7 +232,7 @@ it up immediately — no SDK required yet.
 table (lifecycle queued → running → done/failed; per-side counters
 `item_done_a/b`, `score_sum_a/b`, `score_avg_a/b`; check constraint
 `comparison_distinct_versions` so A and B must differ).
-`services/api/tracebility_api/routers/comparisons.py` implements
+`services/api/langprobe_api/routers/comparisons.py` implements
 `GET/POST /v1/comparisons`, `GET /v1/comparisons/{id}`,
 `GET /v1/comparisons/{id}/items?limit=...`. POST validates the judge
 kind (`echo` / `contains` / `exact`), distinct versions, dataset
@@ -272,7 +272,7 @@ both sides of an incident share the same `incident_id`). An incident is the
 event pair, not a third table — materializing it bought nothing while v1
 routes nowhere; the deferrable FK on `alert_rule.open_incident_id` lets
 fire-and-update happen in one transaction.
-`services/api/tracebility_api/routers/alerts.py` implements
+`services/api/langprobe_api/routers/alerts.py` implements
 `GET/POST /v1/alerts`, `PATCH/DELETE /v1/alerts/{id}`, and
 `GET /v1/alerts/events?project_id=...&limit=...`. RBAC: list/get + events =
 all roles; create + patch (snooze/edit) = owner/admin/member;
@@ -309,7 +309,7 @@ single transaction. "I have N runs to review" stays true between
 sessions; a streaming sampler that re-evaluates on every render is a
 subtle source of double-counting.
 
-`services/api/tracebility_api/routers/annotations.py` exposes
+`services/api/langprobe_api/routers/annotations.py` exposes
 `/v1/annotations` (list/create/get/delete), `/v1/annotations/{id}/items`
 (list with optional status filter), and per-item `/submit` and `/skip`.
 Submission validates the label against `rubric.labels`, computes score
@@ -336,7 +336,7 @@ and `.../skip/route.ts` (POST).
 
 ## Loop iteration #4 — done (item #8)
 
-✅ **Replay capture writer** — `services/ingest-worker/tracebility_worker/writer.py`
+✅ **Replay capture writer** — `services/ingest-worker/langprobe_worker/writer.py`
 now derives a `replay_capture` row alongside every span of kind
 `llm` / `tool` / `retriever` (mapped to `llm_call` / `tool_io` /
 `retrieval`; `embedding`, `parser`, `chain`, and `agent` are
@@ -352,7 +352,7 @@ if the `replay_capture` insert trips, we log and move on without
 dropping the primary trace; the capture index can be rebuilt from
 spans later. `insert_envelope` now returns `(runs, spans, captures)`;
 `consumer.py` unpacks the third element and includes it in the
-acked-message debug log. `services/api/tracebility_api/routers/replays.py`
+acked-message debug log. `services/api/langprobe_api/routers/replays.py`
 exposes `GET /v1/runs/{run_id}/replay-captures?project_id=...&limit=`,
 returning `ReplayCaptureList { summary { total, by_kind, bytes_total,
 unique_hashes }, items[] }`. RBAC fail-closed via
@@ -379,7 +379,7 @@ authored as one transaction on the canvas, not a queryable per-edit
 table; jsonb path operators cover the rare "find branches that
 edited model on llm_router spans" query.
 
-`services/api/tracebility_api/routers/studio.py` exposes
+`services/api/langprobe_api/routers/studio.py` exposes
 `/v1/studio/branches` (list/create), `/v1/studio/branches/{id}`
 (get/patch/delete), `/v1/studio/branches/{id}/replay` (the stand-in
 runner that flips status to `replayed` and synthesizes
@@ -415,7 +415,7 @@ Editor is frozen post-replay. Cookie-forwarding proxies under
 ## Loop iteration #4 — done (item #10)
 
 ✅ **OpenInference / OTel ingest** —
-`services/ingest-api/tracebility_ingest/routers/otel.py` adds
+`services/ingest-api/langprobe_ingest/routers/otel.py` adds
 `POST /v1/traces` (the OTLP HTTP/JSON collector path). The router
 accepts the standard `resourceSpans` envelope every OTel SDK already
 emits, walks `scopeSpans[].spans[]`, and translates each span into a
@@ -447,7 +447,7 @@ alongside `langsmith_shim` and native `runs`.
 
 Drop-in usage:
 ```
-export OTEL_EXPORTER_OTLP_ENDPOINT=https://your-tracebility-host
+export OTEL_EXPORTER_OTLP_ENDPOINT=https://your-langprobe-host
 export OTEL_EXPORTER_OTLP_HEADERS=authorization=Bearer\ tk_...
 # any OTel-instrumented agent (LlamaIndex, OpenAI Agents SDK,
 # Phoenix-compatible, custom) starts flowing without changing code.
@@ -456,10 +456,10 @@ export OTEL_EXPORTER_OTLP_HEADERS=authorization=Bearer\ tk_...
 ## Loop iteration #4 — done (item #11)
 
 ✅ **LangSmith Python shim** —
-`github.com/tracebility-ai/sdk-python (tracebility-langsmith/tracebility_langsmith/) ` ships a drop-in
+`github.com/langprobe/sdk-python (langprobe-langsmith/langprobe_langsmith/) ` ships a drop-in
 compat layer for LangSmith's `Client` + `@traceable` write surface.
 One-line migration: `from langsmith import Client, traceable` →
-`from tracebility_langsmith import Client, traceable`. The
+`from langprobe_langsmith import Client, traceable`. The
 shim honors `LANGSMITH_ENDPOINT` / `LANGCHAIN_ENDPOINT`,
 `LANGSMITH_API_KEY` / `LANGCHAIN_API_KEY`, and `LANGSMITH_PROJECT`
 / `LANGCHAIN_PROJECT` so existing deployments migrate without code
@@ -480,12 +480,12 @@ Bare `@traceable` and parameterized `@traceable(run_type="llm",
 tags=[...])` both work.
 
 Read-side methods (`read_run`, `list_runs`, `read_project`) are
-intentionally NOT implemented — tracebility's read API has a
+intentionally NOT implemented — langprobe's read API has a
 different shape and pretending otherwise would mask bugs. The
-native tracebility Python SDK (not this shim) is the right surface
+native langprobe Python SDK (not this shim) is the right surface
 for queries.
 
-Legal/security: the package name is `tracebility-langsmith`,
+Legal/security: the package name is `langprobe-langsmith`,
 NOT `langsmith` — nominative fair use only. The README is explicit
 about non-affiliation.
 
@@ -505,7 +505,7 @@ text, token + latency, and the ClickHouse run_id of the resulting
 trace). One-of constraint: prompt_version_id OR raw_template must
 be present.
 
-`services/api/tracebility_api/routers/playground.py` exposes
+`services/api/langprobe_api/routers/playground.py` exposes
 `GET /v1/playground/runs?project_id=&limit=`, `POST /v1/playground/runs`
 (the synchronous LLM invocation — renders `{{ var }}` substitutions,
 calls anthropic / openai / stub via stdlib urllib so we don't add
@@ -537,19 +537,19 @@ Cookie-forwarding proxy at `web/src/app/api/playground/runs/route.ts`.
 The six SDK packages that used to live under `packages/` in the
 core repo are now in two new public-from-day-one repos:
 
-  - `github.com/tracebility-ai/sdk-python` — Apache-2.0
-    - `tracebility` (native; was `sdk-python-native`)
-    - `tracebility-langsmith` (LangSmith compat shim; was
-      `sdk-python` shipping `tracebility-langsmith-shim` —
+  - `github.com/langprobe/sdk-python` — Apache-2.0
+    - `langprobe` (native; was `sdk-python-native`)
+    - `langprobe-langsmith` (LangSmith compat shim; was
+      `sdk-python` shipping `langprobe-langsmith-shim` —
       directory + package name aligned, `-shim` suffix
       dropped because it read awkwardly in install commands)
-    - `tracebility-langchain` (LangChain/LangGraph bridge;
+    - `langprobe-langchain` (LangChain/LangGraph bridge;
       was `sdk-python-langchain`)
-  - `github.com/tracebility-ai/sdk-js` — Apache-2.0
-    - `tracebility` (native; was `sdk-typescript-native`)
-    - `tracebility-langsmith` (compat shim; was
+  - `github.com/langprobe/sdk-js` — Apache-2.0
+    - `langprobe` (native; was `sdk-typescript-native`)
+    - `langprobe-langsmith` (compat shim; was
       `sdk-typescript`, `-shim` suffix dropped)
-    - `tracebility-feedback-browser` (was
+    - `langprobe-feedback-browser` (was
       `sdk-feedback-browser`)
 
 Why:
@@ -564,12 +564,12 @@ Why:
     pytest; JS repo only needs pnpm + tsc + vitest. No
     matrix that knows both toolchains.
   - **Discoverable.** Anyone landing on
-    `github.com/tracebility-ai` sees `sdk-python` and
+    `github.com/langprobe` sees `sdk-python` and
     `sdk-js` as obvious-named siblings of the core. Each
     has a top-level README mapping the three packages
     inside.
   - **Directory name == published package name.** No more
-    `sdk-python-native/` shipping as `tracebility`.
+    `sdk-python-native/` shipping as `langprobe`.
 
 Still in this monorepo: api / ingest-api / ingest-worker /
 operator / helm / migrations / web / docs. Those are the
@@ -596,7 +596,7 @@ Backend:
     + intent + return_to + expires_at). Mirrors the storage shape
     of `sso_state` so a future provider that reuses the same
     pattern (Microsoft/Apple/etc.) slots in without a new table.
-  - `services/api/tracebility_api/routers/oauth_signup.py`
+  - `services/api/langprobe_api/routers/oauth_signup.py`
     exposes `/v1/auth/oauth/{providers,google/start,google/callback,
     github/start,github/callback}`. PKCE-S256 generated even where
     not strictly required (GitHub) so the storage shape is uniform.
@@ -616,7 +616,7 @@ Backend:
     intent on the payload.
   - Settings: `OAUTH_GOOGLE_CLIENT_ID/SECRET`,
     `OAUTH_GITHUB_CLIENT_ID/SECRET`, `OAUTH_REDIRECT_BASE`,
-    `TRACEBILITY_WEB_BASE_URL`. All optional; missing
+    `LANGPROBE_WEB_BASE_URL`. All optional; missing
     client_id/secret → that provider 503s and the UI hides the
     button.
 
@@ -641,7 +641,7 @@ Frontend:
     a Next.js proxy.
 
 Why this matters: until now the only way to create an account on
-a self-hosted tracebility was the operator hitting `/v1/setup`.
+a self-hosted langprobe was the operator hitting `/v1/setup`.
 That works for single-tenant self-host but not for "share a
 deployment with the team". OAuth signup is the bridge: anyone
 with a Google or GitHub account can self-onboard, lands on a
@@ -659,7 +659,7 @@ Out of scope (deliberate, scope-for-later):
 ## Loop iteration #7 — done (item #3)
 
 ✅ **Real LLM dispatch in comparisons** —
-`services/api/tracebility_api/routers/comparisons.py` `_run_comparison`
+`services/api/langprobe_api/routers/comparisons.py` `_run_comparison`
 no longer renders the prompt template as the "model output". The
 v1 stand-in `_render_for_variant` is gone; in its place:
 
@@ -707,7 +707,7 @@ follow-up — the dispatch seam is now in place to plug them in.
 ## Loop iteration #7 — done (item #2)
 
 ✅ **Real Studio replay runner** —
-`services/api/tracebility_api/routers/studio.py` `replay_branch`
+`services/api/langprobe_api/routers/studio.py` `replay_branch`
 no longer just stamps `diff_summary` and flips status to `replayed`.
 It now actually re-executes the branch-point span:
 
@@ -763,7 +763,7 @@ Partial-unique constraint on `(workspace_id, provider, name)
 WHERE revoked_at IS NULL` so the operator can rotate by revoking
 the old row and creating a new one with the same name.
 
-`services/api/tracebility_api/routers/llm_credentials.py` exposes
+`services/api/langprobe_api/routers/llm_credentials.py` exposes
 `GET/POST/DELETE /v1/llm-credentials?workspace_id=`. Reveal-once
 on POST (matches api_keys + sso patterns); revoke is a soft
 DELETE. Owner/admin RBAC fail-closed for writes; member read.
@@ -800,18 +800,18 @@ Linked from `/workspace` via the new SubpageLinksCard.
 ## Loop iteration #6 — done (item #8 — closes loop, parity reached)
 
 ✅ **Kubernetes operator** —
-`deploy/operator/crd.yaml` defines a `tracebility.io/v1alpha1`
-Tracebility CRD with the same shape the Helm chart's values.yaml
+`deploy/operator/crd.yaml` defines a `langprobe.io/v1alpha1`
+Langprobe CRD with the same shape the Helm chart's values.yaml
 exposes (per-component replicas, image tags, secret refs for
 storage deps, optional Ingress hosts).
-`services/operator/tracebility_operator/` is the kopf-based
+`services/operator/langprobe_operator/` is the kopf-based
 operator that reconciles CRs into the four-deployment shape:
 api / ingest-api / ingest-worker / web — plus Services, the
 ingest-api disk-buffer PVC, and an optional three-host Ingress.
 
 Why the operator AND the Helm chart?
   - **Helm**: single install, manual upgrades. Simpler.
-  - **Operator**: many tracebility installs across many namespaces,
+  - **Operator**: many langprobe installs across many namespaces,
     GitOps-driven, declarative upgrades. Same pod topology either
     way; operators expect documentation to apply equally.
 
@@ -825,7 +825,7 @@ Implementation:
     `on.resume` route through `reconcile`; `on.delete` relies on
     owner-references for the cascade.
   - Settings: `posting.level=INFO`, finalizer
-    `tracebility.io/finalizer`, retry backoffs `[10, 30, 60]`.
+    `langprobe.io/finalizer`, retry backoffs `[10, 30, 60]`.
 
 Storage deps (Postgres / ClickHouse / Redis) are intentionally NOT
 managed — same rationale as the Helm chart. The CR references
@@ -857,7 +857,7 @@ future iterations are depth-focused, not parity-driven.
     an `active` flag (deactivation removes the
     `workspace_member` row but keeps the mapping for re-activation).
 
-`services/api/tracebility_api/routers/scim.py` exposes the slice of
+`services/api/langprobe_api/routers/scim.py` exposes the slice of
 SCIM 2.0 (RFC 7644) Okta / Azure AD / JumpCloud actually drive in
 their default User-sync configurations:
 
@@ -873,7 +873,7 @@ their default User-sync configurations:
     returns `400` with `scimType=invalidFilter` rather than
     half-handling).
   - `POST /scim/v2/Users` — match-or-create the underlying
-    `app_user` by email (so a user already in tracebility can be
+    `app_user` by email (so a user already in langprobe can be
     attached to a SCIM-provisioned workspace without a duplicate
     row), insert `scim_user_mapping`, upsert `workspace_member` if
     `active=true`. Duplicate provisioning into the same workspace
@@ -924,7 +924,7 @@ V1 honest scope:
     survive the IdP redirect round-trip. Stored server-side because
     cookies don't reliably cross the cross-site auth-callback hop.
 
-`services/api/tracebility_api/routers/sso.py` exposes:
+`services/api/langprobe_api/routers/sso.py` exposes:
 
   - **Admin (cookie-auth, owner/admin only)**:
     `GET/POST /v1/auth/sso/config?workspace_id=`,
@@ -975,7 +975,7 @@ delete). Slug regex matches the prompt-versioning convention
 (`^[a-z0-9][a-z0-9_-]*$`); partial-unique-on-slug per project
 where `deleted_at is null` so re-creating after delete is fine.
 
-`services/api/tracebility_api/routers/luna_judges.py` exposes
+`services/api/langprobe_api/routers/luna_judges.py` exposes
 `GET/POST /v1/luna-judges`, `GET/PATCH/DELETE /v1/luna-judges/{id}`,
 plus three public dispatch helpers used by `evals.py` and
 `poll_runs.py`:
@@ -1021,7 +1021,7 @@ PATCH/DELETE).
 ## Loop iteration #6 — done (item #4)
 
 ✅ **Multipart `/runs/multipart`** —
-`services/ingest-api/tracebility_ingest/routers/multipart.py` adds
+`services/ingest-api/langprobe_ingest/routers/multipart.py` adds
 `POST /v1/runs/multipart` (multipart/form-data). One `envelope`
 form field carries the IngestBatch JSON; zero or more `attachments`
 file parts carry binary blobs. The endpoint:
@@ -1055,8 +1055,8 @@ move to `s3://...` without changing the URL or worker contract.
 ## Loop iteration #6 — done (item #3)
 
 ✅ **LangChain / LangGraph callback bridges** —
-`github.com/tracebility-ai/sdk-python (tracebility-langchain/) ` ships
-`TracebilityCallbackHandler` — a duck-typed handler (no
+`github.com/langprobe/sdk-python (langprobe-langchain/) ` ships
+`LangprobeCallbackHandler` — a duck-typed handler (no
 `langchain-core` import at module load; handler is dispatched by
 LangChain's `getattr(handler, "on_*")` lookup, so a hard dep would
 just be friction).
@@ -1069,7 +1069,7 @@ stable `run_id` and (sometimes) `parent_run_id`. The handler:
   2. Updates the matching node on `on_*_end`/`on_*_error` with
      outputs/wall-time/error.
   3. When the **root** node ends, the whole tree flushes as one
-     tracebility ingest envelope: root → `IngestRun`, every nested
+     langprobe ingest envelope: root → `IngestRun`, every nested
      node → `IngestSpan` under it. The tree is then dropped from
      the handler.
 
@@ -1100,8 +1100,8 @@ pyproject.toml.
 ## Loop iteration #6 — done (item #2)
 
 ✅ **Native JS/TS SDK** —
-`github.com/tracebility-ai/sdk-js (tracebility/) ` ships the `tracebility` package
-(distinct from `tracebility-langsmith` which targets compat).
+`github.com/langprobe/sdk-js (langprobe/) ` ships the `langprobe` package
+(distinct from `langprobe-langsmith` which targets compat).
 Mirrors the native Python SDK's surface in TypeScript:
 
   - `IngestClient.submitBatch` / `submitRun` → `POST /v1/runs`
@@ -1111,7 +1111,7 @@ Mirrors the native Python SDK's surface in TypeScript:
     track the URL surface (`runs.list({status, kind, search,
     window_seconds, limit, offset})`, `runs.spans(id)`,
     `runs.replayCaptures(id)`, etc.).
-  - `TracebilityClient` bundles both transports under one object and
+  - `LangprobeClient` bundles both transports under one object and
     aliases the most-used surfaces (`client.runs`, `client.datasets`,
     …) so callers don't dig through `client.control.runs.list(...)`
     for the common case.
@@ -1125,21 +1125,21 @@ the run with `status='error'`, `error_kind`, and `error_message`.
 
 Methods return raw response objects (server pydantic JSON shape) —
 we intentionally don't impose a parallel typed model. HTTP errors
-throw `TracebilityHTTPError` with `.statusCode` / `.body` / `.url`.
+throw `LangprobeHTTPError` with `.statusCode` / `.body` / `.url`.
 Zero third-party runtime deps; uses global `fetch` and
 `crypto.randomUUID` (Node 18+, all modern browsers).
 
 Smoke-tested 7/7 against fake fetch + fake vendor responses:
 `IngestClient.submitRun`, `ControlClient.runs.list`,
-`TracebilityClient` alias, `trace` sync, `trace` + `span` async with
-parent-id threading, `trace` error path, and `TracebilityHTTPError`
+`LangprobeClient` alias, `trace` sync, `trace` + `span` async with
+parent-id threading, `trace` error path, and `LangprobeHTTPError`
 propagation on 403.
 
 ## Loop iteration #6 — done (last roadmap-stub eliminated)
 
 ✅ **/replay launcher + stub deletion** —
 The last `RoadmapSurface` page (`/replay`) is now a real launcher.
-`services/api/tracebility_api/routers/replays.py` adds
+`services/api/langprobe_api/routers/replays.py` adds
 `GET /v1/replays/runs?project_id=&limit=` — a cross-run aggregate
 over `replay_capture` (GROUP BY run_id, JOIN against `run` for
 name/status/start_time, ORDER BY most-recent-capture). Returns
@@ -1171,12 +1171,12 @@ operational from a `docker-compose up` clean install.
 ## Loop iteration #6 — done (item #1)
 
 ✅ **Browser feedback SDK** —
-`github.com/tracebility-ai/sdk-js (tracebility-feedback-browser/) ` ships a zero-dep TS package
-(`tracebility-feedback-browser`) that wraps the existing
+`github.com/langprobe/sdk-js (langprobe-feedback-browser/) ` ships a zero-dep TS package
+(`langprobe-feedback-browser`) that wraps the existing
 `POST /v1/feedback` ingest endpoint. Module surface:
 
 ```ts
-import { init, submit, FeedbackClient } from "tracebility-feedback-browser";
+import { init, submit, FeedbackClient } from "langprobe-feedback-browser";
 
 init({ key: "tbf_pub_...", endpoint: "https://traces.example.com" });
 await submit({ run_id, score: 1, kind: "thumbs", comment: "👍" });
@@ -1254,10 +1254,10 @@ demand ÷ implementation cost):
 ## Loop iteration #5 — done (item #10)
 
 ✅ **Native Python SDK** —
-`github.com/tracebility-ai/sdk-python (tracebility/) tracebility/` is the tracebility-shaped
+`github.com/langprobe/sdk-python (langprobe/) langprobe/` is the langprobe-shaped
 client, distinct from the LangSmith-shim sibling. The shim mimics
 LangSmith's `Client` / `traceable`; this package's surface is
-"tracebility-native" — different naming, different ergonomics, no
+"langprobe-native" — different naming, different ergonomics, no
 LangSmith concepts in the API.
 
 Two transports under one umbrella:
@@ -1272,7 +1272,7 @@ Two transports under one umbrella:
     `runs.get(run_id)`, `runs.spans(run_id)`,
     `runs.replay_captures(run_id)`, etc).
 
-`TracebilityClient` bundles both and aliases the most-used surfaces
+`LangprobeClient` bundles both and aliases the most-used surfaces
 to `client.runs` / `client.datasets` / etc — so callers don't have
 to dig through `client.control.runs.list(...)` for the common case.
 Each transport is a context manager and releases its httpx pool on
@@ -1288,18 +1288,18 @@ on the wire.
 Methods return raw dicts (server pydantic JSON shape) — we
 intentionally don't impose a parallel typed model. The wire shape
 evolves and a generated client would slow that down. HTTP errors
-raise `TracebilityHTTPError` with `.status_code` / `.body` /
+raise `LangprobeHTTPError` with `.status_code` / `.body` /
 `.url`.
 
 Runtime dep: `httpx` only. Smoke-tested 5/5: `submit_run`,
 `@trace` + `span` happy path, `@trace` error path, `runs.list`
-read, and the `TracebilityHTTPError` propagation path. Workspace
+read, and the `LangprobeHTTPError` propagation path. Workspace
 member registered in the root pyproject.toml.
 
 ## Loop iteration #5 — done (item #9)
 
 ✅ **Helm chart** —
-`deploy/helm/tracebility/` deploys the four tracebility services
+`deploy/helm/langprobe/` deploys the four langprobe services
 (`api`, `ingest-api`, `ingest-worker`, `web`) on Kubernetes.
 Deliberately does **not** bundle Postgres / ClickHouse / Redis —
 production deployments almost always want managed Postgres, and
@@ -1308,7 +1308,7 @@ one-command dev loop, `infra/docker-compose.yml` is the right shape.
 
 Secret resolution: each external dep takes
 `existingSecret + existingSecretKey`, with an `inline*` escape
-hatch for dev. The `tracebility.envFromSecret` helper in
+hatch for dev. The `langprobe.envFromSecret` helper in
 `_helpers.tpl` renders either a `secretKeyRef` or a literal
 `value` so the templates stay branch-free at the env-var site.
 Required secrets are documented in `NOTES.txt` (rendered after
@@ -1349,7 +1349,7 @@ were dropped and rebuilt with `surface` in the key — a `runs` view
 named *"p95 last 24h"* no longer collides with a `monitoring` view
 of the same name in the same project.
 
-`services/api/tracebility_api/routers/saved_views.py`: list now
+`services/api/langprobe_api/routers/saved_views.py`: list now
 takes `surface` as a query param; create persists + validates it;
 the read-time filter coercion accepts `window` (label form like
 `"1h"`) and `model` keys for the monitoring surface alongside the
@@ -1376,9 +1376,9 @@ server-side model filter later).
 ## Loop iteration #5 — done (item #7)
 
 ✅ **Migration importer** —
-`services/migrate-langsmith/tracebility_migrate_langsmith/cli.py`
+`services/migrate-langsmith/langprobe_migrate_langsmith/cli.py`
 ships `tb-migrate-langsmith`, a thin CLI that streams a LangSmith
-export into a tracebility ingest host. The receiving end already
+export into a langprobe ingest host. The receiving end already
 understands the LangSmith `RunCreate` shape via the in-process shim
 (`services/ingest-api/.../langsmith_shim.py`), so the importer's job
 is just to stream + batch + POST to `/runs/batch` —
@@ -1403,9 +1403,9 @@ Behavior:
     LangSmith data.
 
 Auth env: `--api-key` overrides; falls back to
-`TRACEBILITY_INGEST_KEY` then `LANGSMITH_API_KEY` so existing
+`LANGPROBE_INGEST_KEY` then `LANGSMITH_API_KEY` so existing
 LangSmith ops env can be reused. Endpoint env: `--endpoint`
-overrides; falls back to `TRACEBILITY_INGEST_URL`,
+overrides; falls back to `LANGPROBE_INGEST_URL`,
 `LANGSMITH_ENDPOINT`, then `http://localhost:7080`.
 
 Smoke-tested:
@@ -1415,12 +1415,12 @@ Smoke-tested:
   - `--limit` caps the row stream cleanly
 
 Wired into `pyproject.toml` workspace members; entry point
-`tb-migrate-langsmith = "tracebility_migrate_langsmith.cli:main"`.
+`tb-migrate-langsmith = "langprobe_migrate_langsmith.cli:main"`.
 
 ## Loop iteration #5 — done (item #6)
 
 ✅ **JS/TS LangSmith shim** —
-`github.com/tracebility-ai/sdk-js (tracebility-langsmith/) ` is the symmetric port of the Python shim:
+`github.com/langprobe/sdk-js (langprobe-langsmith/) ` is the symmetric port of the Python shim:
 `Client` with `createRun` / `updateRun` / `batchIngestRuns`,
 `traceable` wrapper for sync + async functions, and `wrapOpenAI` /
 `wrapAnthropic` Proxy-based vendor SDK wrappers. One-line import
@@ -1428,7 +1428,7 @@ migration:
 
 ```diff
 - import { Client, traceable } from "langsmith";
-+ import { Client, traceable } from "tracebility-langsmith";
++ import { Client, traceable } from "langprobe-langsmith";
 ```
 
 Same env-var contract as the Python side (`LANGSMITH_ENDPOINT` /
@@ -1463,13 +1463,13 @@ vendor wrappers.
 ## Loop iteration #5 — done (item #5)
 
 ✅ **`wrap_openai` / `wrap_anthropic` helpers** —
-`github.com/tracebility-ai/sdk-python (tracebility-langsmith/tracebility_langsmith/) wrappers.py` adds
+`github.com/langprobe/sdk-python (langprobe-langsmith/langprobe_langsmith/) wrappers.py` adds
 two duck-typed proxies that wrap a vendor SDK client and emit one
-tracebility run per call. Usage:
+langprobe run per call. Usage:
 
 ```python
 from openai import OpenAI
-from tracebility_langsmith import wrap_openai
+from langprobe_langsmith import wrap_openai
 client = wrap_openai(OpenAI())
 client.chat.completions.create(model="gpt-4o-mini", messages=[...])
 ```
@@ -1505,7 +1505,7 @@ error-path PATCH.
 ## Loop iteration #5 — done (item #4)
 
 ✅ **Bulk actions on runs** —
-`services/api/tracebility_api/routers/run_actions.py` adds
+`services/api/langprobe_api/routers/run_actions.py` adds
 `POST /v1/runs/_actions/add-to-dataset` and
 `POST /v1/runs/_actions/add-to-annotation-queue`. Both accept a
 selection of up to 200 run_ids, resolve them against the run table
@@ -1560,7 +1560,7 @@ views. Filter shape v1: `{status, kind, search, window_seconds}` —
 free-form jsonb so we can extend without migration; unknown keys
 dropped at read time (defense-in-depth against v2-poisoning-v1).
 
-`services/api/tracebility_api/routers/saved_views.py` exposes
+`services/api/langprobe_api/routers/saved_views.py` exposes
 `GET/POST /v1/saved-views`, `PATCH/DELETE /v1/saved-views/{id}`.
 List filters server-side to "shared OR mine" so personal views
 stay private. RBAC: personal view edits/deletes restricted to the
@@ -1569,7 +1569,7 @@ fail-closed (ER-10) on every write. Constraint enforces
 `(is_shared and created_by IS NULL) OR (NOT is_shared AND created_by
 IS NOT NULL)` so a personal view always has an owner.
 
-`services/api/tracebility_api/routers/runs_query.py` `list_runs`
+`services/api/langprobe_api/routers/runs_query.py` `list_runs`
 now accepts `kind`, `search`, `window_seconds` alongside `status`.
 Search uses `positionCaseInsensitive` on the `name` column (it's
 LowCardinality(String); the column isn't indexed for search but the
@@ -1603,7 +1603,7 @@ table (project-scoped row with `judges text[]` of judge kinds —
 constraint enforces ≥2 — plus `aggregation` enum mean/majority/min/max,
 lifecycle queued → running → done/failed, counters, `consensus_avg`,
 and a pairwise `agreement` metric).
-`services/api/tracebility_api/routers/poll_runs.py` exposes
+`services/api/langprobe_api/routers/poll_runs.py` exposes
 `GET/POST /v1/poll-runs`, `GET /v1/poll-runs/{id}`, and
 `GET /v1/poll-runs/{id}/items?limit=`. POST validates ≥2 distinct
 judges (built-in echo / contains / exact in v1) + the aggregation
@@ -1655,13 +1655,13 @@ unchanged.
 4. **Bulk actions on runs** (❌) — pair with item 3: tag, add to
    dataset, send to annotation queue.
 5. **`wrap_openai` / `wrap_anthropic`** convenience helpers on
-   `tracebility-langsmith` (❌).
+   `langprobe-langsmith` (❌).
 6. **JS/TS LangSmith shim** (❌) — symmetric port of the Python shim.
-7. **Migration importer** (❌) — LangSmith export JSON → tracebility
+7. **Migration importer** (❌) — LangSmith export JSON → langprobe
    ClickHouse runs; the unblocker for "we already have history".
 8. **Saved filters / dashboards on /monitoring** ✅ shipped (item #8).
 9. **Helm chart** ✅ shipped (item #9).
-10. **Native Python SDK** ✅ shipped (item #10) — tracebility-shaped
+10. **Native Python SDK** ✅ shipped (item #10) — langprobe-shaped
     client (read + write).
 
 Each step ends with: commit, push, re-run gap analysis at top of this file, repeat.

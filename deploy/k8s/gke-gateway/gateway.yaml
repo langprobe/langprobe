@@ -1,28 +1,28 @@
 ---
-# Gateway API resource that fronts tracebility-web on the public internet.
+# Gateway API resource that fronts langprobe-web on the public internet.
 # Uses GKE's gke-l7-global-external-managed gatewayClass which provisions
 # a Google Cloud HTTP(S) Load Balancer behind the scenes. TLS terminates
 # here using a cert from Certificate Manager (referenced by certmap name).
 #
-# Apply with: kubectl apply -n tracebility -f deploy/k8s/gke-gateway/
+# Apply with: kubectl apply -n langprobe -f deploy/k8s/gke-gateway/
 apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
 metadata:
-  name: tracebility-web
-  namespace: tracebility
+  name: langprobe-web
+  namespace: langprobe
   annotations:
     # Certificate Manager cert map. The map contains an entry for
-    # langprobe.daz.co.in -> tracebility-web-cert, both created by
+    # langprobe.daz.co.in -> langprobe-web-cert, both created by
     # `gcloud certificate-manager` in the bootstrap runbook.
-    networking.gke.io/certmap: tracebility-web-certmap
+    networking.gke.io/certmap: langprobe-web-certmap
 spec:
   gatewayClassName: gke-l7-global-external-managed
   # Bind to the global static IP reserved as
-  # `gcloud compute addresses create tracebility-web-ip --global`.
+  # `gcloud compute addresses create langprobe-web-ip --global`.
   # NamedAddress is the GKE-specific value form for this gatewayClass.
   addresses:
     - type: NamedAddress
-      value: tracebility-web-ip
+      value: langprobe-web-ip
   listeners:
     - name: http
       protocol: HTTP
