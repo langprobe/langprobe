@@ -63,4 +63,4 @@ ingress:
 # (docs/superpowers/runbooks/gke-bootstrap.md, "OAuth signup setup").
 oauth:
   existingSecret: langprobe-oauth
-  publicUrl: https://langprobe.daz.co.in
+  publicUrl: https://app.langprobe.com
