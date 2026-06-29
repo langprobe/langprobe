@@ -15,10 +15,13 @@
   --border-strong: #DDDDDB;
   --border-focus:  #0485F7;
 
-  /* Text */
+  /* Text — text-3 is the lightest tone still rated for body/helper copy.
+   * It clears WCAG AA (>=4.5:1) on --bg, --surface-2, and --surface-3.
+   * text-4 is intentionally sub-AA and is for DISABLED text only (which
+   * WCAG exempts); placeholders use text-3, never text-4. */
   --text:          #0A0A0A;
   --text-2:        #4B4B49;
-  --text-3:        #8A8A86;
+  --text-3:        #6C6C69;
   --text-4:        #B4B4AE;
 
   /* Brand / accent (HeroUI primary blue) */
@@ -27,16 +30,20 @@
   --accent-soft:   #E0F0FE;
   --accent-hover:  #3592F9;
 
-  /* Link — same hue as accent so brand reads as one voice */
-  --link:          #0485F7;
+  /* Link — same hue as --accent (211°) so brand reads as one voice, but
+   * darkened from the accent's lightness to clear WCAG AA (4.5:1) as TEXT.
+   * The accent stays #0485F7 for button fills (white-on-fill is a 3:1 UI
+   * pairing); link/info text needs the stricter 4.5:1, hence the split. */
+  --link:          #0A66C2;
   --link-soft:     #E0F0FE;
 
-  /* Semantic */
-  --info:          #0485F7;
+  /* Semantic — foregrounds are AA-rated as badge/label text on their *-soft
+   * backgrounds (and as dots/deltas on --bg). Soft bgs are unchanged. */
+  --info:          #0A66C2;
   --info-soft:     #E0F0FE;
-  --success:       #1A7F4E;
+  --success:       #157A45;
   --success-soft:  #E7F4ED;
-  --warn:          #B05F00;
+  --warn:          #9C5400;
   --warn-soft:     #FBF1E0;
   --danger:        #C0382B;
   --danger-soft:   #FBEAE7;
@@ -876,7 +883,7 @@ select[aria-invalid="true"]:focus {
   gap: 8px;
   min-width: 0;
 }
-.ie-value .placeholder { color: var(--text-4); }
+.ie-value .placeholder { color: var(--text-3); }
 .ie-value .truncate {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
@@ -896,7 +903,8 @@ select[aria-invalid="true"]:focus {
 }
 .ie-row:hover .ie-cta { opacity: 1; color: var(--text-3); }
 .ie-row[data-editing="true"] .ie-cta {
-  opacity: 1; color: var(--accent); font-weight: 600;
+  /* --link (not --accent) so this label clears AA as text; same hue. */
+  opacity: 1; color: var(--link); font-weight: 600;
 }
 
 /* Edit-mode input shell — sits inside .ie-value when row is editing */
@@ -1034,7 +1042,7 @@ select[aria-invalid="true"]:focus {
   width: auto;
 }
 .input-shell > input::placeholder,
-.input-shell > textarea::placeholder { color: var(--text-4); }
+.input-shell > textarea::placeholder { color: var(--text-3); }
 .input-shell > textarea {
   height: auto;
   min-height: 60px;
@@ -1136,7 +1144,9 @@ select[aria-invalid="true"]:focus {
   background: #fff;
   border-radius: 9999px;
   box-shadow: var(--shadow-1);
-  transition: transform var(--motion-base) cubic-bezier(0.34, 1.56, 0.64, 1);
+  /* Exponential ease-out (no overshoot) — matches the design system's
+   * "no bounce, no elastic" motion rule. */
+  transition: transform var(--motion-base) var(--ease-out-soft);
 }
 .switch input:checked + .track {
   background: var(--accent);
