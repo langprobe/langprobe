@@ -48,19 +48,19 @@ Tokens — copy these names verbatim into `globals.css`:
 | `--border-focus` | `#0485F7` | Focus ring color. Matches `--accent`. |
 | `--text` | `#0A0A0A` | Primary text. Near-black. |
 | `--text-2` | `#4B4B49` | Secondary labels. |
-| `--text-3` | `#8A8A86` | Tertiary, helper, timestamps. |
-| `--text-4` | `#B4B4AE` | Disabled / placeholder. |
+| `--text-3` | `#6C6C69` | Tertiary, helper, timestamps, placeholders. Lightest AA-rated tone (≥4.5:1 on `--bg`/`--surface-2`/`--surface-3`). |
+| `--text-4` | `#B4B4AE` | Disabled text only (WCAG-exempt). Never for placeholders or live copy — use `--text-3`. |
 | `--accent` | `#0485F7` | Primary button bg, brand mark, focus ring, active states. HeroUI primary blue. |
 | `--accent-fg` | `#FFFFFF` | Foreground on accent. |
 | `--accent-soft` | `#E0F0FE` | Accent-tinted bg (focused field band, selected row, link-soft). |
 | `--accent-hover` | `#3592F9` | Primary button hover state. |
-| `--link` | `#0485F7` | Hyperlinks. Same hue as `--accent` so the brand reads as one voice. |
+| `--link` | `#0A66C2` | Hyperlinks. Same hue (211°) as `--accent` so the brand reads as one voice; darkened from the accent lightness to clear AA (≥4.5:1) as text. |
 | `--link-soft` | `#E0F0FE` | Link-tinted hover/selected backgrounds. |
-| `--info` | `#0485F7` | Info badge. |
+| `--info` | `#0A66C2` | Info badge text. Shares the link blue (AA on `--info-soft`). |
 | `--info-soft` | `#E0F0FE` | Info badge bg. |
-| `--success` | `#1A7F4E` | Pass, healthy, OK. |
+| `--success` | `#157A45` | Pass, healthy, OK. AA as badge text on `--success-soft`. |
 | `--success-soft` | `#E7F4ED` | Success badge bg. |
-| `--warn` | `#B05F00` | Warning, sampled-eval ceiling. |
+| `--warn` | `#9C5400` | Warning, sampled-eval ceiling. AA as badge text on `--warn-soft`. |
 | `--warn-soft` | `#FBF1E0` | Warn badge bg. |
 | `--danger` | `#C0382B` | Error, failed run, dead-letter. |
 | `--danger-soft` | `#FBEAE7` | Danger badge bg. |
