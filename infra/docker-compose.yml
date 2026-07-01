@@ -36,7 +36,10 @@ services:
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
     volumes:
       - ch-data:/var/lib/clickhouse
-      - ../schemas/clickhouse:/docker-entrypoint-initdb.d:ro
+      # Schema is applied into $CLICKHOUSE_DB by clickhouse-init.sh (the
+      # official entrypoint runs bare *.sql against `default`, not our db).
+      - ../schemas/clickhouse:/schemas/clickhouse:ro
+      - ./clickhouse-init.sh:/docker-entrypoint-initdb.d/init.sh:ro
     ports:
       - "8123:8123"
       - "9000:9000"
