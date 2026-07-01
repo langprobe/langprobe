@@ -1,6 +1,7 @@
-/* Design tokens — see DESIGN.md (v3 2026-06-08).
- * Geist + Geist Mono only. Light-mode default.
- * Accent is HeroUI primary blue #0485F7; brand and link share the hue. */
+/* Design tokens — see DESIGN.md (v4, "Design System.dc.html").
+ * Plus Jakarta Sans (humans read) + Geist Mono (machine values). Light-mode default.
+ * Accent is HeroUI primary blue #0485F7 for actions/series; links are a distinct
+ * deeper blue #0A66C2 so a clickable identifier never reads as the primary action. */
 
 :root {
   /* Surfaces */
@@ -15,7 +16,7 @@
   --border-strong: #DDDDDB;
   --border-focus:  #0485F7;
 
-  /* Text — text-3 is the lightest tone still rated for body/helper copy.
+  /* Text — text-3 is the lightest tone still rated for body/helper/label copy.
    * It clears WCAG AA (>=4.5:1) on --bg, --surface-2, and --surface-3.
    * text-4 is intentionally sub-AA and is for DISABLED text only (which
    * WCAG exempts); placeholders use text-3, never text-4. */
@@ -24,16 +25,16 @@
   --text-3:        #6C6C69;
   --text-4:        #B4B4AE;
 
-  /* Brand / accent (HeroUI primary blue) */
+  /* Brand / accent (HeroUI primary blue) — primary action + primary data series */
   --accent:        #0485F7;
   --accent-fg:     #FFFFFF;
   --accent-soft:   #E0F0FE;
   --accent-hover:  #3592F9;
 
-  /* Link — same hue as --accent (211°) so brand reads as one voice, but
-   * darkened from the accent's lightness to clear WCAG AA (4.5:1) as TEXT.
-   * The accent stays #0485F7 for button fills (white-on-fill is a 3:1 UI
-   * pairing); link/info text needs the stricter 4.5:1, hence the split. */
+  /* Link — the accent hue darkened to clear WCAG AA (4.5:1) as TEXT. The accent
+   * stays #0485F7 for button fills (white-on-fill is a 3:1 UI pairing); link/info
+   * text needs the stricter 4.5:1, hence the split. It also lets a navigable
+   * id/trace read distinctly from the primary action on a view. */
   --link:          #0A66C2;
   --link-soft:     #E0F0FE;
 
@@ -65,13 +66,14 @@
   --r-3: 8px;
   --r-4: 12px;
 
-  /* Shadow */
+  /* Shadow — the elevation scale: card / raised / modal */
   --shadow-1: 0 1px 2px rgba(0,0,0,0.04);
-  --shadow-2: 0 4px 16px -2px rgba(0,0,0,0.06), 0 2px 4px rgba(0,0,0,0.04);
-  --shadow-3: 0 12px 40px -8px rgba(0,0,0,0.12);
+  --shadow-2: 0 4px 12px -2px rgba(0,0,0,0.08);
+  --shadow-3: 0 12px 40px -8px rgba(0,0,0,0.14);
 
-  /* Type — Geist via next/font sets --font-geist-sans / --font-geist-mono on <html>. */
-  --f-sans: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  /* Type — Plus Jakarta Sans (--font-jakarta) + Geist Mono (--font-geist-mono),
+   * both set on <html> by next/font in layout.tsx. */
+  --f-sans: var(--font-jakarta), -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
   --f-mono: var(--font-geist-mono), ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Menlo, Consolas, monospace;
 
   /* Type sizes */
@@ -114,7 +116,7 @@ html, body {
   color: var(--text);
   font-family: var(--f-sans);
   font-size: var(--fs-14);
-  line-height: 1.4;
+  line-height: 1.5;
   letter-spacing: -0.005em;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -139,34 +141,35 @@ h1, h2, h3, h4 {
   letter-spacing: -0.018em;
   color: var(--text);
 }
-h1 { font-size: var(--fs-24); line-height: 1.18; letter-spacing: -0.022em; font-weight: 500; }
-h2 { font-size: var(--fs-18); line-height: 1.24; letter-spacing: -0.018em; }
+h1 { font-size: var(--fs-24); line-height: 1.2; letter-spacing: -0.025em; font-weight: 700; }
+h2 { font-size: var(--fs-18); line-height: 1.24; letter-spacing: -0.018em; font-weight: 600; }
 h3 { font-size: var(--fs-14); line-height: 1.3; }
 h4 { font-size: var(--fs-13); line-height: 1.3; }
 
 /* Display headline — opt-in, used on hero/auth/empty-state surfaces.
- * Tighter tracking + lighter weight for editorial confidence. */
+ * Bold + tight tracking for typographic confidence in Plus Jakarta Sans. */
 .display {
   font-family: var(--f-sans);
   font-size: var(--fs-40);
   line-height: 1.05;
-  letter-spacing: -0.028em;
-  font-weight: 500;
+  letter-spacing: -0.035em;
+  font-weight: 700;
   color: var(--text);
 }
 .display-sm {
   font-family: var(--f-sans);
   font-size: var(--fs-32);
   line-height: 1.1;
-  letter-spacing: -0.024em;
-  font-weight: 500;
+  letter-spacing: -0.03em;
+  font-weight: 700;
   color: var(--text);
 }
+/* Caption / kicker — sans, not mono: it's chrome, not a machine value. */
 .eyebrow {
-  font-family: var(--f-mono);
+  font-family: var(--f-sans);
   font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.08em;
+  font-weight: 600;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-3);
 }
@@ -200,7 +203,7 @@ a:focus-visible {
   color: var(--text);
   font-family: var(--f-sans);
   font-size: var(--fs-13);
-  font-weight: 500;
+  font-weight: 600;
   letter-spacing: -0.005em;
   cursor: pointer;
   /* Slightly longer easing so hover feels intentional rather than instant. */
@@ -271,15 +274,18 @@ a:focus-visible {
   line-height: 1;
 }
 
-/* Generic badge */
+/* Status badge — soft-tint bg + saturated text, always AA. Sans, not mono:
+ * a status word is chrome the eye reads, never a machine value. Pair with a
+ * leading .dot for the run-status pattern. */
 .badge {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 6px;
-  border-radius: var(--r-1);
-  font-family: var(--f-mono);
+  gap: 5px;
+  padding: 2px 7px;
+  border-radius: 5px;
+  font-family: var(--f-sans);
   font-size: 11px;
+  font-weight: 600;
   line-height: 1.4;
   background: var(--surface-3);
   color: var(--text-2);
@@ -291,19 +297,20 @@ a:focus-visible {
 .badge-info    { background: var(--info-soft);    color: var(--info); }
 .badge-neutral { background: var(--surface-3);    color: var(--text-2); }
 
-/* Span-kind badges */
+/* Span-kind badges — uppercase taxonomy for span types. Sans + heavy weight
+ * so the kind reads as a label, not a data token. */
 .kind-badge {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 2px 6px;
-  border-radius: var(--r-1);
-  font-family: var(--f-mono);
+  padding: 3px 8px;
+  border-radius: 5px;
+  font-family: var(--f-sans);
   font-size: 11px;
-  font-weight: 500;
+  font-weight: 700;
   line-height: 1.4;
   text-transform: uppercase;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.04em;
 }
 .kind-llm   { background: var(--kind-llm-bg);   color: var(--kind-llm); }
 .kind-tool  { background: var(--kind-tool-bg);  color: var(--kind-tool); }
@@ -356,7 +363,7 @@ a:focus-visible {
   justify-content: space-between;
   gap: 12px;
 }
-.card-title { font-size: var(--fs-14); font-weight: 500; color: var(--text); margin: 0; }
+.card-title { font-size: var(--fs-14); font-weight: 600; color: var(--text); margin: 0; }
 .card-sub   { font-size: var(--fs-12); color: var(--text-3); }
 
 /* Elevated — modals, dropdowns, command palette. Higher shadow,
@@ -396,7 +403,7 @@ a:focus-visible {
 }
 .card-section-title {
   font-size: var(--fs-16);
-  font-weight: 500;
+  font-weight: 600;
   letter-spacing: -0.012em;
   color: var(--text);
   margin: 0;
@@ -449,7 +456,7 @@ a:focus-visible {
 }
 .card-empty-title {
   font-size: var(--fs-14);
-  font-weight: 500;
+  font-weight: 600;
   color: var(--text);
   margin: 0;
 }
@@ -473,16 +480,18 @@ a:focus-visible {
 }
 .kpi-label {
   font-size: 11px;
-  font-weight: 500;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-3);
 }
+/* Big display figure: sans with tabular-nums (not mono). Mono is reserved for
+ * inline machine values — ids, model names, per-row costs and durations. */
 .kpi-value {
-  font-family: var(--f-mono);
+  font-family: var(--f-sans);
   font-size: var(--fs-28);
-  font-weight: 500;
-  letter-spacing: -0.015em;
+  font-weight: 700;
+  letter-spacing: -0.02em;
   color: var(--text);
   font-variant-numeric: tabular-nums;
 }
@@ -513,7 +522,7 @@ a:focus-visible {
   position: sticky;
   top: 0;
   font-size: 11px;
-  font-weight: 500;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-3);
@@ -568,9 +577,9 @@ a:focus-visible {
 .nav-section-label {
   padding: 12px 12px 6px;
   font-size: 11px;
-  font-weight: 500;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   color: var(--text-3);
 }
 .nav-item {
@@ -595,7 +604,7 @@ a:focus-visible {
 .nav-item.active {
   background: var(--surface-3);
   color: var(--text);
-  font-weight: 500;
+  font-weight: 600;
 }
 /* Left-edge accent bar on the active item — high-affordance signal that
  * hints the user is "anchored" to that section. Animates in via a
@@ -715,7 +724,7 @@ select[aria-invalid="true"]:focus {
   gap: 6px;
   width: 100%;
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--text-2);
   letter-spacing: -0.005em;
 }
@@ -723,14 +732,16 @@ select[aria-invalid="true"]:focus {
   color: var(--danger);
   font-weight: 400;
 }
+/* Helper + error copy is prose the user reads → sans. Only machine values a
+ * user copies/compares (ids, hosts, keys) stay mono, inside the input shell. */
 .field-hint {
-  font-family: var(--f-mono);
+  font-family: var(--f-sans);
   font-size: 11px;
   color: var(--text-3);
   line-height: 1.45;
 }
 .field-error {
-  font-family: var(--f-mono);
+  font-family: var(--f-sans);
   font-size: 11px;
   color: var(--danger);
   line-height: 1.45;
@@ -786,7 +797,7 @@ select[aria-invalid="true"]:focus {
 }
 .form-section-title {
   font-size: var(--fs-14);
-  font-weight: 500;
+  font-weight: 600;
   color: var(--text);
   margin: 0;
   letter-spacing: -0.01em;
