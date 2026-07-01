@@ -12,9 +12,9 @@
 - **Reference:** `/Users/mia/Downloads/langprobe.html` is the canonical mock. When in doubt, open that file and copy what it does.
 
 ## Typography
-- **Sans (default UI + body):** Geist, served via `next/font/google`. Weights 400/500/600.
-- **Mono (data, code, kbd, badges, span ids):** Geist Mono. Always with `font-variant-numeric: tabular-nums slashed-zero` on numeric data.
-- **No alt fonts.** No Inter. No Space Grotesk. No Berkeley Mono. No Fraunces. No system-ui as the primary face. Geist + Geist Mono is the entire family.
+- **Sans (everything humans read — UI, prose, labels, badges, headings, big display numbers):** Plus Jakarta Sans, served via `next/font/google` (variable font). Because it reads lighter than Geist at the same weight, the system leans on 600/700: body 400, labels/buttons/captions 600, headings/display 700.
+- **Mono (machine values only — ids, model names, durations, costs, config, code, kbd):** Geist Mono. Always with `font-variant-numeric: tabular-nums slashed-zero` on numeric data. **The one rule:** mono is reserved for values a user reads character-by-character or copies; chrome (labels, nav, badges, hints, headings) is always sans. Big display/KPI numbers are sans-with-`tabular-nums`, not mono.
+- **No alt fonts.** No Inter. No Space Grotesk. No Berkeley Mono. No Fraunces. No system-ui as the primary face. Plus Jakarta Sans + Geist Mono is the entire family.
 - **Type scale (CSS variables):**
 
 ```
@@ -48,19 +48,19 @@ Tokens — copy these names verbatim into `globals.css`:
 | `--border-focus` | `#0485F7` | Focus ring color. Matches `--accent`. |
 | `--text` | `#0A0A0A` | Primary text. Near-black. |
 | `--text-2` | `#4B4B49` | Secondary labels. |
-| `--text-3` | `#8A8A86` | Tertiary, helper, timestamps. |
-| `--text-4` | `#B4B4AE` | Disabled / placeholder. |
-| `--accent` | `#0485F7` | Primary button bg, brand mark, focus ring, active states. HeroUI primary blue. |
+| `--text-3` | `#6C6C69` | Tertiary, helper, labels, timestamps. Darkened to clear WCAG AA on `--bg`. |
+| `--text-4` | `#B4B4AE` | Disabled / faint. |
+| `--accent` | `#0485F7` | Primary action bg, brand mark, focus ring, active states, primary data series. HeroUI primary blue. |
 | `--accent-fg` | `#FFFFFF` | Foreground on accent. |
-| `--accent-soft` | `#E0F0FE` | Accent-tinted bg (focused field band, selected row, link-soft). |
+| `--accent-soft` | `#E0F0FE` | Accent-tinted bg (focused field band, selected row). |
 | `--accent-hover` | `#3592F9` | Primary button hover state. |
-| `--link` | `#0485F7` | Hyperlinks. Same hue as `--accent` so the brand reads as one voice. |
+| `--link` | `#0A66C2` | Hyperlinks + clickable ids/traces. A distinct deeper blue from `--accent` so "navigable" never reads as "the primary action." |
 | `--link-soft` | `#E0F0FE` | Link-tinted hover/selected backgrounds. |
-| `--info` | `#0485F7` | Info badge. |
+| `--info` | `#0A66C2` | Info / running badge. Shares the link blue. |
 | `--info-soft` | `#E0F0FE` | Info badge bg. |
-| `--success` | `#1A7F4E` | Pass, healthy, OK. |
+| `--success` | `#157A45` | Pass, healthy, OK. |
 | `--success-soft` | `#E7F4ED` | Success badge bg. |
-| `--warn` | `#B05F00` | Warning, sampled-eval ceiling. |
+| `--warn` | `#9C5400` | Warning, sampled-eval ceiling. |
 | `--warn-soft` | `#FBF1E0` | Warn badge bg. |
 | `--danger` | `#C0382B` | Error, failed run, dead-letter. |
 | `--danger-soft` | `#FBEAE7` | Danger badge bg. |
@@ -85,8 +85,8 @@ The kind palette is *categorical*, not emotional — separate from `--accent`. E
 Dark mode is reserved. When authored it must be a deliberate redesign, not auto-inverted. Until shipped, the app stays light-mode-only.
 
 ### Color rules
-- **Accent is `#0485F7`** (HeroUI primary blue). Primary buttons, the brand glyph, focus rings, hyperlinks, and active-nav indicators are this color. Hover deepens to `#3592F9`. Soft-tint backgrounds (focused field band, selected row, info-soft) are `#E0F0FE`.
-- **Brand and link are the same hue.** The product reads as one voice; we don't want a "brand color" the user has to learn separately from "clickable thing."
+- **Accent is `#0485F7`** (HeroUI primary blue). Primary buttons, the brand glyph, focus rings, active-nav indicators, and the primary data series are this color. Hover deepens to `#3592F9`. Soft-tint backgrounds (focused field band, selected row, info-soft) are `#E0F0FE`.
+- **Link is a distinct deeper blue `#0A66C2`.** Hyperlinks and clickable ids/traces use the link blue, not the accent, so a navigable identifier never competes with "the primary action on this view." Same family, two jobs.
 - **Accent is the only chromatic UI color.** No purple in the chrome. No amber/orange in the chrome. The kind palette (`--kind-*`) is categorical and lives only inside trace-view badges; it is *not* available for general UI.
 - **No gradients.** Anywhere. Including the brand mark.
 - **Semantic colors are rare.** A row is not painted green for being healthy. Green only appears in the pass-pill and the eval-pass dot. Same for warn/danger.
@@ -209,3 +209,4 @@ App grid
 | 2026-05-25 | v1 instrumented-brutalist (Berkeley Mono + amber). | Original direction. |
 | 2026-05-27 | v2 — adopt Vercel/Geist mock as new source of truth. | User chose "mock wins, replace DESIGN.md." Geist + Geist Mono, near-black `#0A0A0A` accent, light-mode default, blue `#2056E2` links, full token set extracted from `/Users/mia/Downloads/langprobe.html`. Berkeley Mono / amber-orange retired. |
 | 2026-06-08 | v3 — accent → HeroUI blue `#0485F7`; brand and link unified. | After `/design-shotgun` exploration, user selected the Inline-edit grammar paired with HeroUI's exact primary blue (sourced from `heroui-inc/heroui` `packages/styles/themes/default/variables.css`, `oklch(0.6204 0.195 253.83)` → `#0485F7`). Near-black accent retired; brand and link collapsed to a single hue so the product reads as one voice. Kind palette repointed to a *categorical* set (llm `#B97306` amber / tool `#0E7FB8` cyan / retr `#1F8A56` green / chain `#7A4FD9` indigo) so trace badges don't compete with the new accent. Geist + Geist Mono, light-mode default, no gradients all preserved. |
+| 2026-06-29 | v4 — Plus Jakarta Sans; link split from accent; contrast hardened; mono discipline. | Implemented from the Claude Design canvas `Design System.dc.html` (imported via the design MCP). Sans face Geist → **Plus Jakarta Sans** (variable, `next/font/google`); Geist Mono retained for machine values only. **The mono rule tightened:** mono is reserved for values read character-by-character (ids, model names, durations, costs, config); all chrome (badges, labels, hints, nav, captions) and big KPI/display numbers moved to sans-with-`tabular-nums`. **Link split from accent** → deeper blue `#0A66C2` (reverses v3's unified hue) so "navigable" and "primary action" are visually separable. Contrast hardened for AA: `--text-3` `#8A8A86`→`#6C6C69`, `--success` `#1A7F4E`→`#157A45`, `--warn` `#B05F00`→`#9C5400`. Weights leaned to 600/700 to compensate for the lighter face; shadow scale aligned to card/raised/modal; badge radius 5px. Accent, danger, surfaces, borders, kind palette, light-mode default, no gradients all preserved. |

@@ -13,8 +13,8 @@ Always read `DESIGN.md` before making any visual or UI decisions. All font choic
 The memorable thing is "this is the real debugger for agents." Every UI choice serves that. The canonical visual reference is `/Users/mia/Downloads/langprobe.html`. When in doubt: open that file and copy what it does. For aesthetic peers, look at the Vercel dashboard, Linear, or GitHub Primer's quieter views, not LangSmith or Braintrust.
 
 In QA, code review, or design review modes: flag any code that doesn't match `DESIGN.md`. Specifically watch for:
-- Any font other than Geist + Geist Mono (no Inter, Space Grotesk, system-ui, Berkeley Mono, or Fraunces).
-- Any accent color other than HeroUI primary blue `#0485F7`. Brand and link share the hue. No purple, green, or amber in the chrome. No gradients on the brand.
+- Any font other than Plus Jakarta Sans (sans) + Geist Mono (mono) (no Inter, Space Grotesk, system-ui, Geist Sans, Berkeley Mono, or Fraunces). Mono is for machine values only (ids, models, durations, costs, config, code) — chrome (labels, nav, badges, hints, headings) and big KPI numbers are sans.
+- Any accent color other than HeroUI primary blue `#0485F7`. Links are a distinct deeper blue `#0A66C2` (accent = primary action/series, link = navigable). No purple, green, or amber in the chrome. No gradients on the brand.
 - The `--kind-*` categorical palette (llm amber, tool cyan, retr green, chain indigo) used outside trace-view kind badges.
 - Gradients of any kind.
 - Border radius >12px outside of round status dots / avatars (token scale stops at `--r-4 12px`).
@@ -22,7 +22,7 @@ In QA, code review, or design review modes: flag any code that doesn't match `DE
 - 3-column SaaS-template feature grids with hero+subhero+CTA stacks on marketing.
 - Skeleton shimmer animations (skeletons must be flat `--surface-3` rectangles).
 - `data-theme="dark"` defaults — the app is light-mode-only until dark mode is deliberately authored.
-- CSS variables that don't match the canonical token set (`--bg #FCFCFC`, `--accent #0485F7`, `--link #0485F7`, etc.). The full set is in `DESIGN.md`.
+- CSS variables that don't match the canonical token set (`--bg #FCFCFC`, `--accent #0485F7`, `--link #0A66C2`, etc.). The full set is in `DESIGN.md`.
 
 ## Skill routing
 
