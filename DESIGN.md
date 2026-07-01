@@ -48,19 +48,19 @@ Tokens — copy these names verbatim into `globals.css`:
 | `--border-focus` | `#0485F7` | Focus ring color. Matches `--accent`. |
 | `--text` | `#0A0A0A` | Primary text. Near-black. |
 | `--text-2` | `#4B4B49` | Secondary labels. |
-| `--text-3` | `#6C6C69` | Tertiary, helper, labels, timestamps. Darkened to clear WCAG AA on `--bg`. |
-| `--text-4` | `#B4B4AE` | Disabled / faint. |
+| `--text-3` | `#6C6C69` | Tertiary, helper, labels, timestamps, placeholders. Lightest AA-rated tone (≥4.5:1 on `--bg`/`--surface-2`/`--surface-3`). |
+| `--text-4` | `#B4B4AE` | Disabled text only (WCAG-exempt). Never for placeholders or live copy — use `--text-3`. |
 | `--accent` | `#0485F7` | Primary action bg, brand mark, focus ring, active states, primary data series. HeroUI primary blue. |
 | `--accent-fg` | `#FFFFFF` | Foreground on accent. |
 | `--accent-soft` | `#E0F0FE` | Accent-tinted bg (focused field band, selected row). |
 | `--accent-hover` | `#3592F9` | Primary button hover state. |
-| `--link` | `#0A66C2` | Hyperlinks + clickable ids/traces. A distinct deeper blue from `--accent` so "navigable" never reads as "the primary action." |
+| `--link` | `#0A66C2` | Hyperlinks + clickable ids/traces. The accent hue darkened to clear AA (≥4.5:1) as text; the split also keeps a navigable id distinct from the primary action. |
 | `--link-soft` | `#E0F0FE` | Link-tinted hover/selected backgrounds. |
-| `--info` | `#0A66C2` | Info / running badge. Shares the link blue. |
+| `--info` | `#0A66C2` | Info / running badge text. Shares the link blue (AA on `--info-soft`). |
 | `--info-soft` | `#E0F0FE` | Info badge bg. |
-| `--success` | `#157A45` | Pass, healthy, OK. |
+| `--success` | `#157A45` | Pass, healthy, OK. AA as badge text on `--success-soft`. |
 | `--success-soft` | `#E7F4ED` | Success badge bg. |
-| `--warn` | `#9C5400` | Warning, sampled-eval ceiling. |
+| `--warn` | `#9C5400` | Warning, sampled-eval ceiling. AA as badge text on `--warn-soft`. |
 | `--warn-soft` | `#FBF1E0` | Warn badge bg. |
 | `--danger` | `#C0382B` | Error, failed run, dead-letter. |
 | `--danger-soft` | `#FBEAE7` | Danger badge bg. |
